@@ -1432,6 +1432,33 @@ impl Organism {
         }
     }
 
+    /// Anti-entropy proativa: republica esporos públicos locais na DHT e no
+    /// lattice, para que as cópias sobrevivam ao churn sem depender do
+    /// publicador original. Fecha a lacuna que `recall` deixa aberta: um nó que
+    /// nunca aprendeu o ContentId (gossip perdido por estar offline) não pode
+    /// consultá-lo — mas recebe o re-anúncio periódico de quem detém a cópia.
+    fn anti_entropy_tick(&mut self) {
+        // Bounded: re-publica no máximo N por tick (rede pequena / evitar flood).
+        const MAX_PER_TICK: usize = 8;
+        let ids: Vec<ContentId> = self.bank.ids().iter().copied().take(MAX_PER_TICK).collect();
+        let mut republished = 0usize;
+        for id in ids {
+            let Some(bytes) = self.bank.public_spore_print(&id) else {
+                continue;
+            };
+            let _ = self.hyphae.dht_put(dht_key(&id), bytes.clone());
+            if let Ok(plot) = serde_json::from_slice::<Plot>(&bytes) {
+                if let Ok(encoded) = (Envelope::SporePrint { plot }).encode() {
+                    let _ = self.hyphae.broadcast_lattice(encoded);
+                }
+            }
+            republished += 1;
+        }
+        if republished > 0 {
+            tracing::debug!(republished, "anti-entropy: esporos públicos re-anunciados");
+        }
+    }
+
     /// Envia um envelope direcionado via overlay de zonas (`Direct`).
     ///
     /// **Rizomorfo mesh**: gossipsub/lattice é camada 1. Se nenhum peer
@@ -4617,6 +4644,14 @@ impl Organism {
         let mut zone_tick = tokio::time::interval(Duration::from_secs(120));
         let mut scale_tick = tokio::time::interval(Duration::from_secs(45));
         let mut overlay_tick = tokio::time::interval(Duration::from_secs(90));
+        // Anti-entropy: intervalo configurável (testes usam valor curto).
+        let anti_entropy_secs = std::env::var("MYCELIUM_ANTI_ENTROPY_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(180)
+            .max(1);
+        let mut anti_entropy_tick =
+            tokio::time::interval(Duration::from_secs(anti_entropy_secs));
         let mut seedwebhook_tick = tokio::time::interval(Duration::from_secs(30));
         // Primeiro tick imediato já foi coberto na germinação; atrasa o próximo.
         seed_tick.tick().await;
@@ -4629,6 +4664,7 @@ impl Organism {
         zone_tick.tick().await;
         scale_tick.tick().await;
         overlay_tick.tick().await;
+        anti_entropy_tick.tick().await;
         seedwebhook_tick.tick().await;
 
         if self.sporocarp {
@@ -4886,6 +4922,10 @@ impl Organism {
 
                 _ = overlay_tick.tick() => {
                     self.dht_overlay_tick();
+                }
+
+                _ = anti_entropy_tick.tick() => {
+                    self.anti_entropy_tick();
                 }
 
                 _ = seedwebhook_tick.tick() => {
