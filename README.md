@@ -4,6 +4,14 @@
 
 Nuvem P2P viva em Rust: hifas (libp2p), feromônios, Spore Bank, e o fluxo Lattice ponta a ponta.
 
+## 🧪 Estado de validação
+
+- ✅ **Nível a (cumprido)** — o workspace compila e os testes locais passam, com artefatos reais (binários, capturas, logs) reproduzíveis nesta máquina.
+- ❌ **Nível b (não cumprido)** — malha multi-nó em redes reais (física/ISP distintas) não foi executada nem registrada.
+- ❌ **Nível c (não cumprido)** — sem validação por terceiros.
+- ❌ **Nível d (não cumprido)** — sem implantação em produção; nenhum seed com inbound verificado existe em `seeds/mainnet.txt`.
+- As seções abaixo descrevem o **escopo e a intenção** do projeto; onde há afirmação de prontidão, o número real está em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+
 ## Quick start
 
 ```bash
@@ -109,21 +117,44 @@ Giggs sow Plot → Spore Bank (disco + DHT) → gossip hifas
 | `deploy` | One-shot: sow → signal → URL do Event Horizon |
 | `store list/caps/launch/publish` | App Store / Steam P2P de software antigo e emulação (QEMU, MAME, RetroArch, WASM) |
 | `repo publish/clone/list` | Distribuição de código soberana: publica a árvore como Plot multi-leaf (DHT + gossip) e reconstrói em qualquer nó — sem GitHub |
+| `media publish/pin/pins` | Streaming e fixação de vídeos em chunks BLAKE3 de 2MB via enxame P2P (Mycelium Video) |
+| `channel create/publish/show` | Gestão de canais descentralizados assinados por chave criptográfica |
+| `playlist create/add` | Criação e versão de playlists portáteis e soberanas |
+| `sclerotium hardware/lease/status/wake` | Protocolo Sclerotium: dormência profunda, GhostLease, Wake-on-LAN e WakeToken anti-DoS |
+| `veil start/stop/status/descriptor` | Roteamento cebola pós-quântico VEIL Ω de 3 saltos (Guard/Relay/Exit), Anti-SSRF e SOCKS5 (:1080) |
 | `shutdown` | Hiberna o daemon (estado fica em disco) |
 
-## Crates
+## 📚 Documentação Técnica Completa
 
-| Crate | Papel |
-|---|---|
-| `mycelium-core` | NodeId, ContentId, Resources, FruitingBody |
-| `mycelium-hyphae` | libp2p QUIC/TCP, mDNS, Kademlia, gossip, métricas, bootstrap |
-| `mycelium-pheromones` | Identidade ed25519 |
-| `mycelium-nutrients` | Ledger ATP/Enzymes/Mycelia/Spores/Resilience |
-| `mycelium-sporebank` | Plots em disco + chaves DHT |
-| `mycelium-store` | App Store P2P, manifesto de software/ROM, motor de emulação QEMU/MAME/RetroArch |
-| `mycelium-node` | Daemon, protocolo Lattice, socket de controle, ion `src` (browser de código soberano), ion `seeds` (catálogo público/privado) |
-| `giggs` … `plasma` | Componentes do Lattice |
-| `mycelium-cli` | Binário `mycelium` |
+Para aprofundamento na engenharia do ecossistema, consulte os documentos dedicados:
+
+- **[Arquitetura Geral Sistêmica](docs/architecture/ARQUITETURA_GERAL_SISTEMICA.md)**: Visão holística de todas as camadas de L0 a L4 e fluxos do organismo.
+- **[Dicionário e Referência de Crates](docs/architecture/CRATES_REFERENCE.md)**: Guia exaustivo cobrindo todos os 30 crates e plataformas do monorepo.
+- **[VEIL Ω — Roteamento Cebola Pós-Quântico](docs/veil/VEIL_ONION_ROUTING.md)**: Especificação da rede cebola de 3 saltos com ML-KEM-768 e isolamento Anti-SSRF.
+- **[COSMIC — Compute & Storage Pós-Quânticos](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Fragmentação QEL K/N, atestações e licenças VOID-00 (ML-DSA-87).
+- **[RFC Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Especificação de dormência biológica, GhostLease e despertar seletivo.
+- **[Índice Completo de Documentação](docs/README.md)**: Catálogo organizado de todos os 45+ documentos técnicos.
+
+## Crates do Monorepo
+
+O projeto é modularizado em 30 crates e plataformas especializados:
+
+| Crate | Camada | Papel |
+|---|---|---|
+| `mycelium-core` | L0 / L1 | Identificadores (`NodeId`, `ContentId`), recursos e interfaces vitais |
+| `mycelium-hyphae` | L1 | libp2p QUIC/TCP, Kademlia DHT, gossipsub, relay mesh e DTN Mailbox |
+| `mycelium-pheromones` | L1 | Identidade ed25519 (`Gland`), trails, scents e alarmes |
+| `mycelium-nutrients` | L1 | Ledger de nutrientes: ATP, Enzymes, Mycelia, Spores, Resilience |
+| `mycelium-sporebank` | L1 | Armazenamento de Plots content-addressed em disco e DHT |
+| `mycelium-node` | L1 / L2 | Daemon persistente, Event Horizon HTTP (:7474), ions `/src`, `/store`, `/vitrine` |
+| `mycelium-sclerotium` | L0 / L1 | Dormência biológica, GhostLease, Wake-on-LAN e WakeToken anti-vampire attacks |
+| `mycelium-veil` | L2 | Rede cebola pós-quântica (ML-KEM-768), proxy SOCKS5, Anti-SSRF e bridges |
+| `mycelium-media` | L4 | Motor de streaming de áudio/vídeo em chunks de 2MB BLAKE3 e canais |
+| `mycelium-store` | L4 | App Store P2P e motores de emulação (RetroArch, MAME, QEMU, WASM) |
+| `mycelium-zkp` | L2 | Licenças pós-quânticas VOID-00 (ML-DSA-87) e validação Lightning BOLT11 |
+| `cosmic-cli` | L3 / L4 | CLI para computação verificável e storage em shards QEL |
+| `giggs` … `plasma` | L3 | Componentes de compilação, quórum, isolamento e balanceamento do The Lattice |
+| `mycelium-cli` | CLI | O binário executável unificado `mycelium` |
 
 ## Persistência (`MYCELIUM_HOME` / `--home`)
 
@@ -152,13 +183,13 @@ mycelium --home /tmp/folha-b recall --plot Qm… --hybrid
 ./scripts/hybrid-demo.sh
 ```
 
-Docs: [docs/nostr-qel.md](docs/nostr-qel.md) · voluntário mesh: [docs/candidatos.md](docs/candidatos.md) · ET-COSMIC bridge: [docs/et-cosmic-bridge.md](docs/et-cosmic-bridge.md) · feature CLI `nostr` (default).
+Docs: [docs/network/nostr-qel.md](docs/network/nostr-qel.md) · voluntário mesh: [docs/network/candidatos.md](docs/network/candidatos.md) · ET-COSMIC bridge: [docs/cosmic/et-cosmic-bridge.md](docs/cosmic/et-cosmic-bridge.md) · feature CLI `nostr` (default).
 
 ## COSMIC — storage + compute + identidade pós-quânticos
 
 Remodela o tríplice *VPS = compute + storage + uptime* em **contratos
 criptográficos**: a confiança sai do hardware e vai pra criptografia.
-Design completo em [docs/cosmic-design.md](docs/cosmic-design.md). Binário
+Design completo em [docs/cosmic/cosmic-design.md](docs/cosmic/cosmic-design.md). Binário
 `cosmic` (crate `cosmic-cli`):
 
 ```bash
@@ -200,9 +231,28 @@ MYCELIUM_REACHABLE=1 ./scripts/run-public-seed.sh
 ```
 
 24/7: `sudo MYCELIUM_REACHABLE=1 ./scripts/install-seed.sh`  
-Docs: [docs/engenharia-reversa-bloqueio.md](docs/engenharia-reversa-bloqueio.md) ·
-[docs/volunteer-sporocarp.md](docs/volunteer-sporocarp.md) ·
-[docs/rizomorphs.md](docs/rizomorphs.md)
+Docs: [docs/network/engenharia-reversa-bloqueio.md](docs/network/engenharia-reversa-bloqueio.md) ·
+[docs/network/volunteer-sporocarp.md](docs/network/volunteer-sporocarp.md) ·
+[docs/network/rizomorphs.md](docs/network/rizomorphs.md)
+
+## 📜 Prova: site + assinatura sem hospedagem, sem domínio, sem VPS
+
+```bash
+bash scripts/prova-zero-infra.sh
+```
+
+O nó desta máquina é a hospedagem, o NodeId é o endereço (nenhum DNS) e a lease
+ed25519 com `valid_until` é a assinatura do cliente — plano em
+[docs/PROVA_ZERO_INFRA.md](docs/PROVA_ZERO_INFRA.md).
+
+## 📚 Documentação Completa
+
+- 🌟 **[Livro Mestre & Documentação Técnica Completa](docs/DOCUMENTACAO_COMPLETA.md)**: Manual definitivo cobrindo a arquitetura, VEIL Ω, COSMIC, Sclerotium e todos os 30 crates.
+- 🗺️ **[Índice Geral de Documentos](docs/README.md)**: Mapa temático organizado por diretórios.
+- 📦 **[Dicionário Exaustivo de Crates](docs/architecture/CRATES_REFERENCE.md)**: Referência técnica de cada crate do monorepo.
+- 🧅 **[Protocolo VEIL Ω Onion Routing](docs/veil/VEIL_ONION_ROUTING.md)**: Roteamento pós-quântico de 3 saltos e proxy SOCKS5.
+- 🪐 **[COSMIC Compute & QEL Storage](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Computação e armazenamento particionado K-de-N.
+- 🍄 **[Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Hibernação biológica, WoL e despertar físico.
 
 ## Desenvolvimento
 

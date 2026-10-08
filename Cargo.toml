@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/mycelium-s1",
     "crates/mycelium-core",
     "crates/mycelium-hyphae",
     "crates/mycelium-pheromones",
@@ -29,6 +30,10 @@ members = [
     "crates/cosmic-cli",
     "platforms/cosmoplanck",
     "crates/mycelium-veil",
+    "crates/mycelium-media",
+    "crates/mycelium-sclerotium",
+    "crates/mycelium-economy",
+    "crates/mycelium-bot",
 ]
 
 [workspace.package]
@@ -65,6 +70,9 @@ mycelium-store = { path = "crates/mycelium-store" }
 mycelium-zkp = { path = "crates/mycelium-zkp", default-features = false }
 cosmic-cli = { path = "crates/cosmic-cli" }
 mycelium-veil = { path = "crates/mycelium-veil" }
+mycelium-media = { path = "crates/mycelium-media" }
+mycelium-sclerotium = { path = "crates/mycelium-sclerotium" }
+mycelium-economy = { path = "crates/mycelium-economy" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

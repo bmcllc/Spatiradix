@@ -4,9 +4,15 @@ use mycelium_core::{ContentId, NodeId};
 use mycelium_sporebank::{SporeBank, SporeBankError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
-use tracing::info;
+use tracing::{error, info};
+
+/// Sequencia os nomes dos temporários, para dois `atomic_write` concorrentes
+/// nunca disputarem o mesmo ficheiro temporário.
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Error)]
 pub enum CatalogError {
@@ -18,6 +24,22 @@ pub enum CatalogError {
     Io(#[from] std::io::Error),
     #[error("spore {0} não encontrado no catálogo")]
     SporeNotFound(String),
+    /// `catalog.json` existe mas não é parseável (escrito por um `write` que
+    /// ficou a meio, ou truncado por disco cheio). Distinto de "catálogo
+    /// vazio": devolver um índice vazio aqui seria perda de dados silenciosa.
+    #[error("catálogo em {path} ilegível: {source}")]
+    IndexCorrupt {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    /// Invariante do catálogo que não pode ser satisfeita por um índice em
+    /// memória: mutex envenenado, ou `catalog.json` ilegível ou em
+    /// desacordo com o índice. Deliberadamente sem `#[source]`: o detalhe
+    /// original vai para o log, e a mensagem devolvida ao cliente não o
+    /// transporta.
+    #[error("catálogo envenenado: {0}")]
+    Poisoned(&'static str),
 }
 
 /// Catálogo de Jogos e Softwares Legados
@@ -43,7 +65,14 @@ impl StoreCatalog {
         let index_file = store_dir.join("catalog.json");
         let index: StoreIndex = if index_file.exists() {
             let bytes = std::fs::read(&index_file)?;
-            serde_json::from_slice(&bytes).unwrap_or_default()
+            // Só a ausência do ficheiro significa "catálogo vazio". Um ficheiro
+            // presente e ilegível é CORRUPÇÃO: propagar o erro, senão o
+            // `unwrap_or_default` de antes convertia perda de dados em "a store
+            // não tem esporos" sem qualquer sinal.
+            serde_json::from_slice(&bytes).map_err(|e| CatalogError::IndexCorrupt {
+                path: index_file.clone(),
+                source: e,
+            })?
         } else {
             StoreIndex::default()
         };
@@ -62,7 +91,89 @@ impl StoreCatalog {
 
     fn save_index(&self) -> Result<(), CatalogError> {
         let bytes = serde_json::to_vec_pretty(&self.index)?;
-        std::fs::write(self.root.join("catalog.json"), bytes)?;
+        atomic_write(&self.root.join("catalog.json"), &bytes)?;
+        Ok(())
+    }
+
+    /// Confere as invariantes do índice em memória contra `catalog.json`.
+    ///
+    /// Separa três estados, e só o terceiro é falha de consistência:
+    /// - Ficheiro ausente: catálogo legitimamente vazio (ainda sem nenhum
+    ///   `save_index`, ou apagado por fora). NÃO é erro.
+    /// - Ficheiro presente e não parseável: corrupção de disco — a mesma
+    ///   condição que `IndexCorrupt` cobre no `open`.
+    /// - Índice em memória que discorda do disco: chave ausente, registro
+    ///   diferente ou `content_id` diferente. É o estado que um mutex
+    ///   envenenado pode deixar para trás.
+    ///
+    /// Esta função RELATA; nunca repara. Substituir `self.index` pela cópia
+    /// recém-lida aqui seria exatamente o reset silencioso que `IndexCorrupt`
+    /// existe para impedir: o índice recuperado passaria a validar-se a si
+    /// próprio no teste seguinte, e a falha original desapareceria sem
+    /// registo.
+    pub fn validate(&self) -> Result<(), CatalogError> {
+        let index_file = self.root.join("catalog.json");
+        if !index_file.exists() {
+            return Ok(());
+        }
+
+        let bytes = std::fs::read(&index_file)?;
+        let on_disk: StoreIndex = match serde_json::from_slice(&bytes) {
+            Ok(index) => index,
+            Err(e) => {
+                error!(
+                    "[Mycelium Store Catalog] catalog.json ilegível em {}: {e}",
+                    index_file.display()
+                );
+                return Err(CatalogError::Poisoned(
+                    "catalog.json presente em disco mas não parseável",
+                ));
+            }
+        };
+
+        for (id, spore) in &self.index.spores {
+            let disk_spore = match on_disk.spores.get(id) {
+                Some(s) => s,
+                None => {
+                    error!(
+                        "[Mycelium Store Catalog] índice em memória tem '{}' ausente de {}",
+                        id,
+                        index_file.display()
+                    );
+                    return Err(CatalogError::Poisoned(
+                        "índice em memória tem chave ausente em disco",
+                    ));
+                }
+            };
+
+            // `SoftwareSpore` não deriva `PartialEq` (nem os seus campos
+            // aninhados), e adicionar o derive é uma mudança pública fora
+            // deste ficheiro. Comparar as formas serializadas é estrutural e
+            // determinista: todos os campos são escalares, `Option`, `String`
+            // ou `Vec` — nenhum mapa, logo nenhuma ordem de iteração.
+            if disk_spore.content_id != spore.content_id {
+                error!(
+                    "[Mycelium Store Catalog] content_id divergente para '{}' (memória {}, disco {})",
+                    id,
+                    hex::encode(spore.content_id.0),
+                    hex::encode(disk_spore.content_id.0)
+                );
+                return Err(CatalogError::Poisoned(
+                    "content_id em memória não bate com o disco",
+                ));
+            }
+            if serde_json::to_vec(disk_spore)? != serde_json::to_vec(spore)? {
+                error!(
+                    "[Mycelium Store Catalog] registro divergente para '{}' entre memória e {}",
+                    id,
+                    index_file.display()
+                );
+                return Err(CatalogError::Poisoned(
+                    "registro em memória não bate com o disco",
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -356,4 +467,31 @@ impl StoreCatalog {
     pub fn sporebank(&self) -> &SporeBank {
         &self.sporebank
     }
+}
+
+/// Grava `bytes` num temporário, faz `fsync` e promove com `rename`.
+///
+/// Mesma abordagem de `mycelium_sporebank::atomic_write`: um crash a meio
+/// deixa o temporário órfão, nunca um `catalog.json` cortado — que o `open`
+/// não pode distinguir de "catálogo vazio" sem `unwrap_or_default`.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
+    let seq = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let temp = path.with_extension(format!("tmp-{}-{seq}", std::process::id()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temp, path)?;
+        if let Some(parent) = path.parent() {
+            std::fs::File::open(parent)?.sync_all()?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }

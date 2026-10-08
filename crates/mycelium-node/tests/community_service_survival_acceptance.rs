@@ -104,6 +104,56 @@ async fn test_community_service_content_survival_after_publisher_shutdown() {
     }
     assert!(connected, "Nó 2 deve conectar ao Nó 1 pela rede nativa");
 
+    // Gate S1 LIVE: usa o mesmo plano de controlo real dos daemons, sem DTN.
+    let peer_2 = match call(&sock_2, Request::Status).await.expect("Status Nó 2 para S1 LIVE") {
+        Response::Status(s) => s.peer_id,
+        other => panic!("Esperado Status do Nó 2, obtido {:?}", other),
+    };
+    let live_payload =
+        r#"{"kind":"ExecutionIntentProposal","intent_hash":"0x01","ttl":"ephemeral"}"#
+            .to_string();
+    let live_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    let mut live_sent = false;
+    while tokio::time::Instant::now() < live_deadline && !live_sent {
+        let expires_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 5_000;
+        match call(
+            &sock_1,
+            Request::S1LiveSend {
+                target: peer_2.clone(),
+                payload: live_payload.clone(),
+                expires_at_ms,
+            },
+        )
+        .await
+        {
+            Ok(Response::Ok { .. }) => live_sent = true,
+            _ => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+    assert!(live_sent, "Nó 1 deve publicar S1 LIVE somente com rota viva");
+
+    let poll_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut live_received = false;
+    while tokio::time::Instant::now() < poll_deadline && !live_received {
+        match call(&sock_2, Request::S1LivePoll { limit: 16 })
+            .await
+            .expect("S1 live poll Nó 2")
+        {
+            Response::S1LiveMessages { messages } => {
+                live_received = messages.iter().any(|m| m == &live_payload);
+            }
+            other => panic!("Resposta S1 LIVE inesperada: {:?}", other),
+        }
+        if !live_received {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+    assert!(live_received, "S1 LIVE deve atravessar os dois sockets/daemons");
+
     // 3. Nó 1 semeia um serviço comunitário ("portal de saúde e notícias locais")
     let service_html = "<!doctype html><html><body><h1>Rede Comunitária Autônoma</h1><p>Serviço vivo sem DNS nem gateway central.</p></body></html>";
     let sow_resp = call(

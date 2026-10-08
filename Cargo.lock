@@ -1356,6 +1356,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3033,6 +3043,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-bot"
+version = "0.1.0"
+dependencies = [
+ "mycelium-core",
+ "mycelium-node",
+ "rand 0.8.7",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mycelium-cli"
 version = "0.1.0"
 dependencies = [
@@ -3048,13 +3071,16 @@ dependencies = [
  "mycelium-ghostid",
  "mycelium-hyphae",
  "mycelium-ipfs",
+ "mycelium-media",
  "mycelium-node",
  "mycelium-nostr",
  "mycelium-nutrients",
  "mycelium-pheromones",
  "mycelium-qel",
+ "mycelium-sclerotium",
  "mycelium-sporebank",
  "mycelium-store",
+ "rand 0.8.7",
  "serde",
  "serde_json",
  "tokio",
@@ -3067,6 +3093,7 @@ name = "mycelium-core"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ed25519-dalek",
  "hex",
  "serde",
  "serde_json",
@@ -3079,6 +3106,24 @@ version = "0.1.0"
 dependencies = [
  "mycelium-qel",
  "serde",
+]
+
+[[package]]
+name = "mycelium-economy"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "libc",
+ "rand 0.8.7",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sha3 0.10.9",
+ "tempfile",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -3129,6 +3174,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-media"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "mycelium-core",
+ "mycelium-ghostid",
+ "mycelium-ipfs",
+ "mycelium-sporebank",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "mycelium-node"
 version = "0.1.0"
 dependencies = [
@@ -3144,9 +3208,12 @@ dependencies = [
  "mycelium-core",
  "mycelium-ghostid",
  "mycelium-hyphae",
+ "mycelium-media",
  "mycelium-nutrients",
  "mycelium-pheromones",
  "mycelium-pqc",
+ "mycelium-s1",
+ "mycelium-sclerotium",
  "mycelium-sporebank",
  "mycelium-store",
  "mycelium-tropical",
@@ -3261,6 +3328,42 @@ dependencies = [
  "serde_json",
  "shamir_share",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "mycelium-s1"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "blake3",
+ "ed25519-dalek",
+ "fs2",
+ "giggs",
+ "hex",
+ "mycelium-core",
+ "mycelium-economy",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "mycelium-sclerotium"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "mycelium-core",
+ "mycelium-pheromones",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]

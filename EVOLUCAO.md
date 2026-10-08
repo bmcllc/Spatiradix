@@ -1,5 +1,7 @@
 # Mycelium Network — Evolução incremental descentralizada
 
+> **Nota**: este arquivo é duplicata byte a byte de [`PLANO_EVOLUCAO_MYCELIUM.md`](PLANO_EVOLUCAO_MYCELIUM.md) e descreve uma entrega externa por tarball (`mycelium-evolucao-crates.tar.gz`), **não este repositório** — o commit `1b262b9` removeu a árvore descompactada (`mycelium-evolucao-crates/`) e deixou apenas o `.tar.gz`. Estado de validação deste repositório: [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+
 ## Contrato arquitetural
 
 A rede nativa **não** depende de um gateway HTTP, domínio, VPS, servidor de bootstrap, relay ou PeerId único. Seeds e relays são substituíveis; os gateways HTTP são instâncias voluntárias do mesmo software, não autoridades sobre identidades, conteúdo ou execução. A disponibilidade depende de recursos e réplicas efetivamente online — descentralização não implica disponibilidade automática.

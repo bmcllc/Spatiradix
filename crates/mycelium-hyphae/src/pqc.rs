@@ -6,7 +6,7 @@
 //! A segurança é híbrida: o KEM protege contra quantum, o Noise provê
 //! autenticação ed25519. Ambos os segredos são combinados no handshake híbrido.
 //!
-//! Multiaddr: `/unix/mycelium-pqc/<pk_hex>`
+//! Multiaddr: `/unix/mycelium-pqc-<pk_hex>`
 
 use futures::channel::mpsc;
 use futures::future::{ready, Ready};
@@ -336,21 +336,22 @@ impl PqcTransport {
         &self.local_pk_hex
     }
 
-    /// Multiaddr de listen: `/tcp/<port>/unix/mycelium-pqc/<pk_hex>`
+    /// Multiaddr de listen: `/tcp/<port>/unix/mycelium-pqc-<pk_hex>`
     fn encode_multiaddr(&self, port: u16) -> Multiaddr {
-        let path = format!("mycelium-pqc/{}", self.local_pk_hex);
+        let path = format!("mycelium-pqc-{}", self.local_pk_hex);
         Multiaddr::empty()
             .with(Protocol::Tcp(port))
             .with(Protocol::Unix(path.into()))
     }
 
     fn parse_pk_hex(addr: &Multiaddr) -> Option<String> {
-        let mut iter = addr.iter();
-        let _port = iter.next()?; // Tcp
-        match iter.next()? {
-            Protocol::Unix(path) => path.strip_prefix("mycelium-pqc/").map(|s| s.to_string()),
+        addr.iter().find_map(|proto| match proto {
+            Protocol::Unix(path) => path
+                .strip_prefix("mycelium-pqc-")
+                .filter(|pk| !pk.is_empty())
+                .map(|pk| pk.to_string()),
             _ => None,
-        }
+        })
     }
 
     /// Extrai o host e porta de destino a partir do Multiaddr (suporta IPv4, IPv6 e DNS).
@@ -397,13 +398,16 @@ impl Transport for PqcTransport {
         id: ListenerId,
         addr: Multiaddr,
     ) -> Result<(), TransportError<Self::Error>> {
-        let port = match Self::parse_pk_hex(&addr) {
-            Some(_) => match addr.iter().next() {
-                Some(Protocol::Tcp(p)) => p,
-                _ => return Err(TransportError::MultiaddrNotSupported(addr)),
-            },
-            None => return Err(TransportError::MultiaddrNotSupported(addr)),
-        };
+        if Self::parse_pk_hex(&addr).is_none() {
+            return Err(TransportError::MultiaddrNotSupported(addr));
+        }
+        let port = addr
+            .iter()
+            .find_map(|proto| match proto {
+                Protocol::Tcp(port) => Some(port),
+                _ => None,
+            })
+            .ok_or_else(|| TransportError::MultiaddrNotSupported(addr.clone()))?;
         let bind = format!("0.0.0.0:{port}")
             .parse::<std::net::SocketAddr>()
             .map_err(|e| TransportError::Other(PqcTransportError::Msg(e.to_string())))?;
@@ -630,7 +634,7 @@ mod tests {
 
     #[test]
     fn pqc_multiaddr_roundtrip() {
-        let path = format!("mycelium-pqc/aabbccdd");
+        let path = format!("mycelium-pqc-aabbccdd");
         let addr = Multiaddr::empty()
             .with(Protocol::Tcp(4003))
             .with(Protocol::Unix(path.into()));
@@ -638,9 +642,26 @@ mod tests {
         assert_eq!(pk, "aabbccdd");
     }
 
+    #[tokio::test]
+    async fn pqc_transport_accepts_selector_listen_multiaddr() {
+        let mut transport = PqcTransport::new().unwrap();
+        let addr: Multiaddr = "/tcp/0/unix/mycelium-pqc-bootstrap".parse().unwrap();
+        Transport::listen_on(&mut transport, ListenerId::next(), addr)
+            .expect("PQC transport must accept its selector multiaddr");
+    }
+
+    #[tokio::test]
+    async fn pqc_built_transport_accepts_selector_listen_multiaddr() {
+        let key = libp2p::identity::Keypair::generate_ed25519();
+        let mut transport = build(&key).unwrap();
+        let addr: Multiaddr = "/tcp/0/unix/mycelium-pqc-bootstrap".parse().unwrap();
+        Transport::listen_on(&mut transport, ListenerId::next(), addr)
+            .expect("built PQC transport must accept selector multiaddr");
+    }
+
     #[test]
     fn pqc_remote_target_parsing() {
-        let path = "mycelium-pqc/aabbccdd";
+        let path = "mycelium-pqc-aabbccdd";
         let addr_v4 = Multiaddr::empty()
             .with(Protocol::Ip4([198, 51, 100, 1].into()))
             .with(Protocol::Tcp(4003))

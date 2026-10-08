@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>🍄 Mycelium Network — Vitrine da Floresta</title>
+  <style>
+    :root {
+      --bg: #07100b;
+      --surface: #0e1e16;
+      --surface-border: #1a3829;
+      --card-bg: rgba(16, 36, 27, 0.7);
+      --fg: #e2f7ed;
+      --muted: #7ba892;
+      --primary: #10b981;
+      --primary-glow: rgba(16, 185, 129, 0.25);
+      --cyan: #06b6d4;
+      --purple: #a855f7;
+      --gold: #f59e0b;
+      --red: #ef4444;
+      --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.08) 0px, transparent 50%),
+        radial-gradient(at 50% 50%, rgba(6, 182, 212, 0.05) 0px, transparent 60%);
+      color: var(--fg);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.6;
+      padding-bottom: 5rem;
+    }
+
+    header {
+      background: rgba(14, 30, 22, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--surface-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      font-size: 2rem;
+      filter: drop-shadow(0 0 10px var(--primary-glow));
+    }
+
+    .brand-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #e2f7ed, var(--primary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .node-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.4rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+    }
+
+    .hero h1 span.highlight {
+      background: linear-gradient(135deg, var(--primary), var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 44rem;
+      margin: 0 auto;
+    }
+
+    /* Navegação por Abas */
+    .tabs-nav {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      color: var(--muted);
+      padding: 0.75rem 1.4rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      border-color: var(--primary);
+      color: var(--fg);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.1));
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    .tab-pane {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Grid de Cards */
+    .showcase-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.75rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--surface-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .card-icon {
+      font-size: 1.75rem;
+      background: rgba(255, 255, 255, 0.05);
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .card-tagline {
+      font-size: 0.85rem;
+      color: var(--primary);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .card-body p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .feature-list {
+      list-style: none;
+      margin-bottom: 1.5rem;
+    }
+
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #cfe6db;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-list li::before {
+      content: "✔";
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    .code-block {
+      background: #040906;
+      border: 1px solid #142e20;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--cyan);
+      overflow-x: auto;
+      margin-bottom: 1.25rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--primary);
+      color: #041009;
+      font-weight: 700;
+      font-size: 0.9rem;
+      padding: 0.65rem 1.25rem;
+      border-radius: 10px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: #34d399;
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--fg);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+      box-shadow: none;
+    }
+
+    /* Video Player Demo Mockup */
+    .video-mockup {
+      background: #020604;
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+
+    .video-screen {
+      aspect-ratio: 16 / 9;
+      background: radial-gradient(circle at center, #133324 0%, #050e09 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .play-btn-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+      color: #041009;
+    }
+
+    .play-btn-circle:hover {
+      transform: scale(1.1);
+    }
+
+    .video-info-bar {
+      padding: 0.85rem 1rem;
+      background: rgba(10, 24, 17, 0.9);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+
+    /* Stats Banner */
+    .stats-bar {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 14px;
+      padding: 1.25rem 2rem;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--fg);
+      font-family: var(--font-mono);
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 4rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--surface-border);
+      padding-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <span class="brand-icon">🍄</span>
+      <div>
+        <div class="brand-title">Mycelium Network</div>
+        <div style="font-size: 0.75rem; color: var(--muted);">O Substrato Vivo do The Lattice</div>
+      </div>
+    </div>
+    <div class="node-badge">
+      <div class="pulse-dot"></div>
+      <span id="node-id-display">Nó Vivo: Conectando...</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <h1>A Nuvem Soberana <br/><span class="highlight">Sem Servidores Centrais</span></h1>
+      <p>A Mycelium Network substitui a infraestrutura da Big Tech por um organismo P2P vivo. Hospedagem web sem VPS, controle de código sem GitHub, streaming de vídeo sem YouTube e estúdio de jogos descentralizado.</p>
+    </section>
+
+    <!-- Barra de Estado do Organismo -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <div class="stat-val" id="stat-hosting">Ativo</div>
+        <div class="stat-label">Hospedagem P2P</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-val" id="stat-repos">0</div>
+        <div class="stat-label">Repositórios de Código</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-val" id="stat-channels">0</div>
+        <div class="stat-label">Canais de Vídeo</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-val" id="stat-games">0</div>
+        <div class="stat-label">Jogos na Store</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-val" style="color: var(--primary);" id="stat-sclerotium">Sclerotium ON</div>
+        <div class="stat-label">Economia & WoL</div>
+      </div>
+    </div>
+
+    <!-- Navegação de Abas -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('all')">🌟 Todos os Pilares</button>
+      <button class="tab-btn" onclick="switchTab('hosting')">🌐 Hospedagem Web</button>
+      <button class="tab-btn" onclick="switchTab('forge')">🐙 Substituto do GitHub</button>
+      <button class="tab-btn" onclick="switchTab('video')">📺 Concorrente do YouTube</button>
+      <button class="tab-btn" onclick="switchTab('games')">🕹️ Lojinha & Jogos</button>
+      <button class="tab-btn" onclick="switchTab('sclerotium')">🍄 Sclerotium & WoL</button>
+    </nav>
+
+    <!-- Conteúdo dos Pilares -->
+    <div class="showcase-grid">
+
+      <!-- Pilar 1: Hospedagem Web -->
+      <div class="card pilar-card" data-pilar="hosting">
+        <div class="card-header">
+          <div class="card-icon">🌐</div>
+          <div>
+            <div class="card-tagline">Adeus AWS, Vercel & VPS</div>
+            <div class="card-title">Hospedagem Soberana</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Hospede frontends e microserviços em Chambers isoladas do Vacuum ou CIDs imutáveis servidos pelo Singularity Event Horizon.</p>
+          <ul class="feature-list">
+            <li>Zero dependência de servidores centralizados ou cartão de crédito.</li>
+            <li>Roteamento direto por órbita no Event Horizon (:7474).</li>
+            <li>Proteção sandboxing nativa via Bubblewrap e Linux cgroups.</li>
+          </ul>
+          <div class="code-block">
+# Publica qualquer site estático ou binário:<br/>
+cargo run -p mycelium-cli -- sow --message "meu-site"<br/>
+# Acesso universal via Singularity:<br/>
+curl http://127.0.0.1:7474/webapp/
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+            <a href="/vitrine/premium" class="btn">Conteúdo premium (assinatura)</a>
+            <a href="/vitrine/api/subscription" class="btn btn-secondary">Ver plano</a>
+          </div>
+          <a href="/console" class="btn">Explorar Event Horizon</a>
+        </div>
+      </div>
+
+      <!-- Pilar 2: Substituto do GitHub -->
+      <div class="card pilar-card" data-pilar="forge">
+        <div class="card-header">
+          <div class="card-icon">🐙</div>
+          <div>
+            <div class="card-tagline">Adeus Microsoft & DMCA</div>
+            <div class="card-title">Forja Soberana de Código</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Distribuição de código sem servidores Git centrais. Árvores versionadas como Plots multi-leaf no SporeBank com navegador web integrado.</p>
+          <ul class="feature-list">
+            <li>Navegador de repositórios no Ion <code>/src/</code>.</li>
+            <li>Replicação via Kademlia DHT e Gossipsub em segundos.</li>
+            <li>Imune a remoções arbitrárias, bans ou censura de repositórios.</li>
+          </ul>
+          <div class="code-block">
+# Publica a árvore de código direto na malha:<br/>
+mycelium repo publish --message "v1.0" ./meu-app<br/>
+# Clona em qualquer máquina do mundo:<br/>
+mycelium repo clone Qm...
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a href="/src/" class="btn">Abrir Browser /src/</a>
+            <a href="/seeds/" class="btn btn-secondary">Seed Book</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pilar 3: Concorrente do YouTube -->
+      <div class="card pilar-card" data-pilar="video">
+        <div class="card-header">
+          <div class="card-icon">📺</div>
+          <div>
+            <div class="card-tagline">Adeus Algoritmos Predatórios</div>
+            <div class="card-title">Mycelium Video</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Mockup do Player -->
+          <div class="video-mockup">
+            <div class="video-screen">
+              <div class="play-btn-circle">▶</div>
+              <div style="position: absolute; bottom: 10px; font-size: 0.75rem; color: #a7f3d0; font-family: var(--font-mono);">
+                Chunk Streaming: 2MB BLAKE3 • P2P Swarm
+              </div>
+            </div>
+            <div class="video-info-bar">
+              <span style="font-weight: 600;">🍄 O Manifesto da Floresta Digital</span>
+              <span style="color: var(--primary);">Qm9f28...e1</span>
+            </div>
+          </div>
+
+          <p>Streaming descentralizado de áudio e vídeo de alta performance com canais criptográficos assinados por chave ed25519.</p>
+          <ul class="feature-list">
+            <li>Fatiamento de vídeo em pedaços de 2MB com verificação BLAKE3.</li>
+            <li>Canais soberanos com manifestos e playlists imutáveis.</li>
+            <li>App Next.js / React integrado pronto para rodar localmente.</li>
+          </ul>
+          <div class="code-block">
+# Publica um novo vídeo na rede:<br/>
+mycelium media publish video.mp4 --title "Doc P2P"<br/>
+# Fixa (pin) chunks no SporeBank local:<br/>
+mycelium media pin Qm...
+          </div>
+          <button class="btn" onclick="alert('App Mycelium Video pronto em: /media/bruno/SAMBOOK/Mycelium Video/Mycelium Video/')">Abrir Mycelium Video</button>
+        </div>
+      </div>
+
+      <!-- Pilar 4: Lojinha & Jogos Antigos -->
+      <div class="card pilar-card" data-pilar="games">
+        <div class="card-header">
+          <div class="card-icon">🕹️</div>
+          <div>
+            <div class="card-tagline">Preservação & Criatividade</div>
+            <div class="card-title">MicroEasy Studio & Store</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>Uma App Store descentralizada aliada a uma suíte de criação de jogos retrô e emulação com motores universais.</p>
+          <ul class="feature-list">
+            <li>Suporte para RetroArch, MAME, QEMU, WASM e P5.js Canvas.</li>
+            <li>Monetização voluntária via Nutrientes miceliais (ATP/Enzymes).</li>
+            <li>SDK MicroEasy Studio para desenvolvimento de jogos direto no navegador.</li>
+          </ul>
+          <div class="code-block">
+# Detecta emuladores instalados na máquina:<br/>
+mycelium store caps<br/>
+# Executa um jogo clássico do SporeBank:<br/>
+mycelium store launch --id doom-shareware --sandbox
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a href="/store/" class="btn">Abrir Mycelium Store</a>
+            <button class="btn btn-secondary" onclick="alert('SDK MicroEasy pronto em: /media/bruno/SAMBOOK/MicroEasy Studio LITE/microeasy-studio-p5-integration/')">MicroEasy Studio</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pilar 5: Sclerotium & Ghost Carrier -->
+      <div class="card pilar-card" data-pilar="sclerotium">
+        <div class="card-header">
+          <div class="card-icon">🌱</div>
+          <div>
+            <div class="card-tagline">Sustentabilidade Energética</div>
+            <div class="card-title">Sclerotium & Ghost Carrier</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>O nó não precisa ficar ligado 24/7 gastando 200W. Ele pode hibernar em modo escleródio e ser acordado sob demanda via rádio ou rede.</p>
+          <ul class="feature-list">
+            <li>Presença lógica delegada a proxies via <code>GhostLease</code>.</li>
+            <li>Despertar seletivo anti-DoS via <code>WakeToken</code> autenticado.</li>
+            <li>Integração com Wake-on-LAN Ethernet e microcontroladores LoRa.</li>
+          </ul>
+          <div class="code-block">
+# Gera a GhostLease antes de suspender a máquina:<br/>
+mycelium sclerotium lease --ttl-minutes 1440<br/>
+# Dispara impulso para acordar um nó dormente:<br/>
+mycelium sclerotium wake --target &lt;NodeId&gt; --mac 0c:cc:47:e5:8a:57
+          </div>
+          <button class="btn btn-secondary" onclick="alert('Interfaces Wake-on-LAN detectadas no host: enp44s0, wlp0s20f3!')">Status do Hardware WoL</button>
+        </div>
+      </div>
+
+    </div>
+
+    <footer>
+      <p>🍄 Mycelium Network — O Substrato Vivo do The Lattice • Código Aberto & Soberano • 2026</p>
+    </footer>
+  </main>
+
+  <script>
+    function switchTab(pilar) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      document.querySelectorAll('.pilar-card').forEach(card => {
+        if (pilar === 'all' || card.getAttribute('data-pilar') === pilar) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    // Carrega dados em tempo real da API do Vitrine Ion
+    async function loadOverview() {
+      try {
+        const res = await fetch('/vitrine/api/overview');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.node_id) {
+            document.getElementById('node-id-display').textContent = 'Nó: ' + data.node_id.substring(0, 16) + '...';
+          }
+          if (data.pillars) {
+            document.getElementById('stat-repos').textContent = data.pillars.forge.repos_count || 0;
+            document.getElementById('stat-channels').textContent = data.pillars.video.channels_count || 0;
+            document.getElementById('stat-games').textContent = data.pillars.games.games_count || 0;
+          }
+        }
+      } catch (e) {
+        console.log('Daemon offline ou aguardando inicialização:', e);
+      }
+    }
+
+    loadOverview();
+  </script>
+</body>
+</html>

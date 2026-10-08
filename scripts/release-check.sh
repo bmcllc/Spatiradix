@@ -10,7 +10,7 @@ command -v cargo >/dev/null || {
   exit 1
 }
 
-required=(README.md LICENSE docs/release-0.1.0.md deploy/Dockerfile deploy/mycelium-seed.service)
+required=(README.md LICENSE docs/reports/release-0.1.0.md deploy/Dockerfile deploy/mycelium-seed.service)
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "arquivo obrigatório ausente: $path" >&2; exit 1; }
 done

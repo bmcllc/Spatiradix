@@ -1,2 +1,30 @@
+# Cross-compilation Android (aarch64-linux-android24).
+#
+# ATENÇÃO: o caminho original abaixo é ABSOLUTO e específico desta
+# máquina. Como este arquivo é versionado, ele quebra o build Android
+# em qualquer outra máquina (o erro é confuso: linker not found).
+# Builds Linux nativos NÃO são afetados — esta seção só vale para o
+# alvo aarch64-linux-android.
+#
+# ---- ORIGEM (restaurar descomentando, e APAGANDO o bloco portátil) ----
+# [target.aarch64-linux-android]
+# linker = "/home/bruno/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+#
+# ---- PADRÃO PORTÁTIL (recomendado) ----
+# Duas opções, ambas sem caminho absoluto no repositório:
+#
+# 1) Variável de ambiente (sem configuração versionada):
+#      export ANDROID_NDK_HOME="$HOME/Android/Sdk/ndk/30.0.14904198"
+#      export CC_aarch64_linux_android="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+#      cargo build --target aarch64-linux-android
+#    O cargo lê CC_<target> da env; se seu toolchain/set não fizer isso,
+#    use a opção 2.
+#
+# 2) `cargo ndk` (recomendado — resolve o NDK sozinho):
+#      cargo install cargo-ndk
+#      cargo ndk -t android-24 -o ./dist build --release --target aarch64-linux-android
+#
+# Para sobrescrever localmente, crie ~/.cargo/config.toml: ele tem
+# precedência sobre este arquivo e não é versionado.
 [target.aarch64-linux-android]
-linker = "/home/bruno/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+# linker definido via CC_aarch64_linux_android ou cargo ndk (ver acima)

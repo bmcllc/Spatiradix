@@ -303,6 +303,8 @@ async fn root(State(table): State<HorizonTable>) -> impl IntoResponse {
         "hosts": hosts,
         "ions": ions.iter().map(|(n, u)| serde_json::json!({"ion": n, "upstream": u})).collect::<Vec<_>>(),
         "hint": "GET /{ion}/  — rizomorfo proxya até a Chamber",
+        "hub": "/hub/",
+        "vitrine": "/vitrine/",
         "console": "/console",
     });
     (StatusCode::OK, [(header::CONTENT_TYPE, "application/json")], body.to_string())
@@ -353,7 +355,7 @@ async fn console(State(table): State<HorizonTable>) -> impl IntoResponse {
   <h1>Event Horizon</h1>
   <p>Console do Singularity — ions em órbita neste nó. Cada link passa pelo rizomorfo até a Vacuum Chamber.</p>
   <ul>{items}</ul>
-  <p class="meta"><a href="/catalog">catálogo JSON</a> · <a href="/">JSON</a> · <a href="/health">health</a></p>
+  <p class="meta"><a href="/hub/">📦 Code Hub</a> · <a href="/vitrine/">🍄 Vitrine da Floresta</a> · <a href="/catalog">catálogo JSON</a> · <a href="/">JSON</a> · <a href="/health">health</a></p>
 </body>
 </html>"#
     );

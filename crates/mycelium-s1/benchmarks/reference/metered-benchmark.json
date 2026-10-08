@@ -1,0 +1,28 @@
+{
+  "scope": "Model::evaluate plus Ed25519 ticket verification and an in-memory quota counter",
+  "config": {
+    "iterations": 10000,
+    "warmup": 1000
+  },
+  "machine": {
+    "os": "linux",
+    "architecture": "x86_64",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11260H @ 2.60GHz",
+    "logical_cpus": 12,
+    "optimized_build": true
+  },
+  "actions": 4,
+  "features": 3,
+  "allowed_actions": 4,
+  "scalar_type": "f64",
+  "median_ns": 34254,
+  "p95_ns": 60735,
+  "p99_ns": 80469,
+  "min_ns": 31408,
+  "max_ns": 208551,
+  "mean_ns": 40952.8566,
+  "metered": true,
+  "allowance_evaluations_consumed": 11000,
+  "counter_persistence": "memory_only_benchmark",
+  "network_requests": 0
+}

@@ -26,7 +26,7 @@ use mycelium_sporebank::{
 use mycelium_tropical::{MyceliumPhase, PhysarumNetwork};
 use plasma::{Charge, Cloud, Ion};
 use singularity::{serve_horizon, EventHorizon, HorizonHandle, HorizonTable, Orbit};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -233,6 +233,24 @@ pub struct Organism {
     #[cfg(feature = "veil")]
     veil_failure_reasons: Vec<String>,
     ion_hosts: HashMap<String, String>,
+    /// Catálogo da Mycelium Store. Este `Arc<Mutex<StoreCatalog>>` é COMPARTILHADO
+    /// com `crates/mycelium-store`, que o recebe em `StoreAppState::catalog` e o
+    /// serve por HTTP — as duas pontas precisam concordar sobre o contrato:
+    /// - Tolerância a `Poison`: o `Poison` deixa de ser absorvido em silêncio.
+    ///   Toda aquisição passa por `catalog_locked` (abaixo), que faz `match` ao
+    ///   RESULTADO do `lock()`: `Ok` segue, `Err(poisoned)` é registado e
+    ///   recusado com `CatalogError::Poisoned`. A tolerância continua a valer
+    ///   APENAS para VIVACIDADE (o nó e a API seguem respondendo); ela NÃO é
+    ///   garantia de correção — o índice recuperado é revalidado por
+    ///   `StoreCatalog::validate` contra `catalog.json` ANTES de ser consumido.
+    /// - `crates/mycelium-store` mantém esse tratamento idêntico: o seu
+    ///   `catalog_locked` observa o mesmo `Poison` no mesmo ponto e chama a
+    ///   mesma `validate()`. Divergir entre as duas pontas é o que reintroduz o
+    ///   estado partido (uma ponte viva, a outra em recusa permanente), e é o
+    ///   que esta duplicação impede.
+    /// - Nenhum guarda é mantido através de trabalho bloqueante ou que possa entrar
+    ///   em pânico (fork/exec, escrita em disco): o necessário é clonado sob o
+    ///   guarda e o guarda é descartado antes.
     catalog: std::sync::Arc<std::sync::Mutex<mycelium_store::StoreCatalog>>,
     home: PathBuf,
     /// Identidade de assinatura (GhostID/NIP-01) para a Micelial Value Layer.
@@ -262,6 +280,8 @@ pub struct Organism {
     known_repos: HashMap<String, (String, String, String, NodeId)>,
     /// Migrações aceitas pendentes de IonMigrate (autenticação de fluxo).
     pending_accepted_migrations: HashSet<String>,
+    /// Inbox efêmera S1 LIVE. Nunca é persistida em disco.
+    s1_live_inbox: VecDeque<(u64, String)>,
 }
 
 fn ensure_repo_publishable(plot: &Plot) -> Result<(), OrganismError> {
@@ -332,8 +352,12 @@ impl Organism {
         let listen: Vec<_> = config
             .listen
             .iter()
-            .filter_map(|s| s.parse().ok())
-            .collect();
+            .map(|s| {
+                s.parse().map_err(|e| {
+                    OrganismError::Msg(format!("listen multiaddr inválido {s:?}: {e}"))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let announce_ip = config
             .announce_ip
@@ -579,6 +603,7 @@ impl Organism {
             last_scaling_offer: HashMap::new(),
             known_repos: HashMap::new(),
             pending_accepted_migrations: HashSet::new(),
+            s1_live_inbox: VecDeque::new(),
         };
 
         // Restaura catálogo de peers do estado persistido.
@@ -605,6 +630,53 @@ impl Organism {
 
     pub fn home(&self) -> &Path {
         &self.store.root
+    }
+
+    /// Adquire o catálogo partilhado com `crates/mycelium-store` sob o MESMO
+    /// contrato do HTTP bridge — `catalog_locked` em
+    /// `crates/mycelium-store/src/lib.rs`. É a peça que torna verdadeiro o
+    /// "tratamento idêntico" prometido no campo `catalog`.
+    ///
+    /// Duas peças, e as duas importam:
+    /// - O `Poison` é observado no RESULTADO do `lock()`, nunca no guard: um
+    ///   `MutexGuard` vindo de um `Ok` não transporta informação de
+    ///   envenenamento, e é por isso que não existe `is_poisoned()` a
+    ///   consultar. O `unwrap_or_else(|e| e.into_inner())` que estava nos três
+    ///   sites RECUPERAVA o estado de um mutex envenenado e follow-up
+    ///   consumia-o sem revalidação — exatamente o caminho que o bridge HTTP
+    ///   passou a recusar.
+    /// - `validate()` é chamado em CADA aquisição: o índice em memória tem de
+    ///   concordar com `catalog.json`. Sem isto, o daemon era fail-ENORME e o
+    ///   bridge fail-closed sobre o MESMO `Arc<Mutex<StoreCatalog>>` — duas
+    ///   respostas diferentes ao mesmo estado partido.
+    ///
+    /// `StoreLaunch` é o caso mais sensível: o registro clonado daqui decide
+    /// caminho de executável e flags de emulador, ou seja, o que é executado
+    /// neste host. Um registro não revalidado aí é o que o bridge nunca
+    /// devolveria.
+    ///
+    /// Custo: uma releitura de `catalog.json` por aquisição — o mesmo custo,
+    /// e a mesma escolha de não otimizar, documentados em `catalog_locked` no
+    /// crate da store.
+    fn catalog_locked(
+        &self,
+    ) -> Result<
+        std::sync::MutexGuard<'_, mycelium_store::StoreCatalog>,
+        mycelium_store::CatalogError,
+    > {
+        let guard = match self.catalog.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::error!(
+                    "[Mycelium Organism] catalog_locked: mutex do catálogo envenenado: {poisoned}"
+                );
+                return Err(mycelium_store::CatalogError::Poisoned(
+                    "mutex do catálogo envenenado",
+                ));
+            }
+        };
+        guard.validate()?;
+        Ok(guard)
     }
 
     pub fn persist(&mut self) -> Result<(), OrganismError> {
@@ -1429,6 +1501,33 @@ impl Organism {
             if self.enable_nostr_transport {
                 let _ = self.hyphae.send_nostr_fallback(&bytes);
             }
+        }
+    }
+
+    fn signed_peer_binding(&self) -> mycelium_core::PeerBinding {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let node_id = self.gland.node_id();
+        let peer_id = self.hyphae.peer_id().to_string();
+        let expires_at = now + 3600;
+        let payload = mycelium_core::PeerBinding::sign_payload(&node_id, &peer_id, expires_at);
+        mycelium_core::PeerBinding {
+            node_id,
+            peer_id,
+            public_key: self.gland.verifying_key().to_bytes().to_vec(),
+            expires_at,
+            signature: self.gland.sign_bytes(&payload),
+        }
+    }
+
+    fn announce_peer_binding(&mut self) {
+        let binding = self.signed_peer_binding();
+        match self.hyphae.broadcast_peer_binding(binding) {
+            Ok(true) => tracing::debug!("peer binding anunciado"),
+            Ok(false) => tracing::debug!("peer binding aguardando subscriber"),
+            Err(e) => tracing::debug!(error=%e, "peer binding publish"),
         }
     }
 
@@ -3067,6 +3166,61 @@ impl Organism {
     async fn handle_control(&mut self, req: Request) -> Response {
         match req {
             Request::Status => Response::Status(Box::new(self.status_report())),
+            Request::S1LiveSend { target, payload, expires_at_ms } => {
+                let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                if expires_at_ms <= now_ms || expires_at_ms.saturating_sub(now_ms) > 300_000 {
+                    Response::Err { message: "s1 live TTL inválido/expirado".into() }
+                } else if payload.as_bytes().len() > 65_536 {
+                    Response::Err { message: "s1 live payload excede 64 KiB".into() }
+                } else {
+                    let peer = target.parse::<NodeId>().ok()
+                        .and_then(|node| self.hyphae.resolve_peer(&node))
+                        .or_else(|| target.parse::<libp2p::PeerId>().ok());
+                    match peer {
+                        None => Response::Err { message: "s1 live target sem binding PeerId".into() },
+                        Some(peer) => {
+                            let frame = serde_json::json!({
+                                "expires_at_ms": expires_at_ms,
+                                "payload": payload,
+                            });
+                            match serde_json::to_vec(&frame)
+                                .map_err(|e| e.to_string())
+                                .and_then(|bytes| self.hyphae.send_s1_live(peer, bytes).map_err(|e| e.to_string()))
+                            {
+                                Ok(true) => Response::Ok { message: "s1 live entregue ao mesh".into() },
+                                Ok(false) => Response::Err { message: "s1 live peer não está vivo/inscrito".into() },
+                                Err(message) => Response::Err { message },
+                            }
+                        }
+                    }
+                }
+            }
+            Request::S1LivePoll { limit } => {
+                if !(1..=64).contains(&limit) {
+                    Response::Err { message: "s1 live poll limit inválido".into() }
+                } else {
+                    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                    self.s1_live_inbox.retain(|(expires, _)| *expires > now_ms);
+                    let mut messages = Vec::new();
+                    for _ in 0..limit {
+                        match self.s1_live_inbox.pop_front() {
+                            Some((_, payload)) => messages.push(payload),
+                            None => break,
+                        }
+                    }
+                    Response::S1LiveMessages { messages }
+                }
+            }
+            Request::S1LiveBindings => {
+                let mut bindings = self.hyphae.s1_live_bindings();
+                bindings.sort();
+                Response::S1LiveBindingsResult {
+                    bindings: bindings
+                        .into_iter()
+                        .map(|(node, peer)| format!("{node}:{peer}"))
+                        .collect(),
+                }
+            }
             Request::Sow {
                 message,
                 path,
@@ -3350,8 +3504,23 @@ impl Organism {
                 Response::Ok { message: msg.trim().to_string() }
             }
             Request::StoreList => {
-                let catalog = self.catalog.lock().unwrap();
-                let spores: Vec<_> = catalog.list_public_spores().into_iter().cloned().collect();
+                // Leitura pura, sem E/S nem bloqueio: o `Vec` de espores é clonado
+                // do catálogo e o guarda morre ao fim do braço do `match`. Espelha
+                // `list_spores_handler` em `crates/mycelium-store/src/lib.rs` —
+                // revalidação pelo `catalog_locked` daqui incluída, senão este
+                // site responderia com um índice que a ponte HTTP já recusa.
+                let spores: Vec<_> = match self.catalog_locked() {
+                    Ok(catalog) => catalog
+                        .list_public_spores()
+                        .into_iter()
+                        .cloned()
+                        .collect(),
+                    Err(e) => {
+                        return Response::Err {
+                            message: format!("catálogo recusado (StoreList): {e}"),
+                        }
+                    }
+                };
                 Response::StoreList { spores }
             }
             Request::StoreCaps => {
@@ -3359,14 +3528,37 @@ impl Organism {
                 Response::StoreCaps { caps }
             }
             Request::StoreLaunch { id, engine, sandbox } => {
-                let catalog = self.catalog.lock().unwrap();
-                let spore = match catalog.get_spore(&id) {
-                    Some(s) => s,
-                    None => return Response::Err {
-                        message: format!("spore '{}' não encontrado no catálogo", id),
-                    },
+                // O guarda do catálogo NÃO pode atravessar `EmulatorRunner::launch`
+                // (fork/exec, possivelmente via `bwrap`): segurar o mutex durante o
+                // spawn bloqueia todo leitor do mesmo `Arc` — inclusive os handlers
+                // HTTP da store — e o spawn é fonte de poison. Clona o spore sob o
+                // guarda e descarta-o antes de qualquer trabalho bloqueante; mesmo
+                // padrão de `launch_spore_handler` em `crates/mycelium-store/src/lib.rs`.
+                // FAIL-CLOSED, igual ao bridge: o registro aqui DECIDE caminho de
+                // executável e flags de emulador, ou seja, o que este host passa a
+                // executar — o mesmo `Arc` recusado pelo HTTP não pode sair daqui
+                // como um registro recuperado. Ver `catalog_locked`.
+                let spore = {
+                    let catalog = match self.catalog_locked() {
+                        Ok(catalog) => catalog,
+                        Err(e) => {
+                            tracing::error!(
+                                "[Mycelium Organism] StoreLaunch: catálogo recusado (campo `catalog`): {e}"
+                            );
+                            return Response::Err {
+                                message: format!("catálogo recusado (StoreLaunch): {e}"),
+                            };
+                        }
+                    };
+                    match catalog.get_spore(&id) {
+                        Some(s) => s.clone(),
+                        None => {
+                            return Response::Err {
+                                message: format!("spore '{}' não encontrado no catálogo", id),
+                            }
+                        }
+                    }
                 };
-                let spore = spore.clone();
                 let caps = mycelium_store::EmulatorRunner::detect_capabilities();
                 let forced = engine.as_deref().map(|e| {
                     use mycelium_store::ExecutionEngineType;
@@ -3394,7 +3586,17 @@ impl Organism {
                 }
             }
             Request::StorePublish { id, title, platform } => {
-                let mut catalog = self.catalog.lock().unwrap();
+                // O guarda do catálogo é adquirido só na inserção: o parsing da
+                // plataforma e a montagem do `SoftwareSpore` não tocam o estado
+                // compartilhado e acontecem antes do lock. `insert_spore(&mut self)`
+                // grava `catalog.json` por dentro, então manter a exclusão ali é
+                // obrigatório — `&mut` não pode ser dividido — e a janela fica
+                // limitada a essa única escrita, que `crates/mycelium-store` passou a
+                // fazer de forma atômica (temp + rename). A resposta é montada com o
+                // guarda já descartado. Ver `catalog_locked`: a revalidação
+                // acontece ANTES da inserção, porque um `insert_spore` escreve
+                // `catalog.json` por inteiro — por cima de um índice já partido
+                // apagaria a divergência, e com ela a prova dela.
                 let plat = platform.to_lowercase();
                 let platform = match plat.as_str() {
                     "snes" => mycelium_store::TargetPlatform::SNES,
@@ -3431,7 +3633,21 @@ impl Organism {
                     extra_args: vec![],
                     cover_image_url: None,
                 };
-                catalog.insert_spore(spore).map(|_| {
+                let outcome = {
+                    let mut catalog = match self.catalog_locked() {
+                        Ok(catalog) => catalog,
+                        Err(e) => {
+                            tracing::error!(
+                                "[Mycelium Organism] StorePublish: catálogo recusado (campo `catalog`): {e}"
+                            );
+                            return Response::Err {
+                                message: format!("catálogo recusado (StorePublish): {e}"),
+                            };
+                        }
+                    };
+                    catalog.insert_spore(spore)
+                };
+                outcome.map(|_| {
                     Response::Ok {
                         message: format!("spore '{}' registrado no catálogo", id),
                     }
@@ -4075,7 +4291,13 @@ impl Organism {
                                 )
                             });
                             let bytes = sess.as_ref().map(|s| s.bytes_routed).unwrap_or(0);
-                            let layers = sess.as_ref().map(|s| s.active_layers).unwrap_or(7);
+                            // Honestidade operacional: `active_layers` reflete as camadas
+                            // que REALMENTE atuam no caminho de dados, não as que existem
+                            // implementadas. O `LayerPipeline` de 7 camadas não está ligado
+                            // à produção (o tráfego real passa por `planes::live` + `bridge`),
+                            // então o número honesto é 0 — não 7. Ver o aviso em
+                            // `mycelium_veil::layers`.
+                            let layers = eng.wired_layer_count();
                             let mode_str = match eng.config().mode {
                                 mycelium_veil::VeilMode::Veil => "veil",
                                 mycelium_veil::VeilMode::Geo => "geo",
@@ -4218,7 +4440,22 @@ impl Organism {
             let _ = axum::serve(listener, app).await;
         });
 
-        // Expõe o browser de código soberano (ion `src`) no Event Horizon.
+        // S1 uses this node's operator-owned configuration and ledger.
+        let s1_horizon = self.horizon.clone();
+        let s1_home = self.home.clone();
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                Ok(listener) => {
+                    let local = listener.local_addr().expect("local addr");
+                    s1_horizon.write().unwrap().expose("s1.mycelium", Orbit {
+                        ion: "s1".into(), node: NodeId::derive(b"s1"), mass: 100,
+                        resistance: 0, upstream: format!("http://{}", local),
+                    });
+                    let _ = axum::serve(listener, mycelium_s1::configured_router(s1_home)).await;
+                }
+                Err(error) => tracing::error!(%error, "S1 ion bind failed"),
+            }
+        });
         let src_home = self.home.clone();
         let src_horizon = self.horizon.clone();
         tokio::spawn(async move {
@@ -4281,6 +4518,78 @@ impl Organism {
                     Orbit {
                         ion: "seeds".into(),
                         node: NodeId::derive(b"seeds"),
+                        mass: 100,
+                        resistance: 0,
+                        upstream: format!("http://{}", local),
+                    },
+                );
+            }
+            let _ = axum::serve(listener, app).await;
+        });
+
+        // Expõe a Vitrine Soberana (ion `vitrine`) no Event Horizon.
+        let vitrine_home = self.home.clone();
+        let vitrine_horizon = self.horizon.clone();
+        tokio::spawn(async move {
+            let app = crate::vitrine_ion::create_vitrine_router(&vitrine_home);
+            let vitrine_bind: std::net::SocketAddr = "127.0.0.1:0"
+                .parse()
+                .expect("bind valid");
+            let listener = match tokio::net::TcpListener::bind(vitrine_bind).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(error = %e, "falha ao escutar vitrine server");
+                    return;
+                }
+            };
+            let local = listener.local_addr().expect("local addr");
+            tracing::info!(
+                url = %format!("http://127.0.0.1:{}/vitrine/", local),
+                "mycelium vitrine ion escutando"
+            );
+            {
+                let mut table = vitrine_horizon.write().unwrap();
+                table.expose(
+                    "vitrine.mycelium",
+                    Orbit {
+                        ion: "vitrine".into(),
+                        node: NodeId::derive(b"vitrine"),
+                        mass: 100,
+                        resistance: 0,
+                        upstream: format!("http://{}", local),
+                    },
+                );
+            }
+            let _ = axum::serve(listener, app).await;
+        });
+
+        // Expõe o Code Hub soberano (ion `hub`) no Event Horizon.
+        let hub_home = self.home.clone();
+        let hub_horizon = self.horizon.clone();
+        tokio::spawn(async move {
+            let app = crate::hub_ion::create_hub_router(&hub_home);
+            let hub_bind: std::net::SocketAddr = "127.0.0.1:0"
+                .parse()
+                .expect("bind valid");
+            let listener = match tokio::net::TcpListener::bind(hub_bind).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(error = %e, "falha ao escutar hub server");
+                    return;
+                }
+            };
+            let local = listener.local_addr().expect("local addr");
+            tracing::info!(
+                url = %format!("http://127.0.0.1:{}/hub/", local),
+                "mycelium code hub ion escutando"
+            );
+            {
+                let mut table = hub_horizon.write().unwrap();
+                table.expose(
+                    "hub.mycelium",
+                    Orbit {
+                        ion: "hub".into(),
+                        node: NodeId::derive(b"hub"),
                         mass: 100,
                         resistance: 0,
                         upstream: format!("http://{}", local),
@@ -4371,6 +4680,9 @@ impl Organism {
                 }
 
                 _ = physarum_tick.tick() => {
+                    if self.hyphae.connected_neighbors() > 0 {
+                        self.announce_peer_binding();
+                    }
                     self.physarum_tick(0.5);
                 }
 
@@ -4691,6 +5003,7 @@ impl Organism {
                         Some(HyphaEvent::NeighborSniffed { peer })
                         | Some(HyphaEvent::Anastomosis { peer }) => {
                             tracing::info!(%peer, "hifa viva");
+                            self.announce_peer_binding();
                             if !secreted {
                                 if let Ok(true) = self.hyphae.secrete(pheromone_bytes.clone()) {
                                     secreted = true;
@@ -4710,6 +5023,29 @@ impl Organism {
                         Some(HyphaEvent::Atrophy { peer }) => {
                             tracing::debug!(%peer, "hifa atrofiada");
                             self.check_auto_materialize_orphaned_services();
+                        }
+                        Some(HyphaEvent::S1LiveReceived { from, data }) => {
+                            const MAX_S1_LIVE_INBOX: usize = 256;
+                            if data.len() > 70_000 {
+                                tracing::warn!(%from, "s1 live frame excede limite");
+                            } else if let Ok(frame) = serde_json::from_slice::<serde_json::Value>(&data) {
+                                let expires = frame.get("expires_at_ms").and_then(|v| v.as_u64());
+                                let payload = frame.get("payload").and_then(|v| v.as_str());
+                                let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                match (expires, payload) {
+                                    (Some(exp), Some(payload)) if exp > now_ms && exp.saturating_sub(now_ms) <= 300_000
+                                        && payload.as_bytes().len() <= 65_536 =>
+                                    {
+                                        if self.s1_live_inbox.len() >= MAX_S1_LIVE_INBOX {
+                                            self.s1_live_inbox.pop_front();
+                                        }
+                                        self.s1_live_inbox.push_back((exp, payload.to_string()));
+                                    }
+                                    _ => tracing::warn!(%from, "s1 live frame inválido/expirado"),
+                                }
+                            } else {
+                                tracing::warn!(%from, "s1 live frame JSON inválido");
+                            }
                         }
                         Some(HyphaEvent::DtnBundleReceived { from: _, bundle }) => {
                             let is_local = bundle.dst_node == Some(self.gland.node_id())

@@ -1,4 +1,42 @@
 //! As 7 Camadas de Privacidade e Anonimato do Mycelium VEIL Ω (Fusão ET-COSMIC-OLD).
+//!
+//! AVISO DE STATUS: estas 7 camadas **não estão no caminho de dados de produção**.
+//! Leia o banner de comentário logo abaixo antes de usar este módulo.
+
+// ============================================================================
+// AVISO HONESTO — `LayerPipeline` NÃO ESTÁ NO CAMINHO DE DADOS DE PRODUÇÃO
+// ============================================================================
+//
+// STATUS: **PROJETADO, NÃO LIGADO** (*designed, not wired*).
+//
+// O `LayerPipeline` definido aqui (as 7 camadas, ~976 linhas em `layer0_identity`
+// … `layer6_zerotrace`) NÃO participa do tráfego real:
+//
+// * Os únicos chamadores de `LayerPipeline::process`/`recover` são
+//   `VeilEngine::route` e `VeilEngine::decode` (em `crate::lib.rs`), e ambos são
+//   exercitados **apenas pelos testes** deste crate.
+// * O caminho de dados de produção é outro: `LiveCircuitClient`
+//   (`connect` / `connect_production` / `connect_via_entries`), `VeilHopRouter`,
+//   `BridgeRelay` e `EntryPool`, em `planes/live.rs` e `bridge.rs`. Nenhum desses
+//   símbolos toca este pipeline.
+// * A única coisa de `layers/` reaproveitada fora do módulo é o helper estático
+//   `ObfuscationLayer::generate_poisson_delay_ms`, usado por `planes/mix.rs` —
+//   que, por sua vez, também não é instanciado pelo nó.
+//
+// CONSEQUÊNCIA PARA A TELEMETRIA: o operador NÃO deve ser informado de que "7
+// camadas estão ativas". `VeilEngine::wired_layer_count()` (crate::lib.rs)
+// devolve 0 enquanto o pipeline não estiver ligado, e é esse número que alimenta
+// `VeilStatusResult::active_layers`, reportado por `Request::VeilStatus` em
+// `mycelium-node`. `VeilSession::active_layers` segue a mesma regra, e
+// `VeilEngine::new` também emite um `tracing::warn!` no arranque do nó, para que
+// essa condição fique visível em tempo de execução e não apenas no código.
+//
+// POR QUE O MÓDULO ESTÁ AQUI: as camadas são compiladas, tipadas e testadas, e
+// documentam o comportamento pretendido. O módulo é mantido **de propósito** — nenhuma
+// camada foi removida. Ligá-las ao plano LIVE é uma mudança arquitetural grande
+// (encapsulamento dentro da célula de 512 bytes, ordem de recuperação e contrato de
+// metadados do `LiveCircuit`) e está FORA DO ESCOPO desta correção de honestidade.
+// ============================================================================
 
 pub mod layer0_identity;
 pub mod layer1_fragmentation;
@@ -37,6 +75,9 @@ pub trait VeilLayer: Send + Sync {
 }
 
 /// Pipeline orquestrador das 7 camadas de processamento.
+///
+/// ATENÇÃO: este pipeline **não está ligado ao caminho de dados de produção** —
+/// ver o banner no topo deste módulo.
 pub struct LayerPipeline {
     pub layers: Vec<Box<dyn VeilLayer>>,
 }

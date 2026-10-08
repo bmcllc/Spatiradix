@@ -14,3 +14,64 @@
 **/target/
 .opencode/node_modules/
 .git-base-backup/
+
+# Projeto S1 independente, com repositório próprio
+/S1-BPF-source-update/
+/S1-BPF-source-update old/
+
+# -----------------------------------------------------------------------
+# Artefatos de build, caches de tooling e snapshots superados.
+#
+# ATENÇÃO: .gitignore NÃO deixa de rastrear arquivos que JÁ estão
+# rastreados. Para os itens abaixo que já foram commitados, é preciso
+# rodar `git rm --cached` uma única vez. Isso é exatamente o que
+# ./scripts/housekeeping.sh faz na seção B — e o que NÃO apaga nada
+# do disco: os arquivos continuam lá, só saem do índice.
+# -----------------------------------------------------------------------
+
+# Saída de build empacotada: contém binários compilados por arquitetura
+# (ex.: dist/mycelium-android-arm64, ELF ARM64 de ~24 MB adicionado em
+# a6cc5c7). Artefato de release, nunca versionado.
+/dist/
+
+# Dependências vendorizadas e caches de ferramentas de análise
+# (graphify-out/ carrega cache/ast/, cache/semantic/, graph.json e
+# snapshots datados — tudo reproduzível rodando a ferramenta).
+/vendor/
+/graphify-out/
+
+# Workspaces legados e cópias arquivadas de fonte.
+/ET-COSMIC-OLD/
+
+# S1/ é o projeto BPF independente, espelhado de S1-BPF-source-update/.
+/S1/
+
+# Configuração local da máquina (ex.: config/economy). Parâmetros de
+# execução, não configuração versionada do repositório.
+/config/
+
+# __pycache__/ é gerado pelo interpretador a partir dos *.py em scripts/.
+__pycache__/
+
+# Snapshots compactados e diffs de migração:
+#   crates_old.tar.gz e mycelium-evolucao-crates.tar.gz — cópias da
+#     árvore mycelium-evolucao-crates/, descompactada e removida em
+#     1b262b9; o tarball ficou órfão (4 dos 6 crates são idênticos à
+#     fonte viva).
+#   mycelium-evolucao.patch — patch da mesma migração.
+#   docs.zip — cópia de docs/.
+*.tar.gz
+*.zip
+*.patch
+
+# *.bin cobre blobs binários soltos. Caso concreto: x.bin NÃO é um
+# binário — são 8,7 KB de texto Markdown com extensão .bin (provável
+# renomeação acidental). Versioná-lo com o nome certo (x.md) ou
+# removê-lo do índice; de todo modo binários avulsos não entram aqui.
+*.bin
+
+# Config local do OpenCode (credencial de provedor) — nunca versionar.
+xs
+
+# Config local do OpenCode (contém API key de provedor) — nunca versionar.
+opencode.json

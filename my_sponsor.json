@@ -1,0 +1,15 @@
+{
+  "address": "0x54d25371559f4ad7bBA334FFC0d009C0ba42d5d9",
+  "leaderAddress": "0x1111111111111111111111111111111111111111",
+  "riskAddress":   "0x2222222222222222222222222222222222222222",
+  "chainAddress":  "0x3333333333333333333333333333333333333333",
+  "socketPath":   "/tmp/sponsor.sock",
+  "tokenFile":    "/tmp/sponsor.token",
+  "replayDb":    "/tmp/sponsor-replay.db",
+  "nonceDb":     "/tmp/sponsor-nonce.db",
+  "executionDb": "/tmp/sponsor-exec.db",
+  "keystore":    "/tmp/sponsor-keystore.json",
+  "passwordFile": "/tmp/sponsor.pass",
+  "rpcUrl":      "http://127.0.0.1:8545",
+  "allowMainnetBroadcast": false
+}

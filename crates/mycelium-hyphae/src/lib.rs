@@ -57,6 +57,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub const PHEROMONE_TOPIC: &str = "mycelium/pheromones/v1";
 /// Tópico do protocolo Lattice (Plots, Signals, Vectors).
 pub const LATTICE_TOPIC: &str = "mycelium/lattice/v1";
+pub const PEER_BINDING_TOPIC: &str = "mycelium/peer-binding/v1";
+/// Prefixo dos canais financeiros LIVE. Cada nó assina apenas o próprio tópico.
+pub const S1_LIVE_TOPIC_PREFIX: &str = "/mycelium/s1-live/";
 
 /// Erros da camada de hifas.
 #[derive(Debug, thiserror::Error)]
@@ -175,6 +178,11 @@ pub enum HyphaEvent {
     DtnBundleReceived {
         from: PeerId,
         bundle: DtnBundle,
+    },
+    /// Mensagem financeira LIVE recebida. Nunca é persistida nem encaminhada via DTN.
+    S1LiveReceived {
+        from: PeerId,
+        data: Vec<u8>,
     },
 }
 
@@ -309,6 +317,8 @@ pub struct HyphaeNode {
     pheromone_topic: gossipsub::IdentTopic,
     lattice_topic: gossipsub::IdentTopic,
     relay_mesh_topic: gossipsub::IdentTopic,
+    peer_binding_topic: gossipsub::IdentTopic,
+    s1_live_topic: gossipsub::IdentTopic,
     links: HashMap<PeerId, HyphaLink>,
     listen_addrs: Vec<Multiaddr>,
     metrics: HyphaMetrics,
@@ -475,6 +485,8 @@ impl HyphaeNode {
         let pheromone_topic = gossipsub::IdentTopic::new(PHEROMONE_TOPIC);
         let lattice_topic = gossipsub::IdentTopic::new(LATTICE_TOPIC);
         let relay_mesh_topic = gossipsub::IdentTopic::new(RELAY_MESH_TOPIC);
+        let peer_binding_topic = gossipsub::IdentTopic::new(PEER_BINDING_TOPIC);
+        let s1_live_topic = gossipsub::IdentTopic::new(format!("{}{}", S1_LIVE_TOPIC_PREFIX, swarm.local_peer_id()));
         swarm
             .behaviour_mut()
             .gossipsub
@@ -489,6 +501,16 @@ impl HyphaeNode {
             .behaviour_mut()
             .gossipsub
             .subscribe(&relay_mesh_topic)
+            .map_err(|e| HyphaeError::Germination(e.to_string()))?;
+        swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&peer_binding_topic)
+            .map_err(|e| HyphaeError::Germination(e.to_string()))?;
+        swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&s1_live_topic)
             .map_err(|e| HyphaeError::Germination(e.to_string()))?;
 
         let dtn_topic = gossipsub::IdentTopic::new(format!("/mycelium/dtn/{}", swarm.local_peer_id()));
@@ -560,6 +582,8 @@ impl HyphaeNode {
             pheromone_topic,
             lattice_topic,
             relay_mesh_topic,
+            peer_binding_topic,
+            s1_live_topic,
             links: HashMap::new(),
             listen_addrs: Vec::new(),
             metrics: HyphaMetrics::default(),
@@ -730,14 +754,37 @@ impl HyphaeNode {
 
     /// Registra um binding autenticado entre NodeId (The Lattice) e PeerId (Hyphae).
     pub fn register_peer_binding(&mut self, binding: mycelium_core::PeerBinding) {
-        if binding.is_identity_consistent() {
+        if binding.is_valid(now_secs()) {
             self.peer_bindings.insert(binding.node_id, binding);
         }
+    }
+
+    /// Publica um binding NodeId -> PeerId assinado. Não usa DTN.
+    pub fn broadcast_peer_binding(
+        &mut self,
+        binding: mycelium_core::PeerBinding,
+    ) -> Result<bool, HyphaeError> {
+        if !binding.is_valid(now_secs()) {
+            return Err(HyphaeError::Gossip("peer binding inválido".into()));
+        }
+        let bytes = serde_json::to_vec(&binding)
+            .map_err(|e| HyphaeError::Gossip(e.to_string()))?;
+        self.publish(self.peer_binding_topic.clone(), bytes)
     }
 
     /// Resolve o PeerId de transporte a partir de um NodeId lógico do The Lattice.
     pub fn resolve_peer(&self, node_id: &mycelium_core::NodeId) -> Option<PeerId> {
         self.peer_bindings.get(node_id).and_then(|b| b.peer_id.parse::<PeerId>().ok())
+    }
+
+    /// Bindings NodeId -> PeerId já convergidos na malha. Somente leitura; usado por
+    /// diagnóstico operacional e por testes de convergência antes do envio LIVE.
+    pub fn s1_live_bindings(&self) -> Vec<(String, String)> {
+        self.peer_bindings
+            .iter()
+            .filter(|(_, b)| b.peer_id.parse::<PeerId>().is_ok())
+            .map(|(node, b)| (node.to_string(), b.peer_id.clone()))
+            .collect()
     }
 
     /// Encaminha o bundle para o próximo salto mais próximo (XOR 256-bit) ou armazena se inacessível.
@@ -1084,6 +1131,18 @@ impl HyphaeNode {
     /// Publica no tópico Lattice (Plots, Signals, Vectors).
     pub fn broadcast_lattice(&mut self, data: Vec<u8>) -> Result<bool, HyphaeError> {
         self.publish(self.lattice_topic.clone(), data)
+    }
+
+    /// Envia uma mensagem financeira LIVE diretamente ao tópico efêmero do peer.
+    /// Não há store-and-forward, DHT, mailbox ou fallback: sem assinante vivo = false.
+    pub fn send_s1_live(&mut self, peer: PeerId, data: Vec<u8>) -> Result<bool, HyphaeError> {
+        let connected = self.links.get(&peer).map(|l| l.connected).unwrap_or(false);
+        if !connected {
+            return Ok(false);
+        }
+        self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        let topic = gossipsub::IdentTopic::new(format!("{}{}", S1_LIVE_TOPIC_PREFIX, peer));
+        self.publish(topic, data)
     }
 
     fn publish(
@@ -1460,6 +1519,23 @@ impl HyphaeNode {
                         link.strengthen(1);
                     }
                     let topic = message.topic.as_str();
+                    if topic == PEER_BINDING_TOPIC {
+                        if let Ok(binding) = serde_json::from_slice::<mycelium_core::PeerBinding>(&message.data) {
+                            if message.source.map(|p| p.to_string()) == Some(binding.peer_id.clone()) {
+                                self.register_peer_binding(binding);
+                            }
+                        }
+                        continue;
+                    }
+                    if topic == self.s1_live_topic.hash().as_str() {
+                        if let Some(from) = message.source {
+                            return Some(HyphaEvent::S1LiveReceived {
+                                from,
+                                data: message.data,
+                            });
+                        }
+                        continue;
+                    }
                     if topic.starts_with("/mycelium/dtn/") {
                         if let Ok(bundle) = serde_json::from_slice::<DtnBundle>(&message.data) {
                             if self.dtn_store.is_seen(&bundle.bundle_id) {

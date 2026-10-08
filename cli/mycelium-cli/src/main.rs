@@ -395,10 +395,42 @@ enum Commands {
         #[command(subcommand)]
         action: RepoCmd,
     },
+    /// Code Hub: central soberana de repositórios e forja de código Git P2P.
+    Hub {
+        /// Porta do Event Horizon onde o hub está servido (default: 7474).
+        #[arg(long, default_value_t = 7474)]
+        port: u16,
+    },
     /// Infraestrutura pós-quântica de privacidade VEIL Ω (SOCKS5, Onion Routing, Anti-SSRF).
     Veil {
         #[command(subcommand)]
         action: VeilCmd,
+    },
+    /// Mycelium Media: streaming, publicação e gestão de áudio e vídeo soberano (zero VPS).
+    Media {
+        #[command(subcommand)]
+        action: MediaCmd,
+    },
+    /// Gerencia canais descentralizados assinados por GhostID.
+    Channel {
+        #[command(subcommand)]
+        action: ChannelCmd,
+    },
+    /// Gerencia playlists descentralizadas.
+    Playlist {
+        #[command(subcommand)]
+        action: PlaylistCmd,
+    },
+    /// Protocolo Sclerotium: nós dormentes, GhostLease e despertar seletivo (Ghost Carrier / WoL).
+    Sclerotium {
+        #[command(subcommand)]
+        action: SclerotiumCmd,
+    },
+    /// Assinatura de conteúdo premium: plano, emissão e verificação de acesso.
+    /// Site + serviço por assinatura sem hospedagem, sem domínio e sem VPS.
+    Sub {
+        #[command(subcommand)]
+        action: SubCmd,
     },
 }
 
@@ -450,6 +482,166 @@ enum VeilCmd {
     Stop,
     /// Exibe o descritor criptográfico assinado deste nó (para compartilhar com clientes).
     Descriptor,
+}
+
+#[derive(Subcommand)]
+enum MediaCmd {
+    /// Publica um arquivo de vídeo na rede, fatiando em chunks com ContentId BLAKE3.
+    Publish {
+        /// Caminho do arquivo de vídeo local.
+        file: PathBuf,
+        /// Título do vídeo.
+        #[arg(long)]
+        title: Option<String>,
+        /// Canal associado.
+        #[arg(long, default_value = "ch_soberano")]
+        channel: String,
+        /// Descrição do vídeo.
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Tipo de conteúdo: longform, short, doc.
+        #[arg(long, default_value = "longform")]
+        content_type: String,
+        /// Licença (ex: CC-BY-SA-4.0, AGPL-3.0).
+        #[arg(long, default_value = "CC-BY-SA-4.0")]
+        license: String,
+        /// Tags separadas por vírgula.
+        #[arg(long, default_value = "p2p,media")]
+        tags: String,
+        /// Tamanho do chunk em MB (default 2).
+        #[arg(long, default_value_t = 2)]
+        chunk_mb: usize,
+    },
+    /// Inspeciona ou assiste a um vídeo publicado na rede via ContentId.
+    Watch {
+        /// ContentId do vídeo (Qm...).
+        cid: String,
+    },
+    /// Fixa um vídeo/chunk localmente no SporeBank para garantir persistência.
+    Pin {
+        /// ContentId a fixar.
+        cid: String,
+    },
+    /// Remove fixação local.
+    Unpin {
+        /// ContentId a desfixar.
+        cid: String,
+    },
+    /// Lista conteúdos fixados (pinned) no SporeBank local.
+    Pins,
+}
+
+#[derive(Subcommand)]
+enum ChannelCmd {
+    /// Cria um novo canal assinado com a identidade deste nó.
+    Create {
+        handle: String,
+        display_name: String,
+        #[arg(long, default_value = "")]
+        bio: String,
+    },
+    /// Publica/atualiza o manifesto do canal no SporeBank.
+    Publish {
+        channel_id: String,
+    },
+    /// Inspeciona o canal pelo ID.
+    Show {
+        channel_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PlaylistCmd {
+    /// Cria uma nova playlist soberana.
+    Create {
+        title: String,
+        #[arg(long, default_value = "")]
+        description: String,
+    },
+    /// Adiciona um vídeo (ContentId) a uma playlist.
+    Add {
+        playlist_id: String,
+        video_cid: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SclerotiumCmd {
+    /// Exibe o status de escleródio, leases ativas e interfaces de rede físicas detectadas.
+    Status,
+    /// Inspeciona o hardware de rede local para capacidades de Wake-on-LAN (WoL/ethtool).
+    Hardware,
+    /// Cria e assina uma GhostLease criptográfica para delegação a proxies vizinhos.
+    Lease {
+        /// Tempo de validade da lease em minutos (default: 1440 min = 24 horas).
+        #[arg(long, default_value_t = 1440)]
+        ttl_minutes: u64,
+        /// Proxies autorizados (NodeIds em hex separados por vírgula). Se omitido, aberto ao quórum.
+        #[arg(long, value_delimiter = ',')]
+        proxies: Vec<String>,
+        /// Endereço MAC para despertar via Ethernet WoL (ex: 00:11:22:33:44:55). Auto-detectado se omitido.
+        #[arg(long)]
+        mac: Option<String>,
+    },
+    /// Envia um sinal de despertar (ImpulsePacket + Magic Packet WoL) para um nó dormente.
+    Wake {
+        /// NodeId de destino (64 caracteres hex).
+        #[arg(long)]
+        target: String,
+        /// Endereço MAC de destino (ex: 00:11:22:33:44:55).
+        #[arg(long)]
+        mac: String,
+        /// Razão do despertar (urgent_compute, exclusive_content, direct_session, operator_manual).
+        #[arg(long, default_value = "urgent_compute")]
+        reason: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubCmd {
+    /// Publica o plano de assinatura (preço, período e endereço de recebimento) para o site exibir.
+    Plan {
+        /// Preço em USDC.
+        #[arg(long)]
+        usdc: f64,
+        /// Duração de cada período de assinatura, em dias.
+        #[arg(long)]
+        days: u32,
+        /// Endereço que recebe o pagamento (USDC na Base: 0x + 40 hex).
+        #[arg(long)]
+        recipient: String,
+    },
+    /// Emite a lease de assinatura de um assinante, atrelada a um pagamento (uma tx = uma lease).
+    Issue {
+        /// NodeId do assinante (64 hex) — obtido com `mycelium sclerotium status` no nó dele.
+        #[arg(long)]
+        subscriber: String,
+        /// Hash da tx de pagamento (64 hex). Reutilizar o mesmo hash é recusado (anti double-spend).
+        #[arg(long)]
+        payment_tx: String,
+        /// Duração em dias. Default: período do plano publicado.
+        #[arg(long)]
+        days: Option<u32>,
+        /// Sobrepõe o período: validade alvo em timestamp Unix (aceita o passado — usado
+        /// para provar expiração ao vivo e para concessões de janela explícita).
+        #[arg(long)]
+        valid_until: Option<u64>,
+        /// Marca que a tx foi verificada on-chain (`mycelium-economy verify-base-usdc`).
+        #[arg(long)]
+        payment_verified: bool,
+        /// Caminho da lease emitida. Default: {home}/premium/leases/<assinante>.json (JSON compacto).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Verifica uma lease de assinatura (assinatura ed25519, validade e capacidade). Exit 0 = válida.
+    Verify {
+        /// Arquivo da lease (JSON compacto ou pretty).
+        #[arg(long)]
+        lease: PathBuf,
+        /// NodeId esperado do portador — confere se a lease foi emitida para ele.
+        #[arg(long)]
+        subscriber: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -910,7 +1102,23 @@ fn main() {
         }
         Commands::Store { action } => store_cmd(&home, action),
         Commands::Repo { action } => rt.block_on(repo_cmd(&home, action)),
+        Commands::Hub { port } => {
+            println!("[🍄 Code Hub] O Hub Soberano de Repositórios está disponível em:");
+            println!("    👉 Web UI : http://127.0.0.1:{port}/hub/");
+            println!("    👉 API    : http://127.0.0.1:{port}/hub/api/repos");
+            println!();
+            println!("Comandos rápidos para gerenciar repositórios:");
+            println!("    mycelium repo publish --dir ./projeto --repository meu-repo --branch main");
+            println!("    mycelium repo clone --cid Qm... --dest ./copia");
+            println!("    mycelium repo validate --cid Qm...");
+            Ok(())
+        }
         Commands::Veil { action } => rt.block_on(veil_cmd(&home, action)),
+        Commands::Media { action } => rt.block_on(media_cmd(&home, action)),
+        Commands::Channel { action } => rt.block_on(channel_cmd(&home, action)),
+        Commands::Playlist { action } => rt.block_on(playlist_cmd(&home, action)),
+        Commands::Sclerotium { action } => rt.block_on(sclerotium_cmd(&home, action)),
+        Commands::Sub { action } => sub_cmd(&home, action),
     };
 
     if let Err(e) = result {
@@ -2414,7 +2622,12 @@ fn print_response(resp: Response) -> Result<(), String> {
                 println!("    mac_efêmero: {mac}");
             }
             println!("    kill_switch: {kill_switch}");
-            println!("    camadas    : {active_layers}/7 ativas");
+            println!("    camadas    : {active_layers}/7 camadas ligadas ao tráfego real");
+            if active_layers < 7 {
+                // O `LayerPipeline` de 7 camadas está projetado, não ligado à produção:
+                // o número acima é o que REALMENTE atua, não o que existe implementado.
+                println!("    pipeline   : 7 camadas projetadas, ainda não ligado ao tráfego");
+            }
             println!("    tráfego    : {bytes_routed} bytes");
             if let Some(ea) = entrada_ativa {
                 println!("    ponte ativa: {ea}");
@@ -2543,6 +2756,18 @@ fn print_response(resp: Response) -> Result<(), String> {
             println!("[🍄] Cotas do ativo {asset}:");
             for h in holdings {
                 println!("    • Holder {}: {} cotas", hex::encode(h.holder), h.shares);
+            }
+            Ok(())
+        }
+        Response::S1LiveMessages { messages } => {
+            for message in messages {
+                println!("{message}");
+            }
+            Ok(())
+        }
+        Response::S1LiveBindingsResult { bindings } => {
+            for binding in bindings {
+                println!("{binding}");
             }
             Ok(())
         }
@@ -3247,3 +3472,748 @@ fn mycelium_store_list_local(home: &PathBuf) -> Result<Vec<String>, String> {
     ids.sort();
     Ok(ids)
 }
+
+async fn media_cmd(home: &PathBuf, action: MediaCmd) -> Result<(), String> {
+    use mycelium_core::ContentId;
+    use mycelium_media::{ingest_video, PinManager, VideoManifest};
+
+    let sporebank_dir = home.join("sporebank");
+    let media_dir = sporebank_dir.join("media");
+    let chunks_dir = sporebank_dir.join("chunks");
+    let pins_file = sporebank_dir.join("pinned_media.json");
+    std::fs::create_dir_all(&media_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&chunks_dir).map_err(|e| e.to_string())?;
+
+    match action {
+        MediaCmd::Publish {
+            file,
+            title,
+            channel,
+            description,
+            content_type,
+            license,
+            tags,
+            chunk_mb,
+        } => {
+            if !file.is_file() {
+                return Err(format!("Arquivo não encontrado: {:?}", file));
+            }
+            let data = std::fs::read(&file).map_err(|e| format!("Erro lendo arquivo: {e}"))?;
+            let title_str = title.unwrap_or_else(|| {
+                file.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Vídeo Soberano".into())
+            });
+            let tag_list: Vec<String> = tags
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            let node_id_str = NodeStore::open(home)
+                .ok()
+                .and_then(|ns| ns.load_or_create_gland().ok())
+                .map(|g| g.node_id().to_string())
+                .unwrap_or_else(|| "0000000000000000000000000000000000000000000000000000000000000000".to_string());
+
+            let video_id = format!(
+                "vid_{}",
+                hex::encode(&blake3::hash(format!("{}:{}", title_str, data.len()).as_bytes()).as_bytes()[..8])
+            );
+
+            let chunk_bytes = chunk_mb.max(1) * 1024 * 1024;
+            println!("[🍄 Media] Fatiando vídeo '{}' ({} bytes, chunks de {}MB)...", title_str, data.len(), chunk_mb);
+
+            let result = ingest_video(
+                &video_id,
+                &node_id_str,
+                &channel,
+                &title_str,
+                &description,
+                &content_type,
+                0,
+                &license,
+                tag_list,
+                &data,
+                Some(chunk_bytes),
+            );
+
+            // Persist chunks
+            for chunk in &result.raw_chunks {
+                let chunk_path = chunks_dir.join(format!("{}.bin", chunk.info.content_id));
+                std::fs::write(&chunk_path, &chunk.data).map_err(|e| format!("Erro salvando chunk: {e}"))?;
+            }
+
+            // Persist manifest
+            let manifest_json = serde_json::to_string_pretty(&result.manifest)
+                .map_err(|e| format!("Erro serializando manifesto: {e}"))?;
+            let manifest_path = media_dir.join(format!("{}.json", result.manifest_cid));
+            std::fs::write(&manifest_path, &manifest_json)
+                .map_err(|e| format!("Erro salvando manifesto: {e}"))?;
+
+            // Pin locally
+            if let Ok(pins) = PinManager::open(&pins_file) {
+                pins.pin(result.manifest_cid);
+                for c in &result.raw_chunks {
+                    pins.pin(c.info.content_id);
+                }
+            }
+
+            // Announce to daemon via IPC if socket exists
+            let sock = home.join("mycelium.sock");
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::Sow {
+                        message: format!("media:{}", result.manifest.title),
+                        path: format!("media/{}.json", result.manifest_cid),
+                        content: manifest_json,
+                        qel: None,
+                        nostr: false,
+                        ghost: false,
+                        recipient: None,
+                    },
+                )
+                .await;
+            }
+
+            println!("\n[🍄 Media] ✅ Vídeo publicado com sucesso na malha soberana!");
+            println!("    Título       : {}", result.manifest.title);
+            println!("    Canal        : {}", result.manifest.channel_id);
+            println!("    ContentId    : {}", result.manifest_cid);
+            println!("    Fragmentos   : {} chunks (BLAKE3 endereçados)", result.raw_chunks.len());
+            println!("    Tamanho      : {} bytes", result.manifest.total_byte_size);
+            println!("    Licença      : {}", result.manifest.license);
+            println!("    Armazenamento: Zero VPS (chunks distribuídos localmente no SporeBank)");
+            println!("\nComandos úteis:");
+            println!("    Inspecionar : mycelium media watch {}", result.manifest_cid);
+            println!("    Fixar       : mycelium media pin {}", result.manifest_cid);
+            println!("    EventHorizon: http://127.0.0.1:7474/plots/{}", result.manifest_cid);
+
+            Ok(())
+        }
+        MediaCmd::Watch { cid } => {
+            let manifest_path = media_dir.join(format!("{cid}.json"));
+            if !manifest_path.is_file() {
+                return Err(format!("Manifesto de vídeo '{cid}' não encontrado localmente em {:?}", manifest_path));
+            }
+            let data = std::fs::read(&manifest_path).map_err(|e| e.to_string())?;
+            let manifest: VideoManifest = serde_json::from_slice(&data).map_err(|e| format!("Manifesto inválido: {e}"))?;
+
+            println!("\n[🍄 Media] 📺 Vídeo Soberano — {}", manifest.title);
+            println!("    ID           : {}", manifest.video_id);
+            println!("    Canal        : {}", manifest.channel_id);
+            println!("    Autor        : {}", manifest.author_pubkey);
+            println!("    Formato      : {} ({})", manifest.content_type, manifest.resolution);
+            println!("    Tamanho      : {} bytes", manifest.total_byte_size);
+            println!("    Licença      : {}", manifest.license);
+            println!("    Tags         : {}", manifest.tags.join(", "));
+            println!("\n    Fragmentos (Chunks):");
+
+            let mut available = 0;
+            for chunk in &manifest.chunks {
+                let chunk_path = chunks_dir.join(format!("{}.bin", chunk.content_id));
+                let exists = chunk_path.is_file();
+                if exists {
+                    available += 1;
+                }
+                let status = if exists { "✓ disponível" } else { "✗ remoto/ausente" };
+                println!("      #{} [{}] {} bytes — {}", chunk.index, chunk.content_id, chunk.byte_size, status);
+            }
+
+            println!("\n    Disponibilidade Local: {}/{} chunks ({:.1}%)", available, manifest.chunks.len(), (available as f64 / manifest.chunks.len().max(1) as f64) * 100.0);
+            Ok(())
+        }
+        MediaCmd::Pin { cid } => {
+            let id = ContentId::from_str(&cid).map_err(|_| format!("ContentId inválido: '{cid}'"))?;
+            let pins = PinManager::open(&pins_file).map_err(|e| e.to_string())?;
+            pins.pin(id);
+            println!("[🍄 Media] 📌 Conteúdo {} fixado com sucesso no SporeBank local.", id);
+            Ok(())
+        }
+        MediaCmd::Unpin { cid } => {
+            let id = ContentId::from_str(&cid).map_err(|_| format!("ContentId inválido: '{cid}'"))?;
+            let pins = PinManager::open(&pins_file).map_err(|e| e.to_string())?;
+            if pins.unpin(&id) {
+                println!("[🍄 Media] 🔓 Conteúdo {} desfixado com sucesso.", id);
+            } else {
+                println!("[🍄 Media] Conteúdo {} não estava fixado.", id);
+            }
+            Ok(())
+        }
+        MediaCmd::Pins => {
+            let pins = PinManager::open(&pins_file).map_err(|e| e.to_string())?;
+            let list = pins.list_pins();
+            println!("\n[🍄 Media] Conteúdos Fixados (Pinned) no Nó Local: {}", list.len());
+            for id in list {
+                println!("  • {}", id);
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn channel_cmd(home: &PathBuf, action: ChannelCmd) -> Result<(), String> {
+    use mycelium_media::ChannelStore;
+
+    let channels_dir = home.join("sporebank").join("channels");
+    let store = ChannelStore::open(&channels_dir).map_err(|e| e.to_string())?;
+
+    match action {
+        ChannelCmd::Create { handle, display_name, bio } => {
+            let node_id_str = NodeStore::open(home)
+                .ok()
+                .and_then(|ns| ns.load_or_create_gland().ok())
+                .map(|g| g.node_id().to_string())
+                .unwrap_or_else(|| "0000000000000000000000000000000000000000000000000000000000000000".to_string());
+
+            let manifest = store.create_channel(
+                &handle,
+                &display_name,
+                &node_id_str,
+                &bio,
+                "CC-BY-SA-4.0",
+            );
+
+            let cid = manifest.content_id().map_err(|e| e.to_string())?;
+
+            // Anounce to daemon if running
+            let sock = home.join("mycelium.sock");
+            if sock.exists() {
+                if let Ok(manifest_json) = serde_json::to_string_pretty(&manifest) {
+                    let _ = call(
+                        &sock,
+                        Request::Sow {
+                            message: format!("channel:{}", manifest.handle),
+                            path: format!("channels/{}.json", manifest.channel_id),
+                            content: manifest_json,
+                            qel: None,
+                            nostr: false,
+                            ghost: false,
+                            recipient: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+
+            println!("\n[🍄 Canal] ✅ Canal soberano criado com sucesso!");
+            println!("    ID           : {}", manifest.channel_id);
+            println!("    Handle       : @{}", manifest.handle);
+            println!("    Nome         : {}", manifest.display_name);
+            println!("    Proprietário : {}", manifest.owner_pubkey);
+            println!("    ContentId    : {}", cid);
+            println!("    Revisão      : {}", manifest.revision);
+            Ok(())
+        }
+        ChannelCmd::Publish { channel_id } => {
+            let manifest = store.get_channel(&channel_id)
+                .ok_or_else(|| format!("Canal '{}' não encontrado localmente.", channel_id))?;
+
+            let sock = home.join("mycelium.sock");
+            if sock.exists() {
+                let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+                let _ = call(
+                    &sock,
+                    Request::Sow {
+                        message: format!("channel:{}", manifest.handle),
+                        path: format!("channels/{}.json", manifest.channel_id),
+                        content: manifest_json,
+                        qel: None,
+                        nostr: false,
+                        ghost: false,
+                        recipient: None,
+                    },
+                )
+                .await;
+                println!("[🍄 Canal] ✅ Canal {} propagado na malha via gossipsub.", channel_id);
+            } else {
+                println!("[🍄 Canal] Canal {} salvo localmente (inicie o daemon para propagação em tempo real).", channel_id);
+            }
+            Ok(())
+        }
+        ChannelCmd::Show { channel_id } => {
+            let manifest = store.get_channel(&channel_id)
+                .ok_or_else(|| format!("Canal '{}' não encontrado localmente.", channel_id))?;
+
+            println!("\n[🍄 Canal] Canal Soberano: {}", manifest.display_name);
+            println!("    ID           : {}", manifest.channel_id);
+            println!("    Handle       : @{}", manifest.handle);
+            println!("    Bio          : {}", manifest.bio);
+            println!("    Proprietário : {}", manifest.owner_pubkey);
+            println!("    Revisão      : {}", manifest.revision);
+            println!("    Vídeos ({})  :", manifest.videos.len());
+            for v in manifest.videos {
+                println!("      • {}", v);
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn playlist_cmd(home: &PathBuf, action: PlaylistCmd) -> Result<(), String> {
+    use mycelium_core::ContentId;
+    use mycelium_media::PlaylistService;
+
+    let playlists_dir = home.join("sporebank").join("playlists");
+    std::fs::create_dir_all(&playlists_dir).map_err(|e| e.to_string())?;
+
+    match action {
+        PlaylistCmd::Create { title, description } => {
+            let node_id_str = NodeStore::open(home)
+                .ok()
+                .and_then(|ns| ns.load_or_create_gland().ok())
+                .map(|g| g.node_id().to_string())
+                .unwrap_or_else(|| "0000000000000000000000000000000000000000000000000000000000000000".to_string());
+
+            let playlist_id = format!(
+                "pl_{}",
+                hex::encode(&blake3::hash(format!("{}:{}", title, node_id_str).as_bytes()).as_bytes()[..8])
+            );
+
+            let manifest = PlaylistService::create_playlist(
+                &playlist_id,
+                &node_id_str,
+                &title,
+                &description,
+                Vec::new(),
+            );
+
+            PlaylistService::save(&manifest, &playlists_dir).map_err(|e| e.to_string())?;
+
+            println!("\n[🍄 Playlist] ✅ Playlist criada!");
+            println!("    ID       : {}", manifest.playlist_id);
+            println!("    Título   : {}", manifest.title);
+            println!("    Autor    : {}", manifest.owner_pubkey);
+            println!("    Revisão  : {}", manifest.revision);
+            Ok(())
+        }
+        PlaylistCmd::Add { playlist_id, video_cid } => {
+            let mut manifest = PlaylistService::load(&playlist_id, &playlists_dir)
+                .map_err(|e| format!("Erro carregando playlist: {e}"))?;
+
+            let cid = ContentId::from_str(&video_cid)
+                .map_err(|_| format!("ContentId inválido: '{video_cid}'"))?;
+
+            PlaylistService::append_video(&mut manifest, cid);
+            PlaylistService::save(&manifest, &playlists_dir).map_err(|e| e.to_string())?;
+
+            println!("\n[🍄 Playlist] ✅ Vídeo adicionado à playlist!");
+            println!("    Playlist : {} ({})", manifest.title, manifest.playlist_id);
+            println!("    Vídeo CID: {}", cid);
+            println!("    Total    : {} vídeos (revisão {})", manifest.videos.len(), manifest.revision);
+            Ok(())
+        }
+    }
+}
+
+async fn sclerotium_cmd(home: &PathBuf, action: SclerotiumCmd) -> Result<(), String> {
+    use mycelium_core::NodeId;
+    use mycelium_sclerotium::{
+        EthernetCarrier, GhostCarrier, GhostLease, ImpulsePacket, LeaseCapability,
+        WakeEndpoint, WakeReason, WakeToken,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let sclerotium_dir = home.join("sclerotium");
+    std::fs::create_dir_all(&sclerotium_dir).map_err(|e| e.to_string())?;
+    let lease_file = sclerotium_dir.join("lease.json");
+
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    match action {
+        SclerotiumCmd::Status => {
+            println!("\n[🍄 Sclerotium] Estado do Protocolo de Dormência e Ghost Carrier");
+            let gland_opt = NodeStore::open(home).ok().and_then(|ns| ns.load_or_create_gland().ok());
+            if let Some(gland) = &gland_opt {
+                println!("    NodeId Local      : {}", gland.node_id());
+            } else {
+                println!("    NodeId Local      : [não inicializado - execute `mycelium sprout`]");
+            }
+
+            println!("\n  Interfaces Físicas Locais (Ghost Carrier Ethernet / WoL):");
+            let macs = EthernetCarrier::detect_local_macs();
+            if macs.is_empty() {
+                println!("    (nenhuma interface física com MAC detectada)");
+            } else {
+                for (mac, iface) in &macs {
+                    let mac_str = format!(
+                        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                    );
+                    println!("    • Interface {:<10} MAC: {}", iface, mac_str);
+                }
+            }
+
+            println!("\n  GhostLease Local:");
+            if lease_file.exists() {
+                if let Ok(bytes) = std::fs::read(&lease_file) {
+                    if let Ok(lease) = serde_json::from_slice::<GhostLease>(&bytes) {
+                        let valid = lease.verify(now_secs).is_ok();
+                        println!("    Origem            : {}", lease.origin_node_id);
+                        println!("    Época             : {}", lease.epoch);
+                        println!("    Válida até        : {} (agora: {})", lease.valid_until, now_secs);
+                        println!("    Estado            : {}", if valid { "✅ ATIVA / VÁLIDA" } else { "❌ EXPIRADA" });
+                        println!("    Capacidades       : {:?}", lease.capabilities);
+                        println!("    Proxies Delegados : {}", if lease.authorized_proxies.is_empty() { "Aberto ao quórum de vizinhos".to_string() } else { format!("{:?}", lease.authorized_proxies) });
+                        println!("    Endpoints Wake    : {:?}", lease.wake_endpoints);
+                    } else {
+                        println!("    (arquivo de lease corrompido)");
+                    }
+                }
+            } else {
+                println!("    (nenhuma lease ativa gerada - execute `mycelium sclerotium lease` antes de suspender)");
+            }
+            Ok(())
+        }
+        SclerotiumCmd::Hardware => {
+            println!("\n[🍄 Sclerotium] Diagnóstico de Hardware e Portadoras Físicas");
+            let macs = EthernetCarrier::detect_local_macs();
+            println!("  Interfaces de Rede Ethernet / 802.11 detectadas: {}", macs.len());
+            for (mac, iface) in &macs {
+                let mac_str = format!(
+                    "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+                );
+                let operstate = std::fs::read_to_string(format!("/sys/class/net/{}/operstate", iface))
+                    .unwrap_or_else(|_| "desconhecido".into());
+                println!("    • [{}] MAC: {} (estado: {})", iface, mac_str, operstate.trim());
+            }
+
+            println!("\n  Compatibilidade com Padrões:");
+            println!("    • Linux ethtool / Wake-on-LAN : Suportado via pacotes Magic Packet SecureON");
+            println!("    • IEEE 802.11ba WUR           : Compatível conceitualmente via ImpulsePacket de 50B");
+            println!("    • MCU Sidecar (ESP32/RP2040)  : Compatível via Ghost Carrier Serial/LoRa");
+            Ok(())
+        }
+        SclerotiumCmd::Lease { ttl_minutes, proxies, mac } => {
+            let gland = NodeStore::open(home)
+                .map_err(|e| e.to_string())?
+                .load_or_create_gland()
+                .map_err(|e| format!("Erro carregando gland: {e}"))?;
+
+            let valid_until = now_secs + (ttl_minutes * 60);
+            let mut authorized_proxies = Vec::new();
+            for p in proxies {
+                if let Ok(id) = NodeId::from_str(&p) {
+                    authorized_proxies.push(id);
+                }
+            }
+
+            let mut wake_endpoints = Vec::new();
+            let mac_bytes = if let Some(m) = mac {
+                let parts: Vec<&str> = m.split(':').collect();
+                if parts.len() != 6 {
+                    return Err("Endereço MAC deve ter formato XX:XX:XX:XX:XX:XX".into());
+                }
+                let mut b = [0u8; 6];
+                for (i, p) in parts.iter().enumerate() {
+                    b[i] = u8::from_str_radix(p, 16).map_err(|_| "Byte hexadecimal inválido no MAC")?;
+                }
+                Some(b)
+            } else {
+                EthernetCarrier::detect_local_macs().first().map(|(b, _)| *b)
+            };
+
+            if let Some(mac_arr) = mac_bytes {
+                wake_endpoints.push(WakeEndpoint::EthernetWol { mac_address: mac_arr });
+            }
+
+            let capabilities = vec![
+                LeaseCapability::AdvertiseContent,
+                LeaseCapability::ReceiveMail,
+                LeaseCapability::QueueJobs,
+                LeaseCapability::RelayWake,
+            ];
+
+            let lease = GhostLease::create(
+                &gland,
+                1,
+                valid_until,
+                rand::random(),
+                authorized_proxies,
+                capabilities,
+                vec![],
+                wake_endpoints,
+            );
+
+            let json_str = serde_json::to_string_pretty(&lease).map_err(|e| e.to_string())?;
+            std::fs::write(&lease_file, json_str).map_err(|e| e.to_string())?;
+
+            println!("\n[🍄 Sclerotium] ✅ GhostLease criada e assinada com sucesso!");
+            println!("    Nó de Origem      : {}", lease.origin_node_id);
+            println!("    Válida até        : {} (por {} minutos)", lease.valid_until, ttl_minutes);
+            println!("    Capacidades       : {:?}", lease.capabilities);
+            println!("    Endpoints Wake    : {:?}", lease.wake_endpoints);
+            println!("    Arquivo Salvo     : {}", lease_file.display());
+            println!("    Agora você pode suspender o hardware. Os proxies manterão sua presença!");
+            Ok(())
+        }
+        SclerotiumCmd::Wake { target, mac, reason } => {
+            let target_node = NodeId::from_str(&target)
+                .map_err(|_| format!("NodeId alvo inválido: '{target}'"))?;
+
+            let parts: Vec<&str> = mac.split(':').collect();
+            if parts.len() != 6 {
+                return Err("Endereço MAC deve ter formato XX:XX:XX:XX:XX:XX".into());
+            }
+            let mut mac_arr = [0u8; 6];
+            for (i, p) in parts.iter().enumerate() {
+                mac_arr[i] = u8::from_str_radix(p, 16).map_err(|_| "Byte hexadecimal inválido no MAC")?;
+            }
+
+            let wake_reason = match reason.to_lowercase().as_str() {
+                "urgent_compute" | "compute" => WakeReason::UrgentCompute,
+                "exclusive_content" | "content" => WakeReason::ExclusiveContent,
+                "direct_session" | "session" => WakeReason::DirectSession,
+                "operator_manual" | "manual" => WakeReason::OperatorManual,
+                _ => WakeReason::UrgentCompute,
+            };
+
+            let gland = NodeStore::open(home)
+                .map_err(|e| e.to_string())?
+                .load_or_create_gland()
+                .map_err(|e| format!("Erro carregando gland: {e}"))?;
+
+            let requester_id = gland.node_id();
+
+            // Deriva chave de wake sintética
+            let dummy_key = [0x42; 32];
+            let token = WakeToken::new(
+                &dummy_key,
+                target_node,
+                requester_id,
+                now_secs,
+                rand::random(),
+                wake_reason,
+            );
+
+            let impulse = ImpulsePacket::from_token(&token);
+            let carrier = EthernetCarrier::new(9);
+            let endpoint = WakeEndpoint::EthernetWol { mac_address: mac_arr };
+
+            carrier.send_impulse(&endpoint, &impulse).map_err(|e| e.to_string())?;
+
+            println!("\n[🍄 Sclerotium] ⚡ Impulso de despertar disparado com sucesso!");
+            println!("    Nó Alvo    : {}", target_node);
+            println!("    MAC Destino: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                mac_arr[0], mac_arr[1], mac_arr[2], mac_arr[3], mac_arr[4], mac_arr[5]);
+            println!("    Razão      : {:?}", wake_reason);
+            println!("    Portadora  : Ethernet WoL Broadcast (porta 9 UDP) + ImpulsePacket (50B)");
+            Ok(())
+        }
+    }
+}
+
+/// Normaliza e valida o hash de uma tx de pagamento (64 hex, com ou sem `0x`).
+fn premium_tx_hash(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    let hex_part = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    if hex_part.len() != 64 || !hex_part.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!(
+            "hash de pagamento inválido (esperado 64 dígitos hex, com ou sem 0x): '{raw}'"
+        ));
+    }
+    Ok(format!("0x{}", hex_part.to_ascii_lowercase()))
+}
+
+/// `mycelium sub` — plano, emissão e verificação da lease de assinatura.
+///
+/// O pagamento (USDC na Base) é verificado fora, com
+/// `mycelium-economy verify-base-usdc TX ENDEREÇO VALOR`; aqui o hash da tx é
+/// registrado no ledger para que **uma tx gere exatamente uma lease**.
+fn sub_cmd(home: &PathBuf, action: SubCmd) -> Result<(), String> {
+    use mycelium_core::NodeId;
+    use mycelium_sclerotium::{GhostLease, LeaseCapability};
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let premium_dir = home.join("premium");
+    let plan_file = premium_dir.join("plan.json");
+    let ledger_file = premium_dir.join("payments.jsonl");
+
+    match action {
+        SubCmd::Plan { usdc, days, recipient } => {
+            if !(usdc.is_finite() && usdc > 0.0) {
+                return Err("preço em USDC deve ser um número positivo".into());
+            }
+            if days == 0 {
+                return Err("período do plano deve ser de 1 dia ou mais".into());
+            }
+            let addr = recipient.trim();
+            let is_address = addr.len() == 42
+                && addr.starts_with("0x")
+                && addr.as_bytes()[2..].iter().all(|b| b.is_ascii_hexdigit());
+            if !is_address {
+                return Err(format!(
+                    "endereço de recebimento inválido (esperado 0x + 40 hex): '{recipient}'"
+                ));
+            }
+
+            std::fs::create_dir_all(&premium_dir).map_err(|e| e.to_string())?;
+            let gland = NodeStore::open(home)
+                .map_err(|e| e.to_string())?
+                .load_or_create_gland()
+                .map_err(|e| e.to_string())?;
+            let plan = json!({
+                "issuer": gland.node_id().to_string(),
+                "price_usdc": usdc,
+                "period_days": days,
+                "recipient": addr.to_ascii_lowercase(),
+                "chain": "base-8453",
+                "published_at": now,
+            });
+            let serialized = serde_json::to_string_pretty(&plan).map_err(|e| e.to_string())?;
+            std::fs::write(&plan_file, serialized).map_err(|e| e.to_string())?;
+
+            println!("[🍄 Sub] ✅ Plano publicado: {}", plan_file.display());
+            println!("    Preço     : US$ {usdc} por {days} dias");
+            println!("    Receber   : {} (USDC, Base)", addr.to_ascii_lowercase());
+            println!("    Exposto em: /vitrine/api/subscription");
+            Ok(())
+        }
+        SubCmd::Issue {
+            subscriber,
+            payment_tx,
+            days,
+            valid_until,
+            payment_verified,
+            out,
+        } => {
+            let subscriber_id = NodeId::from_str(&subscriber)
+                .map_err(|_| format!("NodeId do assinante inválido: '{subscriber}'"))?;
+            let tx = premium_tx_hash(&payment_tx)?;
+            std::fs::create_dir_all(&premium_dir).map_err(|e| e.to_string())?;
+
+            // Período: --days, senão o plano publicado. --valid-until sobrepõe os dois.
+            let period_days = match days {
+                Some(d) => d,
+                None => match valid_until {
+                    Some(_) => 0,
+                    None => {
+                        let bytes = std::fs::read(&plan_file).map_err(|_| {
+                            "plano não publicado — rode `mycelium sub plan` ou informe --days"
+                                .to_string()
+                        })?;
+                        let plan: serde_json::Value =
+                            serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                        plan.get("period_days")
+                            .and_then(|v| v.as_u64())
+                            .ok_or_else(|| "plano sem period_days".to_string())? as u32
+                    }
+                },
+            };
+            if period_days == 0 && valid_until.is_none() {
+                return Err("período da assinatura deve ser de 1 dia ou mais".into());
+            }
+            let valid_until_ts = match valid_until {
+                Some(v) if v > 0 => v,
+                Some(_) => return Err("--valid-until deve ser um timestamp Unix maior que zero".into()),
+                None => now + u64::from(period_days) * 86_400,
+            };
+
+            // Fronteira de confiança: cada pagamento financia exatamente uma lease.
+            if ledger_file.exists() {
+                let ledger =
+                    std::fs::read_to_string(&ledger_file).map_err(|e| e.to_string())?;
+                for line in ledger.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let entry: serde_json::Value =
+                        serde_json::from_str(line).map_err(|e| format!("ledger corrompido: {e}"))?;
+                    if entry.get("payment_tx").and_then(|v| v.as_str()) == Some(tx.as_str()) {
+                        return Err(format!(
+                            "pagamento {tx} já utilizado (registro de {}) — uma tx gera uma lease",
+                            entry.get("issued_at").and_then(|v| v.as_u64()).unwrap_or_default()
+                        ));
+                    }
+                }
+            }
+
+            let gland = NodeStore::open(home)
+                .map_err(|e| e.to_string())?
+                .load_or_create_gland()
+                .map_err(|e| e.to_string())?;
+            let lease = GhostLease::create(
+                &gland,
+                1,
+                valid_until_ts,
+                rand::random(),
+                vec![subscriber_id],
+                vec![LeaseCapability::Subscriber],
+                vec![],
+                vec![],
+            );
+            // Compacta: a lease cabe num header HTTP e é colável no site.
+            let lease_json = serde_json::to_string(&lease).map_err(|e| e.to_string())?;
+
+            let out_path = out.unwrap_or_else(|| {
+                premium_dir
+                    .join("leases")
+                    .join(format!("{subscriber_id}.json"))
+            });
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&out_path, &lease_json).map_err(|e| e.to_string())?;
+
+            let entry = json!({
+                "payment_tx": tx,
+                "payment_verified": payment_verified,
+                "subscriber": subscriber_id.to_string(),
+                "issuer": gland.node_id().to_string(),
+                "period_days": period_days,
+                "valid_until": valid_until_ts,
+                "issued_at": now,
+            });
+            let mut ledger = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&ledger_file)
+                .map_err(|e| e.to_string())?;
+            writeln!(ledger, "{entry}").map_err(|e| e.to_string())?;
+
+            println!("[🍄 Sub] ✅ Lease de assinatura emitida: {}", out_path.display());
+            println!("    Assinante : {subscriber_id}");
+            println!("    Válida até: {valid_until_ts} ({period_days} dias)");
+            println!("    Pagamento : {tx} (verificado on-chain: {payment_verified})");
+            println!("    Entregue o arquivo ao assinante. Teste do emissor:");
+            println!(
+                "    curl -H \"X-Subscription-Lease: $(cat {})\" http://127.0.0.1:7474/vitrine/premium",
+                out_path.display()
+            );
+            Ok(())
+        }
+        SubCmd::Verify { lease, subscriber } => {
+            let bytes = std::fs::read(&lease).map_err(|e| format!("{}: {e}", lease.display()))?;
+            let parsed: GhostLease =
+                serde_json::from_slice(&bytes).map_err(|e| format!("lease ilegível: {e}"))?;
+            if !parsed.capabilities.contains(&LeaseCapability::Subscriber) {
+                return Err("lease sem a capacidade de assinante".into());
+            }
+            if let Some(s) = subscriber {
+                let expected = NodeId::from_str(&s)
+                    .map_err(|_| format!("NodeId do assinante inválido: '{s}'"))?;
+                if !parsed.authorized_proxies.contains(&expected) {
+                    return Err("lease não foi emitida para este assinante".into());
+                }
+            }
+            parsed.verify(now).map_err(|e| format!("lease INVÁLIDA: {e}"))?;
+            println!(
+                "[🍄 Sub] ✅ lease VÁLIDA até {} (resta {}s)",
+                parsed.valid_until,
+                parsed.valid_until.saturating_sub(now)
+            );
+            Ok(())
+        }
+    }
+}
+

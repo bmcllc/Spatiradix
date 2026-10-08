@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conteúdo premium — Mycelium Network</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 16px/1.55 system-ui, sans-serif; margin: 0; padding: 2rem 1rem; }
+    main { max-width: 46rem; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin-bottom: .25rem; }
+    #reason { color: #b00; font-weight: 600; }
+    label { display: block; margin: 1.25rem 0 .35rem; font-weight: 600; }
+    textarea { width: 100%; min-height: 8rem; font: 13px/1.4 ui-monospace, monospace; box-sizing: border-box; }
+    button { margin-top: .75rem; padding: .6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    pre { white-space: pre-wrap; word-break: break-all; }
+    .hint { opacity: .8; font-size: .92rem; }
+    code { background: rgba(127, 127, 127, .18); padding: .05rem .3rem; border-radius: .25rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Conteúdo premium</h1>
+  <p id="reason">__REASON__</p>
+
+  <p class="hint">
+    Este site roda em um nó da malha Mycelium — <strong>sem hospedagem, sem domínio e sem
+    VPS</strong>. O conteúdo abaixo é liberado por uma <em>lease de assinatura</em>: um JSON
+    compacto assinado ed25519 pelo emissor, válido pelo período que você pagou.
+  </p>
+
+  <p class="hint">
+    Plano: <a href="./api/subscription"><code>./api/subscription</code></a> (preço, período e
+    endereço de recebimento). Depois de pagar, você recebe o arquivo <code>.json</code> da lease.
+  </p>
+
+  <label for="lease">Cole aqui a lease recebida após o pagamento</label>
+  <textarea id="lease" spellcheck="false" placeholder='{"origin_node_id":"…","valid_until":…}'></textarea>
+  <button id="go" type="button">Entrar</button>
+  <pre id="out" class="hint"></pre>
+</main>
+
+<script>
+  const KEY = 'mycelium-sub-lease';
+  const box = document.getElementById('lease');
+  const out = document.getElementById('out');
+  const saved = localStorage.getItem(KEY);
+  if (saved) box.value = saved;
+
+  document.getElementById('go').addEventListener('click', async () => {
+    out.textContent = '';
+    const lease = box.value.trim();
+    if (!lease) { out.textContent = 'cole a lease primeiro'; return; }
+    try {
+      const r = await fetch('./premium', { headers: { 'X-Subscription-Lease': lease } });
+      if (!r.ok) {
+        out.textContent = 'negado (' + r.status + '): ' + (await r.text()).slice(0, 300);
+        return;
+      }
+      localStorage.setItem(KEY, lease);
+      document.open();
+      document.write(await r.text());
+      document.close();
+    } catch (e) {
+      out.textContent = 'falha ao consultar o nó: ' + e;
+    }
+  });
+</script>
+</body>
+</html>

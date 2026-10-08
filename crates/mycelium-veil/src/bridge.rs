@@ -31,6 +31,7 @@ use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
@@ -178,24 +179,79 @@ impl EntryTransport for BridgeEntry {
     }
 }
 
+/// Instantâneo de telemetria do pool de entradas.
+///
+/// Os quatro campos vivem juntos sob **um único** `StdMutex` porque formam um
+/// snapshot só: escritos separadamente, um leitor podia observar
+/// `last_successful = Some(entrada_antiga)` ao lado de `last_failures`
+/// descrevendo uma chamada completamente diferente — um retrato rasgado
+/// (*torn read*) mesmo sem nenhum pânico em jogo.
+#[derive(Debug, Default)]
+struct PoolTelemetry {
+    /// Índice da entrada que funcionou por último (ordem preferencial).
+    active: Option<usize>,
+    /// Entrada que autenticou com o Guard na última chamada bem-sucedida.
+    last_successful: Option<String>,
+    /// Número de entradas que falharam antes do sucesso (ou até esgotar) na última chamada.
+    last_failover_attempts: usize,
+    /// Motivos de falha por entrada/estágio da última chamada (observabilidade p/ status).
+    last_failures: Vec<String>,
+}
+
+/// Centinela de "contagem desconhecida" para [`EntryPool::last_failover_attempts`].
+///
+/// `0` é indistinguível de "a primeira entrada venceu", o que seria uma leitura
+/// fail-open de um número não verificado. O valor impossível é autoevidente em
+/// qualquer exibição e nunca deve entrar em aritmética.
+const UNKNOWN_FAILOVER_ATTEMPTS: usize = usize::MAX;
+
+/// Centinela textual de "motivos desconhecidos", gravado no snapshot quando a
+/// telemetria envenenada é substituída por defaults conhecidos.
+const UNKNOWN_FAILURE_REASONS: &str = "<estado envenenado: motivos desconhecidos>";
+
 /// Pool de entradas de transporte (P1.3).
 ///
 /// Tenta as entradas em ordem — começando pela que funcionou por último —
 /// e comuta para a próxima diante de falha. Se todas falharem, falha fechado:
 /// **nenhuma** conexão direta ao destino final é tentada.
+///
+/// # Garantia real (e seus limites)
+///
+/// A garantia de segurança **não** depende de rotação, de comutação entre
+/// entradas nem de tolerância a `Poison`. Ela vem de um único ponto:
+/// [`EntryPool::connect_authenticated`] só retorna depois de um handshake
+/// autenticado com o Guard bem-sucedido, e retorna erro fail-closed se todas as
+/// entradas falharem. A propriedade é **incondicional** — vale igualmente para um
+/// pool recém-criado, para um pool cujo estado envenenado foi descartado, e para
+/// um pool que acabou de varrer todas as entradas.
+///
+/// O que a comutação entre entradas compra é **vivacidade**, não segurança: sem
+/// ela, uma entrada bloqueada derrubaria o circuito mesmo havendo uma segunda
+/// entrada sadia. A tolerância a `Poison` está no mesmo plano — ela evita que um
+/// pânico anterior transforme o pool em falha permanente, e é por isso que um
+/// pânico não pode ser tratado como fim de mundo.
+///
+/// Já um valor **recuperado** de envenenamento não é vivacidade nem
+/// observabilidade: é estado possivelmente inconsistente, e por isso nunca é
+/// republicado como entrada operacional. Enquanto o latch `state_poisoned`
+/// estiver armado, os getters devolvem "desconhecido" em vez de um valor herdado;
+/// ao rearmar, a rotação é descartada e todas as entradas são revalidadas.
 #[derive(Debug)]
 pub struct EntryPool {
     entries: Vec<Arc<dyn EntryTransport>>,
     /// Tempo limite aplicado ao handshake autenticado por tentativa.
     handshake_timeout: Duration,
-    /// Índice da entrada que funcionou por último (ordem preferencial).
-    active: StdMutex<Option<usize>>,
-    /// Entrada que autenticou com o Guard na última chamada bem-sucedida.
-    last_successful: StdMutex<Option<String>>,
-    /// Número de entradas que falharam antes do sucesso (ou até esgotar) na última chamada.
-    last_failover_attempts: StdMutex<usize>,
-    /// Motivos de falha por entrada/estágio da última chamada (observabilidade p/ status).
-    last_failures: StdMutex<Vec<String>>,
+    /// Instantâneo único de telemetria (ver [`PoolTelemetry`]): os quatro
+    /// campos são lidos e escritos sob esta **mesma** guarda, para que o retrato
+    /// não possa rasgar.
+    telemetry: StdMutex<PoolTelemetry>,
+    /// Latch fail-closed: armado quando a telemetria foi observada envenenada.
+    ///
+    /// Enquanto armado, nenhum getter devolve valor algum — todos reportam
+    /// "desconhecido". O rearme acontece em [`EntryPool::connect`] e
+    /// [`EntryPool::connect_authenticated`], que descartam a rotação para
+    /// forçar uma varredura completa de todas as entradas.
+    state_poisoned: AtomicBool,
 }
 
 impl Default for EntryPool {
@@ -210,10 +266,8 @@ impl EntryPool {
         Self {
             entries: Vec::new(),
             handshake_timeout: ENTRY_HANDSHAKE_TIMEOUT,
-            active: StdMutex::new(None),
-            last_successful: StdMutex::new(None),
-            last_failover_attempts: StdMutex::new(0),
-            last_failures: StdMutex::new(Vec::new()),
+            telemetry: StdMutex::new(PoolTelemetry::default()),
+            state_poisoned: AtomicBool::new(false),
         }
     }
 
@@ -244,6 +298,120 @@ impl EntryPool {
         &self.entries
     }
 
+    // ----- Telemetria: leitura e escrita sob UM único guard -----
+
+    /// Defaults conhecidos para um snapshot cujo estado não pode ser verificado.
+    ///
+    /// `last_successful = None` significa literalmente "desconhecido" (mesmo
+    /// valor de uma chamada que falhou, e por isso acompanhado de uma reason
+    /// marcada), `last_failover_attempts = 0` e a reason é o centinela textual —
+    /// o ponto é que **nenhum** valor aqui veio de um estado recuperado.
+    fn poisoned_telemetry() -> PoolTelemetry {
+        PoolTelemetry {
+            active: None,
+            last_successful: None,
+            last_failover_attempts: 0,
+            last_failures: vec![UNKNOWN_FAILURE_REASONS.to_string()],
+        }
+    }
+
+    /// Escreve os quatro campos de telemetria sob **uma única** aquisição do
+    /// guard, de modo que o snapshot publicado nunca possa rasgar.
+    ///
+    /// Se a guarda estiver envenenada, o latch é armado e o snapshot inteiro é
+    /// substituído pelos defaults conhecidos: a telemetria envenenada é
+    /// descartada, não recuperada, e a chamada segue.
+    fn record_telemetry(
+        &self,
+        active: Option<usize>,
+        last_successful: Option<String>,
+        last_failover_attempts: usize,
+        last_failures: Vec<String>,
+    ) {
+        match self.telemetry.lock() {
+            Ok(mut tel) => {
+                *tel = PoolTelemetry { active, last_successful, last_failover_attempts, last_failures };
+            }
+            Err(poisoned) => {
+                self.state_poisoned.store(true, Ordering::SeqCst);
+                *poisoned.into_inner() = Self::poisoned_telemetry();
+                tracing::error!(
+                    campo = "EntryPool::telemetry",
+                    "guarda de telemetria envenenada na escrita de (active, last_successful, \
+                     last_failover_attempts, last_failures); snapshot substituído por defaults \
+                     conhecidos — nenhum valor será publicado como entrada operacional"
+                );
+            }
+        }
+    }
+
+    /// Lê a rotação preferencial atual.
+    fn current_active(&self) -> Option<usize> {
+        match self.telemetry.lock() {
+            Ok(tel) => tel.active,
+            Err(poisoned) => {
+                self.state_poisoned.store(true, Ordering::SeqCst);
+                *poisoned.into_inner() = Self::poisoned_telemetry();
+                tracing::error!(
+                    campo = "EntryPool::telemetry",
+                    "guarda de telemetria envenenada ao ler a rotação; snapshot substituído por \
+                     defaults conhecidos"
+                );
+                None
+            }
+        }
+    }
+
+    /// Índice a partir do qual varrer as entradas nesta chamada.
+    fn preferred_index(&self) -> usize {
+        self.current_active().unwrap_or(0)
+    }
+
+    /// Rearma o pool após envenenamento: descarta a rotação e desarma o latch.
+    ///
+    /// Chamada por [`EntryPool::connect`] e [`EntryPool::connect_authenticated`]
+    /// **antes** de qualquer seleção. `active = None` obriga uma varredura de
+    /// todas as entradas na chamada corrente — a única forma de "reconstruir a
+    /// partir de uma fonte autoritativa" disponível aqui, já que a validação
+    /// autenticada de cada entrada é justamente o que reconstrói o estado.
+    ///
+    /// Isto **não** enfraquece o fail-closed: a varredura ainda exige o handshake
+    /// autenticado em cada entrada, e ainda devolve erro se nenhuma autenticar.
+    fn reset_rotation_if_poisoned(&self) {
+        if !self.state_poisoned.swap(false, Ordering::SeqCst) {
+            return;
+        }
+        match self.telemetry.lock() {
+            Ok(mut tel) => tel.active = None,
+            Err(poisoned) => *poisoned.into_inner() = Self::poisoned_telemetry(),
+        }
+        tracing::warn!(
+            "telemetria do pool de entradas envenenada: rotação (`active`) descartada e defaults \
+             conhecidos gravados; todas as entradas serão revalidadas nesta chamada e a \
+             validação anterior não será reutilizada"
+        );
+    }
+
+    /// Lê um campo do snapshot para um getter, mas **nunca** republica um valor
+    /// recuperado: com o latch armado — ou se a guarda falhar agora — devolve o
+    /// centinela de "desconhecido" em vez de um valor herdado de estado duvidoso.
+    fn read_telemetry<R>(&self, unknown: R, pick: impl FnOnce(&PoolTelemetry) -> R) -> R {
+        if self.state_poisoned.load(Ordering::SeqCst) {
+            return unknown;
+        }
+        match self.telemetry.lock() {
+            Ok(tel) => pick(&tel),
+            Err(_) => {
+                self.state_poisoned.store(true, Ordering::SeqCst);
+                tracing::error!(
+                    campo = "EntryPool::telemetry",
+                    "guarda de telemetria envenenada na leitura; valor não verificado descartado"
+                );
+                unknown
+            }
+        }
+    }
+
     /// Conecta ao Guard tentando as entradas em ordem.
     ///
     /// A entrada que funcionou por último é tentada primeiro (rotação); após
@@ -256,7 +424,8 @@ impl EntryPool {
             ));
         }
 
-        let active_idx = self.active.lock().unwrap().unwrap_or(0);
+        self.reset_rotation_if_poisoned();
+        let active_idx = self.preferred_index();
         let mut failures: Vec<String> = Vec::new();
 
         for offset in 0..self.entries.len() {
@@ -265,10 +434,7 @@ impl EntryPool {
             match entry.connect(guard_endpoint).await {
                 Ok(stream) => {
                     let entry_id = entry.id().to_string();
-                    *self.active.lock().unwrap() = Some(idx);
-                    *self.last_successful.lock().unwrap() = Some(entry_id.clone());
-                    *self.last_failover_attempts.lock().unwrap() = failures.len();
-                    *self.last_failures.lock().unwrap() = failures.clone();
+                    self.record_telemetry(Some(idx), Some(entry_id.clone()), failures.len(), failures.clone());
                     tracing::info!(entry = %entry_id, guard = %guard_endpoint, "entrada de transporte estabelecida");
                     return Ok(EntryConnection { stream, entry_id });
                 }
@@ -279,9 +445,10 @@ impl EntryPool {
             }
         }
 
-        *self.last_successful.lock().unwrap() = None;
-        *self.last_failover_attempts.lock().unwrap() = failures.len();
-        *self.last_failures.lock().unwrap() = failures.clone();
+        // Falha total: invalida o registro de sucesso, mas preserva a ordem
+        // preferencial (`active`) — todas as entradas acabaram de ser varridas, e
+        // a rotação é o que evita refazer essa varredura em pânico a cada chamada.
+        self.record_telemetry(self.current_active(), None, failures.len(), failures.clone());
 
         Err(VeilError::Circuit(format!(
             "fail-closed: todas as {} entradas de transporte inacessíveis — circuito abortado \
@@ -318,7 +485,8 @@ impl EntryPool {
             ));
         }
 
-        let active_idx = self.active.lock().unwrap().unwrap_or(0);
+        self.reset_rotation_if_poisoned();
+        let active_idx = self.preferred_index();
         let mut failures: Vec<String> = Vec::new();
 
         for offset in 0..self.entries.len() {
@@ -338,12 +506,18 @@ impl EntryPool {
 
             // Estágio 2: handshake autenticado com o Guard. Aceitar TCP sem
             // encaminhar corretamente NÃO conta como entrada operacional.
+            //
+            // Este é o portão de segurança do pool, e ele é INCONDICIONAL: só o
+            // `Ok(Ok(result))` abaixo retorna algo, e apenas depois que o
+            // handshake de enlace + identidade conclui. A rotação e o tratamento
+            // de envenenamento que o cercam afetam apenas *qual* entrada é
+            // tentada primeiro e o que a telemetria reporta — nunca se o
+            // handshake é exigido, nem se um `Err` é devolvido quando todas
+            // falham. Nenhuma guarda de telemetria é retida através deste
+            // `await`.
             match tokio::time::timeout(self.handshake_timeout, handshake(stream)).await {
                 Ok(Ok(result)) => {
-                    *self.active.lock().unwrap() = Some(idx);
-                    *self.last_successful.lock().unwrap() = Some(attempted_id.clone());
-                    *self.last_failover_attempts.lock().unwrap() = failures.len();
-                    *self.last_failures.lock().unwrap() = failures.clone();
+                    self.record_telemetry(Some(idx), Some(attempted_id.clone()), failures.len(), failures.clone());
                     tracing::info!(entry = %attempted_id, guard = %guard_endpoint, "entrada autenticada com o Guard");
                     return Ok((result, attempted_id));
                 }
@@ -359,9 +533,10 @@ impl EntryPool {
             }
         }
 
-        *self.last_successful.lock().unwrap() = None;
-        *self.last_failover_attempts.lock().unwrap() = failures.len();
-        *self.last_failures.lock().unwrap() = failures.clone();
+        // Todas as entradas falharam no TCP **ou** no handshake autenticado.
+        // Mesma política do total-falha acima: zera o registro de sucesso,
+        // preserva a ordem preferencial e devolve o erro fail-closed.
+        self.record_telemetry(self.current_active(), None, failures.len(), failures.clone());
 
         Err(VeilError::Circuit(format!(
             "fail-closed: todas as {} entradas falharam no TCP ou no handshake autenticado — \
@@ -373,20 +548,32 @@ impl EntryPool {
 
     /// Identificador da entrada que autenticou com o Guard na última chamada
     /// bem-sucedida (observabilidade: "bridge selecionada" no status).
+    ///
+    /// `None` é o centinela de "desconhecido": é devolvido tanto quando nenhuma
+    /// chamada autenticou quanto quando a telemetria está envenenada. Assim, um
+    /// valor recuperado nunca é republicado ao operador como `entrada_ativa`.
     pub fn last_successful_entry(&self) -> Option<String> {
-        self.last_successful.lock().unwrap().clone()
+        self.read_telemetry(None, |tel| tel.last_successful.clone())
     }
 
     /// Quantas entradas falharam antes do sucesso na última chamada (ou o total
     /// de falhas quando todas falharam). Observabilidade de failover.
+    ///
+    /// Devolve `UNKNOWN_FAILOVER_ATTEMPTS` quando a telemetria está
+    /// envenenada, porque `0` seria indistinguível de "a primeira entrada
+    /// venceu" e leria como uma contagem verificada.
     pub fn last_failover_attempts(&self) -> usize {
-        *self.last_failover_attempts.lock().unwrap()
+        self.read_telemetry(UNKNOWN_FAILOVER_ATTEMPTS, |tel| tel.last_failover_attempts)
     }
 
     /// Motivos de falha por entrada/estágio da última chamada
     /// (ex.: `"bridge-1 (handshake): ..."`). Vazio quando a primeira entrada vence.
+    ///
+    /// Com a telemetria envenenada, devolve uma única reason centinela
+    /// (`UNKNOWN_FAILURE_REASONS`) em vez dos motivos de uma chamada que não
+    /// pode ser verificada.
     pub fn last_failure_reasons(&self) -> Vec<String> {
-        self.last_failures.lock().unwrap().clone()
+        self.read_telemetry(vec![UNKNOWN_FAILURE_REASONS.to_string()], |tel| tel.last_failures.clone())
     }
 }
 

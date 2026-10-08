@@ -1,0 +1,46 @@
+# Workspace toolchain pin for the Mycelium Network Rust workspace.
+#
+# WHY THIS FILE EXISTS -- DO NOT LOWER `channel` BELOW 1.88.0
+# ==========================================================
+# Cargo.lock pins dependencies whose MSRV (`rust-version`) floors sit far above
+# the Rust 1.80 that CI used to run. Verified against every one of the 581
+# packages resolved in Cargo.lock:
+#
+#   libp2p        0.56.0   rust-version = "1.83.0"
+#   time          0.3.53   rust-version = "1.88.0"   <-- binding constraint
+#   time-core     0.1.9    rust-version = "1.88.0"
+#   time-macros   0.2.31   rust-version = "1.88.0"
+#
+# `time` 0.3.53 is the single highest MSRV floor anywhere in the resolved
+# dependency graph; nothing in the lock requires more than 1.88.0. So 1.88.0 is
+# not a round number we picked -- it is the exact, measured minimum this
+# workspace can resolve and build.
+#
+# Running anything older than 1.88.0 fails during dependency resolution, before
+# a single crate of ours is compiled. That is why CI was permanently red with no
+# actionable error: the `rust:1.80-slim` image could never have built this
+# workspace, and the resulting Cargo message ("package X requires rustc 1.88.0")
+# says nothing about our code.
+#
+# No workspace member declares `rust-version` in its Cargo.toml, so nothing
+# in-tree tells Cargo what MSRV to enforce. This file is the only place that
+# floor is recorded -- which is exactly why it carries this comment.
+#
+# 1.88.0 is a FLOOR, not a preference:
+#   * If a future `cargo update` raises the graph's MSRV, raise this pin in the
+#     same commit. A loud, attributable resolution failure is the correct
+#     outcome; silent rot is not.
+#   * Lowering this below 1.88.0 is always wrong. Doing so reintroduces the
+#     pre-existing "CI red for a reason unrelated to our code" failure.
+#
+# CI runs floating `rust:slim` images precisely so this file -- not a stale tag
+# baked into a pipeline -- is the single source of truth for the toolchain.
+
+[toolchain]
+channel = "1.88.0"
+
+# clippy: the blocking `clippy` pipeline runs `cargo clippy -- -D warnings`.
+# rustfmt: the `fmt` pipeline runs `cargo fmt --all --check`. Listing them here
+#          means rustup provisions them automatically when a job first honours
+#          this file, instead of each pipeline re-adding them by hand.
+components = ["clippy", "rustfmt"]

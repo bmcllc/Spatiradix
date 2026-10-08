@@ -64,7 +64,7 @@ impl VeilLayer for ConsensusLayer {
 
         // Calcula o novo elo causal utilizando o hash_chronicle do mycelium-zkp
         let chronicle_digest = {
-            let mut parent_lock = self.last_chronicle.lock().unwrap();
+            let mut parent_lock = self.last_chronicle.lock().unwrap_or_else(|e| e.into_inner());
             let parent = *parent_lock;
             let new_digest = hash_chronicle(data, &[parent]);
             *parent_lock = new_digest;

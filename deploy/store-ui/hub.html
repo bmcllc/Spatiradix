@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>🍄 Mycelium Code Hub — Forja Soberana de Repositórios</title>
+  <style>
+    :root {
+      --bg: #090d10;
+      --card-bg: #111822;
+      --card-border: #1e293b;
+      --hover-bg: #1a2433;
+      --accent: #10b981;
+      --accent-glow: rgba(16, 185, 129, 0.2);
+      --fg: #e2e8f0;
+      --muted: #94a3b8;
+      --code-bg: #06090c;
+      --cyan: #06b6d4;
+      --amber: #f59e0b;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(1000px 600px at 15% 10%, #0d2319, var(--bg));
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: rgba(17, 24, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--fg);
+      text-decoration: none;
+    }
+    .brand .logo {
+      font-size: 1.6rem;
+      filter: drop-shadow(0 0 8px var(--accent));
+    }
+    .badge-sub {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      font-size: 0.9rem;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--accent); }
+    .btn {
+      background: var(--accent);
+      color: #042416;
+      border: none;
+      padding: 0.45rem 0.9rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      filter: brightness(1.1);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .btn-secondary {
+      background: var(--card-bg);
+      color: var(--fg);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:hover {
+      background: var(--hover-bg);
+      border-color: var(--muted);
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      max-width: 1600px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      gap: 1.5rem;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+    /* SIDEBAR */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .search-box {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      color: var(--fg);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus { border-color: var(--accent); }
+    .repo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+    .repo-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .repo-item:hover {
+      background: var(--hover-bg);
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .repo-item.active {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+    }
+    .repo-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--fg);
+    }
+    .repo-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 0.4rem 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .repo-meta {
+      display: flex;
+      gap: 0.6rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      align-items: center;
+    }
+    .pill-branch {
+      background: #1e293b;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-family: monospace;
+      color: var(--cyan);
+    }
+    /* MAIN VIEW */
+    .content-area {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      min-height: 600px;
+      overflow: hidden;
+    }
+    .repo-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      background: rgba(17, 24, 34, 0.5);
+    }
+    .repo-header-info h2 {
+      font-size: 1.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.3rem;
+    }
+    .commit-summary {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.3rem;
+      font-family: monospace;
+    }
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(15, 23, 42, 0.4);
+      padding: 0 1.5rem;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 0.85rem 1.2rem;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--fg); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .tab-content {
+      padding: 1.5rem;
+      flex: 1;
+      display: none;
+    }
+    .tab-content.active { display: block; }
+    /* CODE BROWSER */
+    .breadcrumb-bar {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      font-family: monospace;
+      font-size: 0.88rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .breadcrumb-bar a {
+      color: var(--cyan);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .breadcrumb-bar a:hover { text-decoration: underline; }
+    .file-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .file-table th {
+      background: #0f172a;
+      text-align: left;
+      padding: 0.65rem 1rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .file-table td {
+      padding: 0.7rem 1rem;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.88rem;
+    }
+    .file-table tr:hover td { background: var(--hover-bg); }
+    .file-link {
+      color: var(--fg);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      font-family: monospace;
+    }
+    .file-link:hover { color: var(--accent); }
+    .code-viewer-container {
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--code-bg);
+    }
+    .code-viewer-header {
+      background: #0d131a;
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.6rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: monospace;
+      font-size: 0.82rem;
+    }
+    pre.code-viewer {
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", Consolas, "Fira Code", monospace;
+      font-size: 0.88rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+      max-height: 650px;
+    }
+    /* COMMITS TIMELINE */
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      position: relative;
+      padding-left: 1.5rem;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 7px;
+      top: 10px;
+      bottom: 10px;
+      width: 2px;
+      background: var(--card-border);
+    }
+    .timeline-item {
+      position: relative;
+      background: #0d131a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+    .timeline-item::after {
+      content: "";
+      position: absolute;
+      left: -1.5rem;
+      top: 1rem;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      transform: translateX(-50%);
+    }
+    .commit-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 0.3rem;
+      color: var(--fg);
+    }
+    .commit-meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-family: monospace;
+      display: flex;
+      gap: 1rem;
+    }
+    /* MODAL */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      max-width: 600px;
+      width: 90%;
+      padding: 1.5rem;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .copy-box {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--cyan);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0.75rem 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="/hub/" class="brand">
+      <span class="logo">🍄</span>
+      <span>Mycelium Code Hub</span>
+      <span class="badge-sub">Git Soberano</span>
+    </a>
+    <div class="nav-links">
+      <a href="/console">Console</a>
+      <a href="/vitrine/">Vitrine</a>
+      <a href="/hub/api/repos" target="_blank">API JSON</a>
+      <button class="btn btn-secondary" onclick="openCloneModal()">📋 Comandos de Clone</button>
+      <button class="btn" onclick="openPublishGuide()">🌱 Publicar Repositório</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- BARRA LATERAL: LISTA DE REPOS -->
+    <div class="sidebar">
+      <input type="text" id="search" class="search-box" placeholder="🔍 Buscar repositório..." oninput="filterRepos()"/>
+      <div class="repo-list" id="repoList">
+        <div style="padding:1rem;color:var(--muted);text-align:center">Carregando repositórios da malha...</div>
+      </div>
+    </div>
+
+    <!-- ÁREA PRINCIPAL: DETALHES DO REPOSITÓRIO -->
+    <div class="content-area">
+      <div class="repo-header" id="repoHeader">
+        <div class="repo-header-info">
+          <h2 id="repoTitle">Selecione um Repositório</h2>
+          <div class="commit-summary" id="commitSummary">Carregando dados da árvore de código...</div>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-secondary" onclick="openCloneModal()">📥 Clonar</button>
+          <button class="btn btn-secondary" onclick="validateCurrent()">🛡️ Validar no CI</button>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('code', this)">📁 Código</button>
+        <button class="tab-btn" onclick="switchTab('commits', this)">📜 Commits (<span id="commitsCount">0</span>)</button>
+        <button class="tab-btn" onclick="switchTab('ci', this)">🛡️ Chamber CI</button>
+        <button class="tab-btn" onclick="switchTab('guide', this)">🚀 Guia Rápido</button>
+      </div>
+
+      <!-- TAB 1: CÓDIGO -->
+      <div id="tab-code" class="tab-content active">
+        <div class="breadcrumb-bar" id="breadcrumbs">
+          <span>raiz</span>
+        </div>
+
+        <table class="file-table" id="fileTable">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Tamanho</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="fileList">
+            <tr><td colspan="3" style="text-align:center;color:var(--muted)">Nenhum arquivo encontrado.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="code-viewer-container" id="codeViewerBox" style="display:none">
+          <div class="code-viewer-header">
+            <span id="viewingFileName">main.rs</span>
+            <div style="display:flex;gap:0.5rem;align-items:center">
+              <span id="viewingFileSize" style="color:var(--muted)"></span>
+              <button class="btn btn-secondary" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="copyCurrentCode()">📋 Copiar</button>
+            </div>
+          </div>
+          <pre class="code-viewer" id="codeContent"></pre>
+        </div>
+      </div>
+
+      <!-- TAB 2: COMMITS -->
+      <div id="tab-commits" class="tab-content">
+        <div class="timeline" id="commitsTimeline">
+          <!-- Gerado via JavaScript -->
+        </div>
+      </div>
+
+      <!-- TAB 3: CHAMBER CI -->
+      <div id="tab-ci" class="tab-content">
+        <div style="background:#0d131a;border:1px solid var(--card-border);border-radius:8px;padding:1.5rem">
+          <h3 style="margin-bottom:0.8rem;display:flex;align-items:center;gap:0.5rem">
+            <span>🛡️</span> Atestação de Integridade em Vacuum Chamber
+          </h3>
+          <p style="color:var(--muted);font-size:0.9rem;line-height:1.6;margin-bottom:1.2rem">
+            Toda compilação e execução de teste no Mycelium ocorre dentro de uma <b>Vacuum Chamber</b> isolada. A memória volátil é sanitizada via crate <code>vacuum</code> após a execução, garantindo testes zero-trace e imunidade a contaminação local.
+          </p>
+          <div id="ciStatusBox" style="padding:1rem;border-radius:6px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);font-family:monospace;font-size:0.85rem">
+            ✅ Plot Validado: Árvore consistente e hashes BLAKE3 verificados.
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: GUIA -->
+      <div id="tab-guide" class="tab-content">
+        <h3 style="margin-bottom:0.8rem">Como Usar o Git Soberano</h3>
+        <p style="color:var(--muted);margin-bottom:1rem;line-height:1.5">
+          O Mycelium dispensa o GitHub e plataformas proprietárias. Os commits são <b>Plots imutáveis</b> replicados diretamente pela DHT e Gossipsub.
+        </p>
+
+        <h4 style="margin:1rem 0 0.4rem;color:var(--cyan)">1. Publicar um Projeto Local</h4>
+        <div class="copy-box">
+          <code>mycelium repo publish --dir ./meu-projeto --repository meu-repo --branch main --message "v1.0"</code>
+        </div>
+
+        <h4 style="margin:1rem 0 0.4rem;color:var(--cyan)">2. Clonar Qualquer Repositório sem GitHub</h4>
+        <div class="copy-box">
+          <code id="guideCloneSnippet">mycelium repo clone --cid Qm... --dest ./copia</code>
+        </div>
+
+        <h4 style="margin:1rem 0 0.4rem;color:var(--cyan)">3. Validar Código Confinado</h4>
+        <div class="copy-box">
+          <code>mycelium repo validate --cid Qm...</code>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL DE CLONE -->
+  <div class="modal-overlay" id="cloneModal" onclick="closeModalOnOverlay(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📥 Clonar este Repositório</h3>
+        <button class="btn btn-secondary" style="padding:0.2rem 0.5rem" onclick="closeCloneModal()">✕</button>
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0.8rem">
+        Use o CLI oficial do Mycelium para reconstruir a árvore completa a partir dos blocos BLAKE3 do SporeBank:
+      </p>
+      <div class="copy-box">
+        <code id="cloneCommand">mycelium repo clone --cid ... --dest ./repo</code>
+        <button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="copyCloneCmd()">Copiar</button>
+      </div>
+      <p style="color:var(--muted);font-size:0.8rem;margin-top:0.6rem">
+        Também é possível acessar arquivos brutos via HTTP:
+        <br/>
+        <a id="cloneHttpLink" href="#" target="_blank" style="color:var(--accent);word-break:break-all"></a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let allRepos = [];
+    let currentRepo = null;
+    let currentPlot = null;
+    let currentCid = "";
+    let currentFiles = [];
+
+    async function init() {
+      try {
+        const res = await fetch('/hub/api/repos');
+        const data = await res.json();
+        allRepos = data.repos || [];
+        renderRepoList(allRepos);
+        if (allRepos.length > 0) {
+          selectRepo(allRepos[0].name || allRepos[0].cid);
+        } else {
+          document.getElementById('repoTitle').innerText = "Nenhum repositório publicado ainda";
+          document.getElementById('commitSummary').innerText = "Use 'mycelium repo publish' para semear seu primeiro repositório!";
+        }
+      } catch (e) {
+        console.error("Falha ao buscar repositórios:", e);
+        document.getElementById('repoList').innerHTML = '<div style="padding:1rem;color:#f87171">Erro ao conectar ao daemon do Mycelium.</div>';
+      }
+    }
+
+    function renderRepoList(repos) {
+      const container = document.getElementById('repoList');
+      if (repos.length === 0) {
+        container.innerHTML = '<div style="padding:1rem;color:var(--muted);text-align:center">Nenhum repositório encontrado.</div>';
+        return;
+      }
+      container.innerHTML = repos.map((r, i) => `
+        <div class="repo-item ${i === 0 ? 'active' : ''}" onclick="selectRepo('${r.name || r.cid}', this)">
+          <div class="repo-name">
+            <span>📦</span>
+            <span>${escapeHtml(r.name || 'unnamed')}</span>
+          </div>
+          <div class="repo-desc">${escapeHtml(r.message || 'Sem mensagem')}</div>
+          <div class="repo-meta">
+            <span class="pill-branch">${escapeHtml(r.branch || 'main')}</span>
+            <span>📄 ${r.leaves_count || 0} arquivos</span>
+            <span>⚡ ${r.sequence ? '#' + r.sequence : 'CID'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectRepo(nameOrCid, el) {
+      if (el) {
+        document.querySelectorAll('.repo-item').forEach(item => item.classList.remove('active'));
+        el.classList.add('active');
+      }
+      const repo = allRepos.find(r => (r.name === nameOrCid || r.cid === nameOrCid)) || { name: nameOrCid, cid: nameOrCid };
+      currentRepo = repo;
+      currentCid = repo.target_cid || repo.cid;
+
+      document.getElementById('repoTitle').innerHTML = `<span>📦</span> ${escapeHtml(repo.name || 'Repositório')} <span class="pill-branch">${escapeHtml(repo.branch || 'main')}</span>`;
+      document.getElementById('commitSummary').innerHTML = `Último commit: <b>${escapeHtml(repo.message || 'Snapshot')}</b> · CID: <code>${currentCid.slice(0, 16)}...</code>`;
+
+      document.getElementById('cloneCommand').innerText = `mycelium repo clone --cid ${currentCid} --dest ./${repo.name || 'meu-repo'}`;
+      document.getElementById('guideCloneSnippet').innerText = `mycelium repo clone --cid ${currentCid} --dest ./${repo.name || 'meu-repo'}`;
+      const httpLink = `/src/${currentCid}/`;
+      document.getElementById('cloneHttpLink').innerText = window.location.origin + httpLink;
+      document.getElementById('cloneHttpLink').href = httpLink;
+
+      // Carrega arquivos
+      loadFiles(currentCid);
+      loadCommits(currentCid);
+    }
+
+    async function loadFiles(cid) {
+      const tbody = document.getElementById('fileList');
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted)">Carregando arquivos do Plot...</td></tr>';
+      document.getElementById('codeViewerBox').style.display = 'none';
+
+      try {
+        const res = await fetch(`/hub/api/repos/${encodeURIComponent(currentRepo.name || cid)}/tree?cid=${cid}`);
+        const data = await res.json();
+        currentFiles = data.files || [];
+        renderFileList(currentFiles);
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#f87171">Erro ao listar arquivos do SporeBank.</td></tr>';
+      }
+    }
+
+    function renderFileList(files) {
+      const tbody = document.getElementById('fileList');
+      if (files.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted)">Repositório vazio.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = files.map(f => `
+        <tr>
+          <td>
+            <a class="file-link" onclick="viewFile('${escapeHtml(f.path)}')">
+              <span>${getFileIcon(f.path)}</span>
+              <span>${escapeHtml(f.path)}</span>
+            </a>
+          </td>
+          <td style="color:var(--muted);font-family:monospace">${formatBytes(f.size)}</td>
+          <td>
+            <button class="btn btn-secondary" style="padding:0.2rem 0.5rem;font-size:0.75rem" onclick="viewFile('${escapeHtml(f.path)}')">Visualizar</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function viewFile(path) {
+      document.getElementById('codeViewerBox').style.display = 'block';
+      document.getElementById('viewingFileName').innerText = path;
+      document.getElementById('codeContent').innerText = "Carregando conteúdo...";
+
+      try {
+        const repoName = encodeURIComponent(currentRepo.name || currentCid);
+        const res = await fetch(`/hub/api/repos/${repoName}/file?path=${encodeURIComponent(path)}&cid=${currentCid}`);
+        const data = await res.json();
+        document.getElementById('codeContent').innerText = data.content;
+        document.getElementById('viewingFileSize').innerText = formatBytes(data.size);
+      } catch (e) {
+        document.getElementById('codeContent').innerText = "Falha ao ler arquivo do SporeBank.";
+      }
+    }
+
+    async function loadCommits(cid) {
+      const container = document.getElementById('commitsTimeline');
+      container.innerHTML = '<div style="color:var(--muted)">Carregando linhagem de commits...</div>';
+      try {
+        const repoName = encodeURIComponent(currentRepo.name || cid);
+        const res = await fetch(`/hub/api/repos/${repoName}/commits?cid=${cid}`);
+        const data = await res.json();
+        const commits = data.commits || [];
+        document.getElementById('commitsCount').innerText = commits.length;
+        container.innerHTML = commits.map(c => `
+          <div class="timeline-item">
+            <div class="commit-title">${escapeHtml(c.message || 'Snapshot')}</div>
+            <div class="commit-meta">
+              <span>🔑 CID: <code>${c.cid.slice(0, 18)}...</code></span>
+              <span>👤 Autor: <code>${c.author ? c.author.slice(0, 12) + '...' : 'Node'}</code></span>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div style="color:#f87171">Erro ao carregar histórico.</div>';
+      }
+    }
+
+    function switchTab(tabName, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + tabName).classList.add('active');
+    }
+
+    function filterRepos() {
+      const q = document.getElementById('search').value.toLowerCase();
+      const filtered = allRepos.filter(r => (r.name && r.name.toLowerCase().includes(q)) || (r.message && r.message.toLowerCase().includes(q)));
+      renderRepoList(filtered);
+    }
+
+    function openCloneModal() { document.getElementById('cloneModal').style.display = 'flex'; }
+    function closeCloneModal() { document.getElementById('cloneModal').style.display = 'none'; }
+    function closeModalOnOverlay(e) { if (e.target.id === 'cloneModal') closeCloneModal(); }
+    function openPublishGuide() {
+      const guideBtn = document.querySelectorAll('.tab-btn')[3];
+      switchTab('guide', guideBtn);
+    }
+
+    function copyCloneCmd() {
+      const text = document.getElementById('cloneCommand').innerText;
+      navigator.clipboard.writeText(text);
+      alert("Comando de clone copiado para a área de transferência!");
+    }
+
+    function copyCurrentCode() {
+      const code = document.getElementById('codeContent').innerText;
+      navigator.clipboard.writeText(code);
+      alert("Código copiado!");
+    }
+
+    function validateCurrent() {
+      alert(`Para validar este commit em uma Vacuum Chamber confinada, execute no terminal:\n\nmycelium repo validate --cid ${currentCid}`);
+    }
+
+    function getFileIcon(path) {
+      if (path.endsWith('.rs')) return '🦀';
+      if (path.endsWith('.toml')) return '⚙️';
+      if (path.endsWith('.md')) return '📝';
+      if (path.endsWith('.js') || path.endsWith('.ts')) return '⚡';
+      if (path.endsWith('.html')) return '🌐';
+      if (path.endsWith('.json')) return '📋';
+      return '📄';
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[m]);
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>

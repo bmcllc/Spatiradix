@@ -29,9 +29,12 @@ giggs = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
 base64 = "0.22"
+mycelium-media = { workspace = true }
+mycelium-sclerotium = { workspace = true }
+rand = { workspace = true }
 
 [features]
-default = ["nostr", "nostr-transport"]
+default = ["nostr", "nostr-transport", "pqc-transport"]
 veil = ["mycelium-node/veil"]
 webrtc = ["mycelium-node/webrtc", "mycelium-hyphae/webrtc"]
 license = ["mycelium-node/license"]
@@ -45,6 +48,7 @@ nostr = [
     "mycelium-node/nostr",
 ]
 nostr-transport = ["mycelium-node/nostr-transport", "mycelium-hyphae/nostr-transport"]
+pqc-transport = ["mycelium-node/pqc-transport", "mycelium-hyphae/pqc-transport"]
 
 [dependencies.mycelium-ghostid]
 workspace = true

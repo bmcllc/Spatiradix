@@ -2,8 +2,9 @@
 //!
 //! Um **Void** é a "imagem": manifesto content-addressed de camadas.
 //! Uma **Chamber** é a instância; [`ChamberProcess`] a materializa como
-//! processo filho com isolamento (bubblewrap por padrão quando disponível)
-//! e limites soft de memória/CPU.
+//! processo filho com isolamento (bubblewrap) e limites soft de memória/CPU.
+//! Isolamento é **fail-closed por padrão**: sem `bwrap`, a Chamber não roda
+//! sem namespaces — ver [`FruitOptions::fail_closed`].
 
 mod layers;
 mod process;

@@ -1,0 +1,40 @@
+{
+  "actions": ["attack", "cover", "help", "retreat"],
+  "feature_names": ["health_centered", "ammo_centered", "pressure_centered"],
+  "samples": [
+    {"features": [0.9, 0.9, 0.0], "label": "attack"},
+    {"features": [0.8, 0.6, -0.5], "label": "attack"},
+    {"features": [0.5, 0.8, 0.4], "label": "attack"},
+    {"features": [0.6, 0.5, -0.2], "label": "attack"},
+    {"features": [0.7, 0.7, 0.6], "label": "attack"},
+    {"features": [0.9, -0.9, 0.0], "label": "cover"},
+    {"features": [0.8, -0.6, -0.5], "label": "cover"},
+    {"features": [0.5, -0.8, 0.4], "label": "cover"},
+    {"features": [0.6, -0.5, -0.2], "label": "cover"},
+    {"features": [0.7, -0.7, 0.6], "label": "cover"},
+    {"features": [-0.9, 0.9, 0.0], "label": "help"},
+    {"features": [-0.8, 0.6, -0.5], "label": "help"},
+    {"features": [-0.5, 0.8, 0.4], "label": "help"},
+    {"features": [-0.6, 0.5, -0.2], "label": "help"},
+    {"features": [-0.7, 0.7, 0.6], "label": "help"},
+    {"features": [-0.9, -0.9, 0.0], "label": "retreat"},
+    {"features": [-0.8, -0.6, -0.5], "label": "retreat"},
+    {"features": [-0.5, -0.8, 0.4], "label": "retreat"},
+    {"features": [-0.6, -0.5, -0.2], "label": "retreat"},
+    {"features": [-0.7, -0.7, 0.6], "label": "retreat"}
+  ],
+  "validation": [
+    {"features": [0.75, 0.55, 0.3], "label": "attack"},
+    {"features": [0.45, 0.65, -0.3], "label": "attack"},
+    {"features": [0.65, 0.45, 0.1], "label": "attack"},
+    {"features": [0.75, -0.55, 0.3], "label": "cover"},
+    {"features": [0.45, -0.65, -0.3], "label": "cover"},
+    {"features": [0.65, -0.45, 0.1], "label": "cover"},
+    {"features": [-0.75, 0.55, 0.3], "label": "help"},
+    {"features": [-0.45, 0.65, -0.3], "label": "help"},
+    {"features": [-0.65, 0.45, 0.1], "label": "help"},
+    {"features": [-0.75, -0.55, 0.3], "label": "retreat"},
+    {"features": [-0.45, -0.65, -0.3], "label": "retreat"},
+    {"features": [-0.65, -0.45, 0.1], "label": "retreat"}
+  ]
+}

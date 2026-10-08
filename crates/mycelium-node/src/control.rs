@@ -284,6 +284,18 @@ pub enum Request {
     VeilStatus,
     /// Consulta o descritor criptográfico assinado deste nó.
     VeilDescriptor,
+    /// Envia uma mensagem financeira efêmera pelo canal LIVE. Sem DTN/fallback.
+    S1LiveSend {
+        target: String,
+        payload: String,
+        expires_at_ms: u64,
+    },
+    /// Retira mensagens financeiras LIVE já recebidas e ainda válidas.
+    S1LivePoll {
+        limit: usize,
+    },
+    /// Lista os bindings NodeId -> PeerId conhecidos para transporte LIVE. Somente leitura.
+    S1LiveBindings,
     Shutdown,
 }
 
@@ -342,6 +354,13 @@ pub enum Response {
         holdings: Vec<crate::assets::ShareHolding>,
     },
     /// Relatório de estado do serviço VEIL Ω.
+    S1LiveMessages {
+        messages: Vec<String>,
+    },
+    /// Bindings NodeId -> PeerId já convergidos na malha para transporte LIVE.
+    S1LiveBindingsResult {
+        bindings: Vec<String>,
+    },
     VeilStatusResult {
         active: bool,
         role: Option<String>,
@@ -724,5 +743,24 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(query, Request::InertiaAttestation { .. }));
+    }
+
+    #[test]
+    fn s1_live_control_protocol_is_deserializable() {
+        let send = parse_request_line(
+            r#"{"cmd":"s1_live_send","target":"12D3KooWTest","payload":"{}","expires_at_ms":123456}"#,
+            None,
+        )
+        .unwrap();
+        assert!(matches!(send, Request::S1LiveSend { expires_at_ms: 123456, .. }));
+
+        let poll = parse_request_line(r#"{"cmd":"s1_live_poll","limit":16}"#, None).unwrap();
+        assert!(matches!(poll, Request::S1LivePoll { limit: 16 }));
+
+        let wire = serde_json::to_string(&Response::S1LiveMessages {
+            messages: vec![r#"{"kind":"RiskApproval"}"#.into()],
+        })
+        .unwrap();
+        assert!(wire.contains(r#""status":"s1_live_messages""#));
     }
 }

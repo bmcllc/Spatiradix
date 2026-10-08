@@ -1,0 +1,13 @@
+[package]
+name = "mycelium-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mycelium-core = { path = "../mycelium-core" }
+mycelium-node = { path = "../mycelium-node" }
+serde = { version = "1", features = ["derive"] }
+rand = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

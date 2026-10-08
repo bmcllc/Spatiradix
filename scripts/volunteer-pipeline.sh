@@ -15,10 +15,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-STATE="$ROOT/docs/candidatos.state.json"
-PITCH="$ROOT/docs/pitch_voluntario.txt"
+STATE="$ROOT/docs/network/candidatos.state.json"
+PITCH="$ROOT/docs/network/pitch_voluntario.txt"
 MAINNET="$ROOT/seeds/mainnet.txt"
-MATRIZ="$ROOT/docs/matriz_transporte_nat.md"
+MATRIZ="$ROOT/docs/network/matriz_transporte_nat.md"
 PROOF_DEFAULT="${PROOF:-$ROOT/proof.json}"
 PORT="${SEED_PORT:-4001}"
 

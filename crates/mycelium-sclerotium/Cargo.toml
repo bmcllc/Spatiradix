@@ -1,0 +1,22 @@
+[package]
+name = "mycelium-sclerotium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Sclerotium Protocol & Ghost Carrier: nós dormentes, leases criptográficas e despertar seletivo para Mycelium Network"
+
+[dependencies]
+mycelium-core = { workspace = true }
+mycelium-pheromones = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

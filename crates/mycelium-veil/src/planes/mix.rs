@@ -40,7 +40,7 @@ impl MixPlane {
         let delay_ms = ObfuscationLayer::generate_poisson_delay_ms(self.lambda_rate);
         let scheduled = Instant::now() + Duration::from_millis(delay_ms);
 
-        let mut lock = self.queue.lock().unwrap();
+        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
         lock.push_back(MixMessage {
             cell,
             scheduled_dispatch: scheduled,
@@ -56,7 +56,7 @@ impl MixPlane {
         let delay_ms = ObfuscationLayer::generate_poisson_delay_ms(self.lambda_rate);
         let scheduled = Instant::now() + Duration::from_millis(delay_ms);
 
-        let mut lock = self.queue.lock().unwrap();
+        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
         lock.push_back(MixMessage {
             cell,
             scheduled_dispatch: scheduled,
@@ -67,7 +67,7 @@ impl MixPlane {
     /// Extrai e embaralha em lote (*batch shuffle*) todas as mensagens cujo tempo de envio expirou.
     pub fn flush_ready(&self) -> Vec<MixMessage> {
         let now = Instant::now();
-        let mut lock = self.queue.lock().unwrap();
+        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
         let mut ready = Vec::new();
         let mut remaining = VecDeque::new();
 
@@ -90,7 +90,7 @@ impl MixPlane {
 
     /// Quantidade de mensagens atualmente em espera na fila.
     pub fn queue_len(&self) -> usize {
-        self.queue.lock().unwrap().len()
+        self.queue.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 

@@ -4,6 +4,7 @@
 //! recursos, esporos e o trait [`FruitingBody`] que todo componente do
 //! The Lattice implementa para "brotar" do micélio.
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -98,6 +99,24 @@ impl PeerBinding {
     /// Valida que a chave pública bate com o hash derivado do `NodeId`.
     pub fn is_identity_consistent(&self) -> bool {
         NodeId::derive(&self.public_key) == self.node_id
+    }
+
+    /// Valida identidade, expiração e assinatura Ed25519 do binding.
+    pub fn is_valid(&self, now_secs: u64) -> bool {
+        if self.is_expired(now_secs) || !self.is_identity_consistent() {
+            return false;
+        }
+        let Ok(pk): Result<[u8; 32], _> = self.public_key.as_slice().try_into() else {
+            return false;
+        };
+        let Ok(vk) = VerifyingKey::from_bytes(&pk) else {
+            return false;
+        };
+        let Ok(sig) = Signature::from_slice(&self.signature) else {
+            return false;
+        };
+        vk.verify(&Self::sign_payload(&self.node_id, &self.peer_id, self.expires_at), &sig)
+            .is_ok()
     }
 }
 

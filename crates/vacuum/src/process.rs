@@ -1,8 +1,14 @@
 //! Chamber viva: processo filho com isolamento real + limites de recurso.
 //!
-//! Política padrão [`Isolation::Auto`]:
-//! 1. **Bubblewrap** (bwrap) — namespaces de PID + filesystem sandboxed
-//! 2. Fallback **Process** — processo separado sem sandbox
+//! Política padrão [`Isolation::Auto`]: **Bubblewrap** (bwrap) — namespaces de
+//! PID + filesystem sandboxed.
+//!
+//! **Fail-closed por padrão** (EVOLUCAO.md E5.3): sem `bwrap` no PATH, a
+//! resolução de [`Isolation::Auto`] devolve [`VacuumError::IsolationUnavailable`]
+//! e nada é executado. O fallback **Process** (filho sem namespaces) só
+//! acontece quando o operador o pede explicitamente — via
+//! [`Isolation::Process`] ou desligando a política com `MYCELIUM_FAIL_CLOSED=0`.
+//! Nesse caso o fallback é logado em `warn`, nunca silencioso.
 //!
 //! Memória: `RLIMIT_AS` via `pre_exec` (e `prlimit` se disponível).
 //! CPU: hint via cgroup v2 quando writable; senão documentado em env.
@@ -10,6 +16,7 @@
 use crate::layers::LayerStore;
 use crate::{VacuumError, Void};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsStr;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -19,28 +26,97 @@ use std::time::Duration;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Isolation {
-    /// Bubblewrap se disponível; senão processo simples.
+    /// Bubblewrap se disponível; **erro tipado se ausente** enquanto a política
+    /// fail-closed estiver ativa (default). Ver [`Isolation::resolve`].
     #[default]
     Auto,
-    /// Apenas processo filho (sem namespaces).
+    /// Apenas processo filho (sem namespaces) — opt-in explícito e inseguro.
     Process,
     /// Exige bwrap; erro se indisponível.
     Bubblewrap,
 }
 
 impl Isolation {
-    pub fn resolve(self) -> Self {
+    /// Resolve a política concreta de isolamento.
+    ///
+    /// `Auto` + `bwrap` ausente é **fail-closed** por padrão: devolve
+    /// [`VacuumError::IsolationUnavailable`] nomeando o binário faltante e como
+    /// instalá-lo, em vez de degradar silenciosamente para um filho sem sandbox.
+    /// O fallback para [`Isolation::Process`] só ocorre quando `fail_closed` é
+    /// `false` — isto é, quando o operador pediu [`FruitOptions::fail_closed`]
+    /// `= false` / `MYCELIUM_FAIL_CLOSED=0` — e sempre é logado em `warn`.
+    ///
+    /// [`Isolation::Process`] e [`Isolation::Bubblewrap`] são escolhas
+    /// explícitas: a primeira executa sem namespaces, a segunda exige `bwrap`.
+    pub fn resolve(self, fail_closed: bool) -> Result<Self, VacuumError> {
         match self {
             Isolation::Auto => {
                 if which("bwrap") {
-                    Isolation::Bubblewrap
+                    Ok(Isolation::Bubblewrap)
+                } else if fail_closed {
+                    Err(VacuumError::IsolationUnavailable(missing_bwrap_hint()))
                 } else {
-                    Isolation::Process
+                    tracing::warn!(
+                        "bwrap ausente e política fail-closed desligada \
+                         (MYCELIUM_FAIL_CLOSED=0): chamber vai rodar sem namespaces"
+                    );
+                    Ok(Isolation::Process)
                 }
             }
-            other => other,
+            Isolation::Bubblewrap => {
+                if which("bwrap") {
+                    Ok(Isolation::Bubblewrap)
+                } else {
+                    Err(VacuumError::IsolationUnavailable(format!(
+                        "Isolation::Bubblewrap exige `bwrap`. {}",
+                        install_bwrap_hint()
+                    )))
+                }
+            }
+            other => Ok(other),
         }
     }
+
+    /// `true` se o backend de sandbox (`bwrap`) está disponível no PATH.
+    pub fn sandbox_available() -> bool {
+        which("bwrap")
+    }
+}
+
+/// Mensagem acionável para "bwrap não está no PATH".
+fn missing_bwrap_hint() -> String {
+    format!(
+        "`bwrap` (bubblewrap) não encontrado no PATH e a política é fail-closed: \
+         chamber não será executada sem isolamento. {}",
+        install_bwrap_hint()
+    )
+}
+
+/// Como obter `bwrap` no host.
+fn install_bwrap_hint() -> &'static str {
+    "Instale bubblewrap (ex.: `apt install bubblewrap`, `dnf install bubblewrap`, \
+     `pacman -S bubblewrap`), ou use `Isolation::Process` explicitamente se aceita \
+     executar sem sandbox, ou desligue a política com MYCELIUM_FAIL_CLOSED=0."
+}
+
+/// Política fail-closed derivada de `MYCELIUM_FAIL_CLOSED`.
+///
+/// Fail-closed é o **default**. O env var só serve de opt-out explícito:
+/// `0`/`false`/`no`/`off` desligam; qualquer outro valor (inclusive ausente)
+/// mantém a política ligada.
+fn fail_closed_policy(raw: Option<&str>) -> bool {
+    match raw {
+        None => true,
+        Some(v) => !matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "0" | "false" | "no" | "off"
+        ),
+    }
+}
+
+/// [`fail_closed_policy`] aplicada ao ambiente real (mesma semântica em todo o crate).
+fn fail_closed_from_env() -> bool {
+    fail_closed_policy(std::env::var("MYCELIUM_FAIL_CLOSED").ok().as_deref())
 }
 
 /// Opções ao frutificar uma Chamber.
@@ -51,7 +127,12 @@ pub struct FruitOptions {
     pub memory_mib: Option<u64>,
     /// Hint de CPU (cgroup `cpu.max` se disponível).
     pub cpu_cores: Option<u32>,
-    /// Política fail-closed: se true, não permite fallback para processo sem sandbox.
+    /// Política fail-closed: se true (default), não permite fallback para processo
+    /// sem sandbox — `bwrap` ausente vira [`VacuumError::IsolationUnavailable`].
+    ///
+    /// Default `true`. `MYCELIUM_FAIL_CLOSED` é **opt-out**: apenas `0`/`false`/
+    /// `no`/`off` desligam a política; qualquer outro valor (ou a variável
+    /// ausente) mantém o isolamento obrigatório.
     pub fail_closed: bool,
     /// Isolar namespace de rede.
     pub isolate_network: bool,
@@ -59,14 +140,11 @@ pub struct FruitOptions {
 
 impl Default for FruitOptions {
     fn default() -> Self {
-        let fail_closed = std::env::var("MYCELIUM_FAIL_CLOSED")
-            .map(|v| v == "1" || v == "true")
-            .unwrap_or(false);
         Self {
             isolation: Isolation::Auto,
             memory_mib: None,
             cpu_cores: None,
-            fail_closed,
+            fail_closed: fail_closed_from_env(),
             isolate_network: false,
         }
     }
@@ -87,10 +165,18 @@ struct FruitSpec {
     void_layers: Vec<String>,
     #[serde(default)]
     layers_root: Option<PathBuf>,
-    #[serde(default)]
+    /// `serde(default)` falharia para `false` em specs gravados por versões
+    /// antigas — o que reabriria o fallback sem sandbox no `awaken()`.
+    /// Ausente no arquivo ⇒ fail-closed (`true`).
+    #[serde(default = "serde_default_true")]
     fail_closed: bool,
     #[serde(default)]
     isolate_network: bool,
+}
+
+/// Default serde fail-closed para campos `bool` de [`FruitSpec`].
+fn serde_default_true() -> bool {
+    true
 }
 
 /// Processo vivo que serve um Ion.
@@ -192,7 +278,10 @@ impl ChamberProcess {
         workdir: PathBuf,
         opts: FruitOptions,
     ) -> Result<Self, VacuumError> {
-        let isolation = opts.isolation.resolve();
+        // Fail-closed por padrão: `Auto` sem `bwrap` é erro tipado, não degradação.
+        let isolation = opts.isolation.resolve(opts.fail_closed)?;
+        // Guarda redundante (defesa em profundidade): `resolve()` já falha aqui,
+        // mas mantemos a verificação explícita caso a política mude no futuro.
         if opts.fail_closed && opts.isolation == Isolation::Auto && !which("bwrap") {
             return Err(VacuumError::IsolationUnavailable(
                 "política fail-closed exige `bwrap` no PATH para Isolation::Auto".into(),
@@ -264,7 +353,10 @@ impl ChamberProcess {
         if self.healthy() {
             return Ok(());
         }
-        let isolation = self.spec.isolation.resolve();
+        let isolation = self
+            .spec
+            .isolation
+            .resolve(self.spec.fail_closed || fail_closed_from_env())?;
         let port = free_port()?;
         let child = spawn_serve(&self.spec, &self.workdir, port, isolation)?;
         wait_until_listening(&self.workdir, port, Duration::from_secs(8))?;
@@ -348,9 +440,11 @@ fn spawn_serve(
     let stderr = Stdio::from(std::fs::File::create(workdir.join("logs/stderr.log"))?);
     let stdout = Stdio::from(std::fs::File::create(workdir.join("logs/stdout.log"))?);
 
-    let result = match isolation {
+    let result: Result<Child, SpawnErr> = match isolation {
         Isolation::Bubblewrap => spawn_bwrap(spec, workdir, port, stdout, stderr),
-        Isolation::Process | Isolation::Auto => spawn_plain(spec, workdir, port, stdout, stderr),
+        Isolation::Process | Isolation::Auto => {
+            spawn_plain(spec, workdir, port, stdout, stderr).map_err(SpawnErr::from)
+        }
     };
 
     let result = result.and_then(|mut child| {
@@ -360,34 +454,60 @@ fn spawn_serve(
             Ok(Some(status)) => {
                 let err = std::fs::read_to_string(workdir.join("logs/stderr.log"))
                     .unwrap_or_default();
-                Err(VacuumError::Spawn(format!(
+                Err(SpawnErr::Other(VacuumError::Spawn(format!(
                     "chamber saiu cedo ({status}): {err}"
-                )))
+                ))))
             }
             Ok(None) => Ok(child),
-            Err(e) => Err(VacuumError::Spawn(e.to_string())),
+            Err(e) => Err(SpawnErr::Other(VacuumError::Spawn(e.to_string()))),
         }
     });
 
-    result.or_else(|e| {
-        if matches!(spec.isolation, Isolation::Auto) && isolation == Isolation::Bubblewrap {
-            if spec.fail_closed
-                || std::env::var("MYCELIUM_FAIL_CLOSED")
-                    .map(|v| v == "1" || v == "true")
-                    .unwrap_or(false)
-            {
-                return Err(VacuumError::IsolationUnavailable(format!(
-                    "bwrap falhou ({e}) e fail-closed rejeitou fallback sem sandbox"
-                )));
+    let reopen_stdio = || -> Result<(Stdio, Stdio), VacuumError> {
+        let stderr = Stdio::from(std::fs::File::create(workdir.join("logs/stderr.log"))?);
+        let stdout = Stdio::from(std::fs::File::create(workdir.join("logs/stdout.log"))?);
+        Ok((stdout, stderr))
+    };
+
+    result
+        .or_else(|err| -> Result<Child, SpawnErr> {
+            let bwrap_route =
+                matches!(spec.isolation, Isolation::Auto) && isolation == Isolation::Bubblewrap;
+            // A política fail-closed segue decidindo o fallback; só a mensagem
+            // muda conforme a causa. O opt-out explícito continua caindo para
+            // `spawn_plain` nos dois casos.
+            let allow_process_fallback =
+                bwrap_route && !(spec.fail_closed || fail_closed_from_env());
+
+            match err {
+                // Descoberta do binário do nó não é falha do sandbox: `bwrap`
+                // está disponível e funcional, então sugerir instalar
+                // bubblewrap seria mandar o operador atrás do pacote errado.
+                SpawnErr::NodeBinMissing(tried) => {
+                    let hint = missing_node_bin_hint(&tried);
+                    if allow_process_fallback {
+                        tracing::warn!(error = %hint, "binário do nó ausente; fallback Isolation::Process (fail-closed desligado explicitamente)");
+                        let (stdout, stderr) = reopen_stdio().map_err(SpawnErr::from)?;
+                        return spawn_plain(spec, workdir, port, stdout, stderr)
+                            .map_err(SpawnErr::from);
+                    }
+                    Err(SpawnErr::Other(VacuumError::Spawn(hint)))
+                }
+                SpawnErr::Other(e) if allow_process_fallback => {
+                    tracing::warn!(error = %e, "bwrap falhou; fallback Isolation::Process (fail-closed desligado explicitamente)");
+                    let (stdout, stderr) = reopen_stdio().map_err(SpawnErr::from)?;
+                    spawn_plain(spec, workdir, port, stdout, stderr).map_err(SpawnErr::from)
+                }
+                SpawnErr::Other(e) if bwrap_route => {
+                    Err(SpawnErr::Other(VacuumError::IsolationUnavailable(format!(
+                        "bwrap falhou ({e}) e fail-closed rejeitou fallback sem sandbox. {}",
+                        install_bwrap_hint()
+                    ))))
+                }
+                SpawnErr::Other(e) => Err(SpawnErr::Other(e)),
             }
-            tracing::warn!("bwrap falhou ({e}); fallback Isolation::Process");
-            let stderr = Stdio::from(std::fs::File::create(workdir.join("logs/stderr.log"))?);
-            let stdout = Stdio::from(std::fs::File::create(workdir.join("logs/stdout.log"))?);
-            spawn_plain(spec, workdir, port, stdout, stderr)
-        } else {
-            Err(e)
-        }
-    })
+        })
+        .map_err(SpawnErr::into_vacuum)
 }
 
 fn spawn_plain(
@@ -508,37 +628,217 @@ http.server.HTTPServer(('127.0.0.1', int(sys.argv[2])), Handler).serve_forever()
     )))
 }
 
+/// Nomes de arquivo aceitos como binário do nó.
+fn node_bin_names() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["mycelium.exe", "mycelium"]
+    }
+    #[cfg(not(windows))]
+    {
+        &["mycelium"]
+    }
+}
+
+/// Sub-rotinas de build do workspace, em ordem de preferência.
+const WORKSPACE_TARGET_BINS: &[&str] = &["target/debug/mycelium", "target/release/mycelium"];
+
+/// Caminhos absolutos legados, preservados da implementação anterior.
+const LEGACY_ABSOLUTE_BINS: &[&str] = &[
+    "/tmp/target/debug/mycelium",
+    "/tmp/target/release/mycelium",
+];
+
+/// `true` se `candidate` tem o nome de arquivo esperado para o binário do nó.
+fn looks_like_node_bin(candidate: &Path) -> bool {
+    candidate
+        .file_name()
+        .and_then(|f| f.to_str())
+        .map(|f| node_bin_names().contains(&f))
+        .unwrap_or(false)
+}
+
+/// Absolutiza `candidate` contra cada raiz de `roots`, na ordem em que foram dadas.
+///
+/// Um candidato relativo **nunca** é resolvido contra o CWD do processo: uma lista
+/// de raízes vazia produz lista vazia, de propósito — é assim que o chamador
+/// declara que não existe âncora conhecida, em vez de deixar o CWD decidir.
+fn absolutize_against_roots(candidate: &Path, roots: &[PathBuf]) -> Vec<PathBuf> {
+    if candidate.is_absolute() {
+        return vec![candidate.to_path_buf()];
+    }
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    roots.iter().map(|root| root.join(candidate)).collect()
+}
+
+/// Deduz a raiz do workspace a partir de `current_exe()`.
+///
+/// Sobe os ancestrais do executável até achar um diretório que seja ao mesmo
+/// tempo manifesto de workspace (`Cargo.toml`) e raiz de build (`target/`).
+/// É uma âncora derivada da posição do próprio binário — não do CWD.
+fn workspace_root_from_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    exe.ancestors()
+        .skip(1)
+        .find(|dir| dir.join("Cargo.toml").is_file() && dir.join("target").is_dir())
+        .map(Path::to_path_buf)
+}
+
+/// Raízes explícitas contra as quais candidatos relativos são ancorados.
+///
+/// Deliberadamente **não** inclui o CWD: sob `cargo test` o CWD é a raiz do
+/// *pacote*, não a raiz do workspace.
+fn explicit_roots() -> Vec<PathBuf> {
+    workspace_root_from_exe().into_iter().collect()
+}
+
+/// Resolve o binário do nó para execução dentro do sandbox; em `Err`, devolve o
+/// rastro ordenado de caminhos tentados.
+///
+/// **ORDEM DE RESOLUÇÃO**
+/// 1. `spec.mycelium_bin` — override explícito do chamador, que sempre vence.
+///    Se relativo, é ancorado em `roots` (nunca no CWD). Só é aceito quando
+///    existe **e** tem o nome do nó: sob `cargo test` o `current_exe()` do
+///    chamador aponta para `target/<perfil>/deps/<teste>-<hash>`, e executá-lo
+///    com `chamber-serve` não materializa serviço nenhum.
+/// 2. `<root>/target/{debug,release}/mycelium` para cada raiz explícita — o
+///    build da **própria árvore de código** desta chamber. Vem antes do `PATH`
+///    de propósito: um `mycelium` instalado globalmente pode estar meses atrás
+///    do código atual e falhar o contrato HTTP da chamber em silêncio (rota
+///    `/status` e cabeçalho `X-Chamber-Pid` ausentes), sem nenhum erro visível.
+/// 3. `PATH` do processo — mesma técnica de `mycelium_store::runner::is_binary_in_path`:
+///    `env::split_paths` + `join(nome)` + `is_file()`. É o que cobre o nó instalado
+///    (`cargo install`) e o deploy fora do workspace, onde não há `target/`.
+/// 4. `/tmp/target/{debug,release}/mycelium` — layout legado absoluto.
+///
+/// **POR QUE NUNCA RESOLVER CONTRA O CWD**: `cargo test` executa o binário de
+/// teste com o CWD no diretório do *pacote* (`crates/mycelium-node`), não na raiz
+/// do workspace. Um candidato relativo como `target/debug/mycelium` resolveria
+/// para `crates/mycelium-node/target/debug/mycelium`, que não existe — e o
+/// defeito apareceria ao operador como "bubblewrap ausente", orientação errada,
+/// com `bwrap` instalado e funcional. Por isso todo candidato relativo é
+/// ancorado em `roots`.
+fn resolve_mycelium_bin(
+    explicit: &Path,
+    roots: &[PathBuf],
+    path_var: Option<&OsStr>,
+) -> Result<PathBuf, Vec<PathBuf>> {
+    let mut tried: Vec<PathBuf> = Vec::new();
+
+    // 1. Override explícito do chamador.
+    for candidate in absolutize_against_roots(explicit, roots) {
+        if looks_like_node_bin(&candidate) && candidate.is_file() {
+            return Ok(candidate);
+        }
+        tried.push(candidate);
+    }
+
+    // 2. Build desta árvore de código, ancorado em raízes explícitas.
+    for rel in WORKSPACE_TARGET_BINS {
+        for candidate in absolutize_against_roots(Path::new(rel), roots) {
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+            tried.push(candidate);
+        }
+    }
+
+    // 3. PATH do processo.
+    if let Some(raw) = path_var {
+        for dir in std::env::split_paths(raw) {
+            for name in node_bin_names() {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
+                tried.push(candidate);
+            }
+        }
+    }
+
+    // 4. Layout legado absoluto.
+    for rel in LEGACY_ABSOLUTE_BINS {
+        let candidate = Path::new(rel).to_path_buf();
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        tried.push(candidate);
+    }
+
+    Err(tried)
+}
+
+/// Renderiza o rastro de caminhos para a mensagem de erro, sem despejar um
+/// `PATH` gigante no log.
+fn render_tried_paths(tried: &[PathBuf]) -> String {
+    const MAX: usize = 12;
+    if tried.is_empty() {
+        return "nenhum candidato".into();
+    }
+    let mut out: Vec<String> = tried.iter().take(MAX).map(|p| p.display().to_string()).collect();
+    if tried.len() > MAX {
+        out.push(format!("… (+{} outros)", tried.len() - MAX));
+    }
+    out.join(", ")
+}
+
+/// Mensagem honesta para "`bwrap` presente, binário do nó não encontrado".
+///
+/// Não menciona instalar bubblewrap: o sandbox **está** disponível, o que falta
+/// é o executável do nó. Orientar a instalar bubblewrap aqui mandava o
+/// operador atrás do pacote errado.
+fn missing_node_bin_hint(tried: &[PathBuf]) -> String {
+    format!(
+        "bwrap disponível, mas binário mycelium não encontrado; \
+         caminhos tentados (em ordem): {}. \
+         Aponte o caminho absoluto do binário em `mycelium_bin` \
+         (ex.: `cargo build --bin mycelium` → `target/<perfil>/mycelium`) \
+         ou instale o nó no PATH (`cargo install --path crates/mycelium-node --bin mycelium`).",
+        render_tried_paths(tried)
+    )
+}
+
+/// Falha de spawn distinguindo a **descoberta do binário do nó** das demais.
+///
+/// `bwrap` presente + binário do nó ausente é defeito de configuração do host,
+/// não falha de sandbox. O tipo existe só para levar essa distinção — e o
+/// rastro de caminhos — até [`spawn_serve`] sem depender de parsear texto.
+enum SpawnErr {
+    /// Binário do nó não encontrado; carrega os caminhos tentados, em ordem.
+    NodeBinMissing(Vec<PathBuf>),
+    Other(VacuumError),
+}
+
+impl From<VacuumError> for SpawnErr {
+    fn from(e: VacuumError) -> Self {
+        SpawnErr::Other(e)
+    }
+}
+
+impl SpawnErr {
+    fn into_vacuum(self) -> VacuumError {
+        match self {
+            SpawnErr::NodeBinMissing(tried) => VacuumError::Spawn(missing_node_bin_hint(&tried)),
+            SpawnErr::Other(e) => e,
+        }
+    }
+}
+
 fn spawn_bwrap(
     spec: &FruitSpec,
     workdir: &Path,
     port: u16,
     stdout: Stdio,
     stderr: Stdio,
-) -> Result<Child, VacuumError> {
-    let resolved_bin = if spec.mycelium_bin.file_name().map(|f| f == "mycelium").unwrap_or(false) && spec.mycelium_bin.exists() {
-        Some(spec.mycelium_bin.clone())
-    } else {
-        let mut found = None;
-        for candidate in &[
-            "/tmp/target/debug/mycelium",
-            "/tmp/target/release/mycelium",
-            "target/debug/mycelium",
-            "target/release/mycelium",
-        ] {
-            let p = Path::new(candidate);
-            if p.exists() {
-                found = Some(p.to_path_buf());
-                break;
-            }
-        }
-        found
-    };
-
-    let Some(ref bin) = resolved_bin else {
-        return Err(VacuumError::Spawn(
-            "binário mycelium não disponível para execução em bubblewrap".into(),
-        ));
-    };
+) -> Result<Child, SpawnErr> {
+    let path_var = std::env::var_os("PATH");
+    let roots = explicit_roots();
+    let resolved_bin =
+        resolve_mycelium_bin(&spec.mycelium_bin, &roots, path_var.as_deref())
+            .map_err(SpawnErr::NodeBinMissing)?;
+    let bin = &resolved_bin;
 
     let ion = &spec.ion;
     // Bind em path estável dentro do sandbox — evita falhas de chdir sob /tmp.
@@ -625,8 +925,9 @@ fn spawn_bwrap(
     // Não aplicar setrlimit no bwrap pai — quebra o setup de mounts/chdir.
     // Limites ficam documentados via env; Process path aplica RLIMIT_AS.
     tracing::info!(ion = %ion, "chamber usando bubblewrap");
-    cmd.spawn()
-        .map_err(|e| VacuumError::Spawn(format!("bwrap spawn: {e}")))
+    cmd.spawn().map_err(|e| {
+        SpawnErr::Other(VacuumError::Spawn(format!("bwrap spawn: {e}")))
+    })
 }
 
 /// Aplica RLIMIT_AS no filho (Unix).
@@ -731,12 +1032,92 @@ mod tests {
     }
 
     #[test]
-    fn auto_resolves_to_available_backend() {
-        let r = Isolation::Auto.resolve();
-        assert!(matches!(r, Isolation::Bubblewrap | Isolation::Process));
+    fn auto_resolves_to_bubblewrap_when_available() {
+        if !which("bwrap") {
+            return; // sem backend de sandbox no host: coberto por auto_fail_closed_*
+        }
+        assert_eq!(
+            Isolation::Auto.resolve(true).unwrap(),
+            Isolation::Bubblewrap
+        );
+        assert!(Isolation::sandbox_available());
+    }
+
+    #[test]
+    fn auto_fail_closed_without_bwrap_is_typed_error() {
+        if which("bwrap") {
+            return; // com sandbox disponível não há degradação a testar
+        }
+        let err = Isolation::Auto.resolve(true).unwrap_err();
+        assert!(matches!(err, VacuumError::IsolationUnavailable(_)));
+        // Mensagem precisa ser acionável: nomeia o binário e a instalação.
+        let msg = err.to_string();
+        assert!(msg.contains("bwrap"), "mensagem deve nomear bwrap: {msg}");
+        assert!(
+            msg.contains("apt install bubblewrap"),
+            "mensagem deve instruir instalação: {msg}"
+        );
+        // A política fail-closed nunca pode devolver um filho sem sandbox.
+        assert_ne!(
+            Isolation::Auto.resolve(true).ok(),
+            Some(Isolation::Process)
+        );
+    }
+
+    #[test]
+    fn auto_opt_out_falls_back_to_process_only_when_explicitly_allowed() {
+        // `fail_closed: false` é o opt-out deliberado do operador.
+        let r = Isolation::Auto.resolve(false).unwrap();
         if which("bwrap") {
             assert_eq!(r, Isolation::Bubblewrap);
+        } else {
+            assert_eq!(r, Isolation::Process);
         }
+        // Opt-out explícito do `Isolation::Process` sempre funciona.
+        assert_eq!(Isolation::Process.resolve(true).unwrap(), Isolation::Process);
+    }
+
+    #[test]
+    fn explicit_bubblewrap_policy_errors_without_bwrap() {
+        let r = Isolation::Bubblewrap.resolve(true);
+        if which("bwrap") {
+            assert_eq!(r.unwrap(), Isolation::Bubblewrap);
+        } else {
+            assert!(matches!(
+                r,
+                Err(VacuumError::IsolationUnavailable(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn fail_closed_defaults_on_and_env_is_opt_out() {
+        // Default: fail-closed ligado, sem depender do ambiente.
+        assert!(fail_closed_policy(None));
+        // Opt-out explícito.
+        assert!(!fail_closed_policy(Some("0")));
+        assert!(!fail_closed_policy(Some("false")));
+        assert!(!fail_closed_policy(Some("FALSE")));
+        assert!(!fail_closed_policy(Some(" off ")));
+        assert!(!fail_closed_policy(Some("no")));
+        // Qualquer outro valor mantém a política.
+        assert!(fail_closed_policy(Some("1")));
+        assert!(fail_closed_policy(Some("true")));
+        assert!(fail_closed_policy(Some("")));
+        assert!(fail_closed_policy(Some("qualquer-coisa")));
+        // FruitOptions::default() usa exatamente essa semântica.
+        assert_eq!(FruitOptions::default().fail_closed, fail_closed_from_env());
+    }
+
+    #[test]
+    fn default_options_are_fail_closed() {
+        // `Default` não pode mais abrir mão do isolamento por acidente.
+        let opts = FruitOptions::default();
+        assert_eq!(opts.isolation, Isolation::Auto);
+        // Default upstream da política (env ausente) é fail-closed.
+        assert!(fail_closed_policy(None));
+        // E `Default` segue exatamente o opt-out explícito do ambiente.
+        assert_eq!(opts.fail_closed, fail_closed_from_env());
     }
 
     #[test]
@@ -764,5 +1145,172 @@ mod tests {
         assert!(wd.join("rootfs/index.html").exists());
         assert!(wd.join("config.json").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Descoberta do binário do nó (hermética: nenhum teste depende do PATH
+    // ---- real nem de arquivos do build — tudo é fixture em tempdir).
+
+    /// Diretório temporário exclusivo do teste, sem dependência extra.
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vac-resolve-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Cria um arquivo-fonte de "binário": a resolução só exige `is_file()`.
+    fn stub_bin(dir: &Path, name: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let p = dir.join(name);
+        std::fs::write(&p, b"#!/bin/sh\nexit 0\n").unwrap();
+        p
+    }
+
+    #[test]
+    fn explicit_mycelium_bin_wins_over_path_and_workspace_target() {
+        let scratch = scratch("explicit");
+        let explicit = stub_bin(&scratch.join("custom"), "mycelium");
+        let on_path = stub_bin(&scratch.join("pathbin"), "mycelium");
+        let in_target = stub_bin(&scratch.join("ws/target/debug"), "mycelium");
+        // As fontes menos prioritárias existem de fato: a precedência do
+        // override é assertion real, não resultado de fixtures ausentes.
+        assert!(on_path.is_file() && in_target.is_file());
+
+        let path_var = std::env::join_paths([scratch.join("pathbin")]).unwrap();
+        let found =
+            resolve_mycelium_bin(&explicit, &[scratch.join("ws")], Some(&path_var)).unwrap();
+
+        assert_eq!(
+            found, explicit,
+            "override explícito do chamador sempre vence PATH e target/"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn relative_explicit_bin_is_anchored_to_root_not_cwd() {
+        let scratch = scratch("rel-explicit");
+        let ws = scratch.join("ws");
+        let built = stub_bin(&ws.join("target/debug"), "mycelium");
+
+        let found =
+            resolve_mycelium_bin(Path::new("target/debug/mycelium"), &[ws], None).unwrap();
+
+        assert_eq!(found, built, "relativo ancorado na raiz explícita, não no CWD");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn path_lookup_resolves_node_bin_without_workspace_anchor() {
+        let scratch = scratch("path");
+        let on_path = stub_bin(&scratch.join("bin"), "mycelium");
+        let path_var = std::env::join_paths([scratch.join("bin")]).unwrap();
+
+        let found = resolve_mycelium_bin(
+            &scratch.join("inexistente/mycelium"),
+            &[],
+            Some(&path_var),
+        )
+        .unwrap();
+
+        assert_eq!(found, on_path);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn workspace_target_precedes_stale_path_install() {
+        // Regressão de precedência: um `mycelium` instalado globalmente e
+        // desatualizado não pode sombrear o build da própria árvore de código.
+        // O contrato HTTP da chamber (rota `/status` + `X-Chamber-Pid`) existe
+        // só no build novo; escolher o antigo falha sem erro visível.
+        let scratch = scratch("order");
+        let on_path = stub_bin(&scratch.join("bin"), "mycelium");
+        let in_target = stub_bin(&scratch.join("ws/target/debug"), "mycelium");
+        assert!(on_path.is_file() && in_target.is_file());
+        let path_var = std::env::join_paths([scratch.join("bin")]).unwrap();
+
+        let found = resolve_mycelium_bin(
+            Path::new("/inexistente/mycelium"),
+            &[scratch.join("ws")],
+            Some(&path_var),
+        )
+        .unwrap();
+
+        assert_eq!(found, in_target, "build do workspace precede o PATH");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn unresolved_reports_only_absolute_tried_paths() {
+        // Regressão do defeito exposto sob `cargo test`: um candidato relativo
+        // resolvido contra o CWD do pacote resolveria para
+        // `crates/<pkg>/target/debug/mycelium`, que nunca existe. Sem âncora e
+        // sem PATH, nada pode resolver — e nada de relativo pode aparecer.
+        let tried = resolve_mycelium_bin(Path::new("target/debug/mycelium"), &[], None)
+            .expect_err("sem âncora nem PATH nada resolve");
+
+        for p in &tried {
+            assert!(p.is_absolute(), "candidato relativo escapou para o CWD: {p:?}");
+        }
+        assert!(
+            !tried.contains(&PathBuf::from("target/debug/mycelium")),
+            "candidato relativo cru não pode ser reportado: {tried:?}"
+        );
+        assert!(!tried.is_empty(), "o rastro precisa listar o que foi tentado");
+    }
+
+    #[test]
+    fn test_harness_exe_is_rejected_as_node_bin() {
+        // Sob `cargo test`, `current_exe()` do chamador é
+        // `target/<perfil>/deps/<teste>-<hash>`; aceitá-lo como binário do nó
+        // faria a chamber executar o harness em vez de servir conteúdo.
+        assert!(!looks_like_node_bin(Path::new(
+            "/ws/target/debug/deps/community_service_survival_acceptance-abc123"
+        )));
+        assert!(looks_like_node_bin(Path::new("/ws/target/debug/mycelium")));
+    }
+
+    #[test]
+    fn missing_node_bin_hint_names_paths_and_not_bubblewrap() {
+        let tried = vec![PathBuf::from("/opt/x/target/debug/mycelium")];
+        let msg = missing_node_bin_hint(&tried);
+
+        assert!(msg.contains("não encontrado"), "{msg}");
+        assert!(
+            msg.contains("/opt/x/target/debug/mycelium"),
+            "a mensagem deve listar os caminhos tentados: {msg}"
+        );
+        assert!(
+            !msg.contains("apt install bubblewrap"),
+            "orientaria o operador a instalar o pacote errado: {msg}"
+        );
+        assert!(
+            !msg.contains("MYCELIUM_FAIL_CLOSED=0"),
+            "não é uma falha de política de isolamento: {msg}"
+        );
+    }
+
+    #[test]
+    fn missing_bwrap_hint_still_advises_installing_bubblewrap() {
+        // O outro modo de falha — sandbox ausente — mantém a orientação certa.
+        let msg = missing_bwrap_hint();
+        assert!(msg.contains("apt install bubblewrap"), "{msg}");
+        assert!(msg.contains("bwrap"), "{msg}");
+    }
+
+    #[test]
+    fn node_bin_missing_stays_distinct_from_other_spawn_errors() {
+        let missing = SpawnErr::NodeBinMissing(vec![PathBuf::from("/a/mycelium")]).into_vacuum();
+        assert!(missing.to_string().contains("/a/mycelium"));
+
+        let other = SpawnErr::Other(VacuumError::Spawn("bwrap spawn: boom".into())).into_vacuum();
+        assert!(other.to_string().contains("bwrap spawn: boom"));
     }
 }

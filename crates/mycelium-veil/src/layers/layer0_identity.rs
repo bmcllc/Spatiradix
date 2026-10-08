@@ -61,7 +61,7 @@ impl EphemeralMacManager {
 
     /// Executa rotação controlada (em momentos de novo circuito ou reinício de sessão).
     pub fn rotate(&self) -> EphemeralMac {
-        let mut lock = self.current.lock().unwrap();
+        let mut lock = self.current.lock().unwrap_or_else(|e| e.into_inner());
         let next_count = lock.rotation_count + 1;
         let new_mac = Self::generate_local_mac(next_count);
         *lock = new_mac.clone();
@@ -70,7 +70,7 @@ impl EphemeralMacManager {
 
     /// Retorna o MAC atual.
     pub fn current(&self) -> EphemeralMac {
-        self.current.lock().unwrap().clone()
+        self.current.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -101,7 +101,7 @@ impl IdentityLayer {
         let gid = GhostId::spawn_quick(ttl_secs)
             .map_err(|e| VeilError::Crypto(format!("falha ao spawnar GhostID: {e}")))?;
         let pubkey_hex = gid.nostr_pubkey_hex();
-        *self.session_ghost_id.lock().unwrap() = Some(gid);
+        *self.session_ghost_id.lock().unwrap_or_else(|e| e.into_inner()) = Some(gid);
         self.mac_manager.rotate();
         Ok(pubkey_hex)
     }

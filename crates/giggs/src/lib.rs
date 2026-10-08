@@ -106,6 +106,30 @@ impl RefStore {
         std::fs::rename(tmp, path)?;
         Ok(())
     }
+
+    pub fn list_all(&self) -> Result<Vec<SignedRefUpdate>, GiggsError> {
+        let mut out = Vec::new();
+        if !self.root.exists() {
+            return Ok(out);
+        }
+        for repo_entry in std::fs::read_dir(&self.root)? {
+            let repo_entry = repo_entry?;
+            if repo_entry.file_type()?.is_dir() {
+                let repo_name = repo_entry.file_name().to_string_lossy().to_string();
+                for ref_entry in std::fs::read_dir(repo_entry.path())? {
+                    let ref_entry = ref_entry?;
+                    let ref_path = ref_entry.path();
+                    if ref_path.extension().map(|e| e == "json").unwrap_or(false) {
+                        let ref_name = ref_path.file_stem().unwrap().to_string_lossy().to_string();
+                        if let Ok(Some(update)) = self.read(&repo_name, &ref_name) {
+                            out.push(update);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

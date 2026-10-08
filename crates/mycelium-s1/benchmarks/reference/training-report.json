@@ -1,0 +1,34 @@
+{
+  "algorithm": "full_batch_masked_softmax_cross_entropy",
+  "config": {
+    "epochs": 1000,
+    "learning_rate": 0.1,
+    "l2": 0.0001
+  },
+  "feature_names": [
+    "health_centered",
+    "ammo_centered",
+    "pressure_centered"
+  ],
+  "training_before": {
+    "samples": 20,
+    "cross_entropy": 1.3862943611198906,
+    "accuracy": 0.25
+  },
+  "training_after": {
+    "samples": 20,
+    "cross_entropy": 0.05479533435437199,
+    "accuracy": 1.0
+  },
+  "validation_before": {
+    "samples": 12,
+    "cross_entropy": 1.3862943611198906,
+    "accuracy": 0.25
+  },
+  "validation_after": {
+    "samples": 12,
+    "cross_entropy": 0.09256219637928337,
+    "accuracy": 1.0
+  },
+  "initialized_from_existing_model": false
+}

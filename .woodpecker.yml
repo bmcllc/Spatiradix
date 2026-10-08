@@ -1,27 +1,222 @@
-pipeline:
-  check:
-    image: rust:1.80-slim
-    commands:
-      - cargo check --workspace
+# Mycelium Network -- Woodpecker CI
+#
+# ============================ READ THIS FIRST ============================
+# THE FEATURE INVARIANT: workspace crates default to `default = []`, so
+# `--workspace` alone does NOT compile veil/license/bolt11/nostr/pqc code.
+#
+# Concretely, `mycelium-node`, `mycelium-hyphae`, `mycelium-nutrients`,
+# `mycelium-zkp` and `cosmic-cli` all declare `default = []`, while `src/`
+# carries 121 `#[cfg(feature = "...")]` gates (74 of them `veil`). Therefore
+# `cargo check --workspace` and `cargo test --workspace` are happy while the
+# entire veil / license / bolt11 / nostr-transport / pqc-transport surface is
+# never compiled even once. Three integration test files in
+# crates/mycelium-node/tests/ -- veil_p1_3_2_acceptance.rs,
+# veil_data_path_security.rs and veil_socks5_integration.rs, ~918 lines and 7
+# security acceptance tests -- are each wrapped in `#[cfg(feature = "veil")]`
+# and have never executed in CI.
+#
+# THAT IS WHY THE `feature-matrix` PIPELINE BELOW EXISTS. A green check/test
+# pair on this workspace does NOT mean the code compiles; it means the default
+# feature subset compiles. The matrix job is what actually covers the rest.
+#
+# ===================== WHY TEST STEPS GO THROUGH scripts/ci-test-gate.sh =====
+# DO NOT "simplify" a test step back to a bare `cargo test`. Exit status 0 is,
+# on its own, no longer accepted as evidence in this repo, for three verified
+# reasons -- each of which either produced or nearly produced a WRONG PASS:
+#
+#   1. `cargo test` WITHOUT `--no-fail-fast` stops at the FIRST failing test
+#      binary. A green run had been concealing real failures: 23 of 40 binaries
+#      were never reached. The script always adds `--no-fail-fast`.
+#   2. `cargo test ... | tee log` reports TEE'S exit status, not cargo's. tee
+#      succeeds as long as the pipe holds, so this produced one genuine false
+#      pass across 8 feature checks. The script reads `${PIPESTATUS[0]}`.
+#   3. A WRONG TEST FILTER is the same bug. `cargo test -p mycelium-economy
+#      --locked concurrent_appends` exits 0 having run ZERO tests: the real test
+#      is `concurrent_cli_appends_produce_one_valid_chain_without_duplicate_sequence`
+#      (crates/mycelium-economy/tests/ledger_durability.rs:171). A job keyed on a
+#      filter that matches nothing is a silent no-op reporting SUCCESS.
+#
+# The script therefore also COUNTS what ran, prints a per-binary summary, and
+# fails with a distinct exit code when the total is zero (exit 2) or below the
+# job's `--min-tests` floor. It checks the TOTAL, never per binary, because
+# legitimate zero-test components exist -- `Running unittests
+# src/bin/mycelium-economy.rs` legitimately reports `running 0 tests`, and a run
+# where some binaries ran 0 and others ran tests must still pass.
+# `--expect-test NAME` additionally asserts a named suite really executed.
+#
+# Measured floors (measured 2026-10-01). The floors sit BELOW the measured value
+# on purpose: they exist to catch catastrophic loss (a suite emptied, a filter
+# silently mismatching, a feature gate flipping off), not to flap when tests are
+# legitimately added or removed. Re-measure and update when the count moves a lot.
+#
+# ------------------------------ ON THE TOOLCHAIN ------------------------
+# Every pipeline below uses the floating `rust:slim` tag, NOT a pinned
+# `rust:1.80-slim`. The old tag was below the workspace's real MSRV floor: with
+# `time` 0.3.53 requiring rustc 1.88.0 and `libp2p` 0.56.0 requiring 1.83.0,
+# that image could never resolve this lockfile and every pipeline was red for a
+# reason unrelated to our code. A floating tag cannot silently rot past the
+# floor again. The exact channel is pinned once, in `rust-toolchain.toml`
+# (1.88.0), which rustup honours inside the image -- so there is a single source
+# of truth for the toolchain rather than a version repeated in five pipelines.
 
+pipeline:
+  # ---------------------------------------------------------------------------
+  # Blocking pipeline: default-feature compile only. See the invariant above --
+  # this does NOT cover the non-default feature surface.
+  # ---------------------------------------------------------------------------
+  check:
+    # Floating stable-slim: cannot rot below the lockfile MSRV floor.
+    # Exact channel is pinned in rust-toolchain.toml.
+    image: rust:slim
+    commands:
+      - cargo check --workspace --locked
+
+  # ---------------------------------------------------------------------------
+  # Blocking pipeline. fmt is deliberately NOT added here: the tree is not
+  # fmt-clean, so gating on it would turn CI red on the first run. See `fmt`.
+  # ---------------------------------------------------------------------------
   clippy:
-    image: rust:1.80-slim
+    image: rust:slim
     commands:
       - rustup component add clippy
-      - cargo clippy --workspace --all-targets -- -D warnings
+      - cargo clippy --workspace --all-targets --locked -- -D warnings
 
+  # ---------------------------------------------------------------------------
+  # Blocking pipeline: default-feature tests only. Does not run the veil suite.
+  #
+  # Measured 2026-10-01: `cargo test --workspace --locked --no-fail-fast` runs
+  # 491 tests across 74 binaries. Floor is 450 -- below the measurement so that
+  # adding tests does not flap the gate, but far enough up that losing a whole
+  # suite (~40 tests) or a feature-gated group still fails loudly. Note that 491
+  # counts only DEFAULT features: the +7 veil delta is covered by the veil step
+  # of the `feature-matrix` pipeline below, not here.
+  # ---------------------------------------------------------------------------
   test:
-    image: rust:1.80-slim
+    image: rust:slim
     commands:
-      - cargo test --workspace
+      - ./scripts/ci-test-gate.sh "workspace tests (default features)" --min-tests 450 --workspace --locked
+      # Same build, finer floor. Measured 2026-10-01: `cargo test -p
+      # mycelium-economy --locked --no-fail-fast` runs 185 tests = 163 lib
+      # + 10 ledger_durability + 6 pinned_provider_cli + 6 verified_view_cli.
+      # The workspace floor of 450 above is deliberately loose; 170 is tight
+      # enough to notice if the economy crate's tests stop being selected or
+      # start being cfg-gated away, while still leaving headroom. This run is
+      # also the canonical partial-zero case: `Running unittests
+      # src/bin/mycelium-economy.rs` legitimately reports 0 tests, and the
+      # gate must pass anyway because the TOTAL is 185.
+      - ./scripts/ci-test-gate.sh "mycelium-economy tests" --min-tests 170 -p mycelium-economy --locked
 
-  gate-a:
-    image: rust:1.80-slim
+  # ---------------------------------------------------------------------------
+  # BLOCKING. ONCE GREEN, DELETE THE `allow_failure` KEY BELOW.
+  #
+  # Currently reporting-only so the first run tells us what is actually broken
+  # instead of blocking every other push. It is a measuring stick, not a licence:
+  # the moment it is green it MUST become blocking, otherwise the default-feature
+  # pipelines keep reporting success on a tree whose veil/license/bolt11/nostr/pqc
+  # code paths have still never been compiled.
+  #
+  # Risk to expect on the first run, in order of likelihood:
+  #   * `webrtc`       -> libp2p-webrtc 0.9.0-alpha.1, a pre-release alpha built
+  #                      against libp2p 0.56. Its own manifest calls it
+  #                      experimental. Least likely to compile.
+  #   * `range-proof`  -> bulletproofs =4.0.0 / merlin =3.0.0 / dalek-ng =4.1.1,
+  #                      all exact-pinned (`=`) to 2023-era releases sitting on
+  #                      dalek-ng + digest 0.9 while the rest of the tree uses
+  #                      dalek 4.x. Likely to fail.
+  #   * `bolt11`       -> lightning-invoice =0.33.2 (exact-pinned, old).
+  #   * `license`      -> ml-dsa =0.1.0 (exact-pinned).
+  #   * `veil`         -> the one we most need covered; ~918 lines of acceptance
+  #                      tests have never run, so treat any failure here as a
+  #                      real finding rather than a CI configuration problem.
+  # All four exact-pinned versions ARE present in Cargo.lock, so this job must not
+  # need to re-resolve; `--locked` is passed so that a surprise lockfile rewrite
+  # fails loudly here instead of silently mutating Cargo.lock.
+  # ---------------------------------------------------------------------------
+  feature-matrix:
+    image: rust:slim
+    allow_failure: true
     commands:
-      - cargo test -p mycelium-hyphae --test multihop_topology_acceptance -- --nocapture
+      # Sweep 1: whole workspace, every feature enabled at once.
+      - cargo check --workspace --all-features --locked
+      # Sweep 2: same, plus test/bench/example targets. This is the sweep that
+      # actually reaches the three `#[cfg(feature = "veil")]` files in
+      # crates/mycelium-node/tests/ -- sweep 1 builds lib/bins only and skips
+      # integration tests entirely.
+      - cargo check --workspace --all-features --all-targets --locked
+      # VEIL RUN. The three veil acceptance suites ACTUALLY EXECUTE, not just
+      # compile. Measured 2026-10-01: `cargo test --workspace --features veil
+      # --locked --no-fail-fast` runs 498 tests, i.e. the veil delta over the 491
+      # default run is exactly +7. Those 7 are the whole point of this step:
+      #   veil_socks5_integration    1 test
+      #   veil_data_path_security    2 tests
+      #   veil_p1_3_2_acceptance     4 tests
+      # The total floor is deliberately 450 (same reasoning as `test`), because a
+      # floor of 498 would flap. The check that actually matters is therefore the
+      # `--expect-test` triple: it asserts each of the three veil binaries really
+      # executed, which is exactly what a `default = []` workspace cannot tell you
+      # from a green log. Feature-gated and non-gated binaries both count toward
+      # the total, so a partial-zero run is not a failure.
+      - ./scripts/ci-test-gate.sh "veil acceptance suites" --min-tests 450 --expect-test veil_socks5_integration --expect-test veil_data_path_security --expect-test veil_p1_3_2_acceptance --workspace --features veil --locked
+      # Sweep 3: per-feature isolation, so a break is attributable to ONE
+      # feature rather than to the union of all eight. Diagnostic only: every
+      # iteration is allowed to fail so the log shows the full picture in one
+      # run instead of stopping at the first casualty. The package set below
+      # collectively defines all eight features, so cargo will not reject any
+      # name with "none of the selected packages contains these features".
+      # NOTE the `if ... then` and not `... || true`: each check's OWN status is
+      # what is tested. This sweep is diagnostic, so it must not abort the job.
+      - |
+        for f in veil license bolt11 nostr nostr-transport pqc-transport webrtc range-proof; do
+          echo "---- feature matrix: $f ----"
+          if cargo check --locked -p mycelium-node -p mycelium-hyphae -p mycelium-nutrients -p mycelium-zkp --features "$f"; then
+            echo "OK: $f"
+          else
+            echo "BROKEN: $f"
+          fi
+        done
+
+  # ---------------------------------------------------------------------------
+  # KNOWN-FAILING, TRACKED AS DEBT.
+  #
+  # The ~48k lines across the 30 members have never been `cargo fmt`-normalised
+  # and there was no fmt gate anywhere until now, so this job is expected to be
+  # RED on its first run. It is a measuring stick for formatting debt, not a gate.
+  #
+  # It is a separate pipeline on purpose: folding fmt into the blocking `clippy`
+  # pipeline would have turned CI red on the very first run and buried the real
+  # toolchain fix in an unrelated formatting diff.
+  #
+  # rustfmt comes from `components` in rust-toolchain.toml, so no install step
+  # is needed. Once the tree is formatted in one dedicated formatting-only
+  # commit, delete the `allow_failure` key and make this blocking.
+  # ---------------------------------------------------------------------------
+  fmt:
+    image: rust:slim
+    allow_failure: true
+    commands:
+      - cargo fmt --all --check
+
+  # ---------------------------------------------------------------------------
+  # PRESERVED VERBATIM. Gate definitions are the release contract and were not
+  # touched by the toolchain/CI repair.
+  #
+  # Only the INVOCATION was hardened, never the gate itself: `--no-fail-fast` is
+  # now forced, `${PIPESTATUS[0]}` replaces tee's status, and each gate carries a
+  # `--min-tests` floor plus a `--expect-test` name so a renamed or
+  # cfg-gated-away test fails loudly instead of passing by running nothing.
+  # Measured 2026-10-01: gate A runs 3 tests, gate B runs 1.
+  # ---------------------------------------------------------------------------
+  gate-a:
+    image: rust:slim
+    commands:
+      # NOTE the single quotes: a YAML plain scalar ends at the first ": ", and the
+      # gate label contains one. Unquoted, PyYAML does not error -- it silently
+      # parses the command as a two-key MAPPING instead of a string, which only
+      # explodes at run time inside Woodpecker.
+      - './scripts/ci-test-gate.sh "gate-a: DTN multihop & reboot survival" --min-tests 3 --expect-test multihop -p mycelium-hyphae --locked --test multihop_topology_acceptance -- --nocapture'
 
   gate-b:
-    image: rust:1.80-slim
+    image: rust:slim
     commands:
       - apt-get update && apt-get install -y python3
-      - cargo test -p mycelium-node --test community_service_survival_acceptance -- --nocapture
+      - './scripts/ci-test-gate.sh "gate-b: community service & chamber survival" --min-tests 1 --expect-test community_service -p mycelium-node --locked --test community_service_survival_acceptance -- --nocapture'

@@ -10,6 +10,8 @@
 //!
 //! Features (network):
 //! - `range-proof`: Bulletproofs prove_single + agregador Merkle/FRI.
+//!   Sem a feature, [`range_proof::prove_range`] / [`range_proof::verify_range`]
+//!   devolvem [`ZkpError::RangeProofDisabled`] — degradam, não entram em panic.
 //! - `license`: VOID-00 handshake licença comercial (ML-DSA-87 + device binding).
 //! - `bolt11`: BOLT11 Lightning invoice parsing (para voucher economy).
 
@@ -284,19 +286,70 @@ mod hashcash_tests {
 // Port nativo de `void_core` (`create_range_proof`, `verify_range_proof`,
 // `aggregate_zk_proofs`). Versões lockadas do void_core:
 //   bulletproofs =4.0.0, curve25519-dalek-ng =4.1.1, merlin =3.0.0.
-// Fora de feature → stub documental (não atrai deps pesadas no build default).
+// Fora de feature → degradação graciosa via [`ZkpError`] (nunca panic),
+// sem atrair deps pesadas no build default.
+
+/// Erros das primitivas ZKP deste crate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ZkpError {
+    /// A feature opcional `range-proof` não está habilitada neste build.
+    ///
+    /// Retornado no lugar de `panic!`/`unimplemented!` para que um build
+    /// `default-features = false` (o caminho usado em produção por
+    /// `mycelium-veil` e `mycelium-node`) falhe de forma tratável.
+    RangeProofDisabled,
+    /// Geração da prova falhou dentro da biblioteca Bulletproofs.
+    RangeProofFailed,
+}
+
+impl std::fmt::Display for ZkpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZkpError::RangeProofDisabled => f.write_str(
+                "range proofs desabilitadas neste build: habilite a feature `range-proof` \
+                 do crate `mycelium-zkp` (dep: bulletproofs 4.0.0)",
+            ),
+            ZkpError::RangeProofFailed => {
+                f.write_str("falha ao gerar a range proof (bulletproofs)")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ZkpError {}
+
+/// Prova de faixa + commitment correspondente.
+///
+/// Declarado fora de qualquer `cfg` para que as variantes compiladas e não
+/// compiladas de [`range_proof`] exponham exatamente a mesma superfície pública.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RangeProofResult {
+    pub proof: Vec<u8>,
+    pub commitment: Vec<u8>, // CompressedRistretto
+}
 
 #[cfg(not(feature = "range-proof"))]
 #[allow(dead_code)]
 pub mod range_proof {
-    /// Prova de faixa (Bulletproofs). Habilite a feature `range-proof`
-    /// (`cargo test -p mycelium-zkp --features range-proof`).
-    pub fn prove_range(_value: u64) -> Vec<u8> {
-        unimplemented!("habilite a feature `range-proof` (dep: bulletproofs 4.0.0)")
+    pub use super::RangeProofResult;
+
+    use super::ZkpError;
+
+    /// Prova de faixa (Bulletproofs) — indisponível neste build.
+    ///
+    /// Habilite a feature `range-proof`
+    /// (`cargo test -p mycelium-zkp --features range-proof`). Sem ela, devolve
+    /// [`ZkpError::RangeProofDisabled`] em vez de entrar em panic.
+    pub fn prove_range(_value: u64, _blinding_factor: &[u8]) -> Result<RangeProofResult, ZkpError> {
+        Err(ZkpError::RangeProofDisabled)
     }
-    /// Verifica prova de faixa. Habilite a feature `range-proof`.
-    pub fn verify_range(_proof: &[u8], _commitment: &[u8]) -> bool {
-        unimplemented!("habilite a feature `range-proof` (dep: bulletproofs 4.0.0)")
+
+    /// Verifica prova de faixa — indisponível neste build.
+    ///
+    /// Habilite a feature `range-proof`. Sem ela, devolve
+    /// [`ZkpError::RangeProofDisabled`] em vez de entrar em panic.
+    pub fn verify_range(_proof: &[u8], _commitment: &[u8]) -> Result<bool, ZkpError> {
+        Err(ZkpError::RangeProofDisabled)
     }
 }
 
@@ -306,17 +359,19 @@ pub mod range_proof {
     use curve25519_dalek_ng::ristretto::CompressedRistretto as NgCompressedRistretto;
     use curve25519_dalek_ng::scalar::Scalar as NgScalar;
 
+    use super::ZkpError;
     use bulletproofs::{BulletproofGens, PedersenGens, RangeProof};
     use merlin::Transcript;
 
-    /// Prova de faixa Bulletproofs (void_core: `create_range_proof`).
-    #[derive(Clone)]
-    pub struct RangeProofResult {
-        pub proof: Vec<u8>,
-        pub commitment: Vec<u8>, // CompressedRistretto
-    }
+    /// Reexporta o resultado compartilhado (mesmo caminho `range_proof::RangeProofResult`
+    /// nos dois builds).
+    pub use super::RangeProofResult;
 
-    pub fn prove_range(value: u64, blinding_factor: &[u8]) -> RangeProofResult {
+    /// Prova de faixa Bulletproofs (void_core: `create_range_proof`).
+    pub fn prove_range(
+        value: u64,
+        blinding_factor: &[u8],
+    ) -> Result<RangeProofResult, ZkpError> {
         let pc_gens = PedersenGens::default();
         let bp_gens = BulletproofGens::new(64, 1);
         let mut transcript = Transcript::new(b"void-range-proof-v8");
@@ -335,38 +390,41 @@ pub mod range_proof {
             &blinding_scalar,
             32, // 32-bit range: amount até ~4.29B
         )
-        .expect("range proof generation failed");
+        .map_err(|_| ZkpError::RangeProofFailed)?;
 
-        RangeProofResult {
+        Ok(RangeProofResult {
             proof: proof.to_bytes(),
             commitment: commitment.to_bytes().to_vec(),
-        }
+        })
     }
 
     /// Verifica prova de faixa (`.void_core` `verify_range_proof`).
-    pub fn verify_range(proof_bytes: &[u8], commitment_bytes: &[u8]) -> bool {
+    ///
+    /// `Ok(false)` = prova/commitment rejeitada (entrada malformada ou prova
+    /// inválida). `Err` fica reservado para a capacidade indisponível.
+    pub fn verify_range(proof_bytes: &[u8], commitment_bytes: &[u8]) -> Result<bool, ZkpError> {
         let pc_gens = PedersenGens::default();
         let bp_gens = BulletproofGens::new(64, 1);
         let mut transcript = Transcript::new(b"void-range-proof-v8");
 
         let proof = match RangeProof::from_bytes(proof_bytes) {
             Ok(p) => p,
-            Err(_) => return false,
+            Err(_) => return Ok(false),
         };
 
         let mut comm_bytes = [0u8; 32];
         if commitment_bytes.len() == 32 {
             comm_bytes.copy_from_slice(commitment_bytes);
         } else {
-            return false;
+            return Ok(false);
         }
         let commitment = match NgCompressedRistretto(comm_bytes).decompress() {
             Some(c) => c,
-            None => return false,
+            None => return Ok(false),
         };
-        proof
+        Ok(proof
             .verify_single(&bp_gens, &pc_gens, &mut transcript, &commitment.compress(), 32)
-            .is_ok()
+            .is_ok())
     }
 }
 
@@ -376,11 +434,40 @@ mod range_proof_tests {
 
     #[test]
     fn prove_and_verify_roundtrip() {
-        let r = prove_range(100, &[1u8; 32]);
-        assert!(verify_range(&r.proof, &r.commitment));
+        let r = prove_range(100, &[1u8; 32]).unwrap();
+        assert!(verify_range(&r.proof, &r.commitment).unwrap());
         // commitment ou valor trocado → falha
-        let r2 = prove_range(101, &[1u8; 32]);
-        assert!(!verify_range(&r2.proof, &r.commitment));
+        let r2 = prove_range(101, &[1u8; 32]).unwrap();
+        assert!(!verify_range(&r2.proof, &r.commitment).unwrap());
+    }
+}
+
+#[cfg(all(test, not(feature = "range-proof")))]
+mod range_proof_disabled_tests {
+    use super::range_proof::{prove_range, verify_range};
+    use super::ZkpError;
+
+    /// O build default (`default-features = false`, o que `mycelium-veil` usa)
+    /// deve degradar com erro tipado, nunca com panic.
+    #[test]
+    fn disabled_build_errors_instead_of_panicking() {
+        assert_eq!(
+            prove_range(42, &[7u8; 32]).unwrap_err(),
+            ZkpError::RangeProofDisabled
+        );
+        assert_eq!(
+            verify_range(&[0u8; 32], &[0u8; 32]).unwrap_err(),
+            ZkpError::RangeProofDisabled
+        );
+    }
+
+    #[test]
+    fn disabled_error_is_informative() {
+        let msg = ZkpError::RangeProofDisabled.to_string();
+        assert!(msg.contains("range-proof"), "mensagem: {msg}");
+        // `Error` para integráveis que boxam o erro.
+        let boxed: Box<dyn std::error::Error> = Box::new(ZkpError::RangeProofDisabled);
+        assert!(boxed.to_string().contains("range-proof"));
     }
 }
 

@@ -1,3 +1,20 @@
+# ⚠️  ESTADO ATUAL: ZERO entradas ativas neste catálogo.
+#     A única entrada histórica está comentada no fim do arquivo, porque o
+#     inbound TCP falhou em Jul/2026. Sem nenhum seed com inbound verificado
+#     não há peering inicial para um nó novo, o que é consistente com os
+#     níveis de validação (b) — malha multi-nó em redes reais — e (d) —
+#     implantação em produção — ainda NÃO estarem cumpridos.
+#     Nada foi descomentado nem removido: a política "Só entradas com inbound
+#     VERIFICADO" abaixo permanece em vigor.
+#
+#     NOTA: zero entradas ativas é um fato de REDE, não de build. A baseline
+#     de remediação (docs/VALIDACAO.md, seção "Baseline de remediação —
+#     verificado") compila e roda o workspace inteiro — 308 passed / 0 failed
+#     / 1 ignored no default, 315 / 0 / 1 com --features veil, as 8 features
+#     da matriz verdes. O código está validado localmente; o que falta aqui é
+#     host com inbound verificado, e isso nenhuma execução local substitui.
+#     Referência: docs/VALIDACAO.md
+#
 # Mycelium Network — catálogo público de seeds (mainnet)
 #
 # Só entradas com inbound VERIFICADO (./scripts/verify-sporocarp.sh).

@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+mycelium-s1 = { path = "../mycelium-s1" }
 mycelium-core = { workspace = true }
 mycelium-hyphae = { workspace = true }
 mycelium-pheromones = { workspace = true }
@@ -33,6 +34,8 @@ rand = { workspace = true }
 libp2p = { workspace = true }
 axum = { workspace = true }
 base64 = "0.22"
+mycelium-media = { workspace = true }
+mycelium-sclerotium = { workspace = true }
 mycelium-zkp = { workspace = true, features = ["license", "bolt11"], optional = true }
 mycelium-veil = { workspace = true, optional = true }
 mycelium-pqc = { workspace = true, optional = true }
@@ -53,3 +56,5 @@ bolt11 = ["dep:mycelium-zkp", "mycelium-zkp/bolt11", "mycelium-nutrients/bolt11"
 # Mantido para a CLI activar a mesma feature flag; publish Nostr corre no CLI.
 nostr = []
 nostr-transport = ["mycelium-hyphae/nostr-transport"]
+# Transporte S1/P2P pós-quântico disponível ao daemon.
+pqc-transport = ["mycelium-hyphae/pqc-transport"]

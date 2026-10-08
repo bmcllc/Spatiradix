@@ -71,11 +71,34 @@ impl VeilLayer for TransportLayer {
         self.active = active;
     }
 
+    /// **O que esta função faz hoje: apenas enquadra e prefixa um cabeçalho.**
+    ///
+    /// Ela NÃO faz seleção de transporte. Concretamente, `process`:
+    /// - escreve 32 bytes de cabeçalho e os prefixa ao payload (`data` volta maior
+    ///   em `TRANSPORT_HEADER_LEN`);
+    /// - copia `self.preferred_channel` para `header[0]` — mas
+    ///   `preferred_channel` só muda via [`TransportLayer::set_preferred_channel`],
+    ///   que **não é chamado em lugar nenhum**: em uma instância construída por
+    ///   [`TransportLayer::new`] o campo é invariante e vale sempre
+    ///   `ChannelType::TcpQuic`. Portanto não há seleção multi-canal aqui;
+    /// - sorteia `header[1]` (`rand::thread_rng()`) como "hop count / channel
+    ///   hint" — `recover` não lê esse byte, então ele não é round-tripped;
+    /// - anexa um digest blake3 truncado (28 B) do payload, verificado por
+    ///   [`VeilLayer::recover`].
+    ///
+    /// Nenhum canal físico/virtual é realmente selecionado aqui: a escolha do
+    /// meio (`TcpQuic`/`CircuitRelay`/`DistanceBridgeMesh`/`HcnDtn`) é feita
+    /// pelo transporte do circuito (`planes::live`), fora desta camada. Esta
+    /// camada também não está no caminho de dados de produção — ver o banner em
+    /// [`crate::layers`].
     fn process(&self, data: &[u8]) -> Result<Vec<u8>, VeilError> {
         let mut header = [0u8; TRANSPORT_HEADER_LEN];
 
-        // Seleciona canal (pode variar de forma estocástica ou manter preferido)
+        // Registra o canal preferido no cabeçalho. ATENÇÃO: `preferred_channel` é
+        // invariante em qualquer instância construída por `new()` (vale `TcpQuic`) —
+        // isto NÃO é seleção de canal. Ver a doc de `process` acima.
         header[0] = self.preferred_channel as u8;
+        // Hint aleatório de hop/canal. Não é lido por `recover` e não é round-tripped.
         header[1] = rand::thread_rng().gen_range(0..4); // Hop count / channel hint
         header[2] = 0x01; // Versão de transporte
         header[3] = 0x00; // Flags

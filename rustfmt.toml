@@ -1,0 +1,64 @@
+# rustfmt configuration for the Mycelium Network workspace.
+#
+# THE CODEBASE IS NOT YET fmt-CLEAN.
+# =================================
+# This file exists to make `cargo fmt` *stable and predictable*, not to
+# reformat the tree. There is currently no `cargo fmt --check` gate anywhere in
+# CI (the `fmt` pipeline added alongside this file is `allow_failure: true` and
+# is tracked as known-failing debt), and the ~48k lines across the 30 workspace
+# members have never been normalised. The first `--check` run will therefore
+# report a large diff. That is expected and is the point of measuring it.
+#
+# CONSEQUENCE -- READ BEFORE EDITING:
+# Run `cargo fmt --all` and commit the result as its own, dedicated,
+# formatting-only commit. Do not interleave reformatting with logic changes:
+# a mixed commit makes every future `git blame` and every future review of this
+# tree's diffs ambiguous.
+#
+# WHY THE SETTINGS ARE SO CONSERVATIVE
+# ===================================
+# Every non-default option below would rewrite code across the whole workspace.
+# This file is therefore restricted to options that are (a) already rustfmt's
+# own defaults, or (b) required for correctness of parsing.
+#
+# DELIBERATELY NOT SET -- do not "improve" these without a dedicated
+# formatting-only commit:
+#   max_width              -- kept at rustfmt's default 100. Anything lower
+#                             reflows a large share of the tree.
+#   use_small_heuristics   -- default "Default". "Max" collapses struct
+#                             literals and fn call args onto one line and would
+#                             touch nearly every call site.
+#   imports_granularity    -- UNSTABLE (needs nightly). Forcing `Module` or
+#                             `Crate` regrouping rewrites every `use` block.
+#   group_imports          -- UNSTABLE (needs nightly). Regroups std/external/
+#                             crate imports; large, cosmetic diff.
+#   format_strings         -- UNSTABLE (needs nightly). Rewraps string
+#                             literals; changes runtime string contents.
+#   wrap_comments          -- UNSTABLE (needs nightly). Reflows every comment,
+#                             destroying deliberate ASCII diagrams and tables in
+#                             the protocol comments.
+#   normalize_comments     -- UNSTABLE (needs nightly). Rewrites `/* */` to
+#                             `//`, which would mangle block comments.
+#   format_code_in_doc_comments -- would reformat fenced snippets in doc docs.
+#   error_on_line_overflow -- would turn cosmetic long lines into hard errors.
+#
+# Several of the options above are *nightly-only*. Setting any of them would make
+# `cargo fmt --all --check` fail outright on the stable toolchain pinned in
+# rust-toolchain.toml, so their absence is load-bearing, not incidental.
+
+# Required: every workspace member uses `edition = "2021"`. Without this,
+# rustfmt applies 2015 defaults and misparses async/await and `dyn`-era syntax.
+edition = "2021"
+
+# rustfmt's default width. Stated explicitly so that a future global change is a
+# visible diff here rather than a silent reformat of the tree.
+max_width = 100
+
+# All 135 .rs files in the tree use LF endings (verified: zero CRLF files), so
+# pinning this makes `cargo fmt` deterministic across Linux/Windows agents
+# instead of letting it rewrite every file's line endings on a Windows runner.
+newline_style = "Unix"
+
+# rustfmt's default; stated explicitly for the same "no surprise reformat"
+# reason as max_width above.
+tab_spaces = 4

@@ -69,7 +69,19 @@ mod veil_tests {
                 assert!(active, "VEIL Ω deve estar ativo no boot");
                 assert_eq!(mode.as_deref(), Some("veil"));
                 assert_eq!(kill_switch, "armed");
-                assert_eq!(active_layers, 7, "Todas as 7 camadas devem estar ativas");
+                // Honestidade da telemetria: `active_layers` conta as camadas REALMENTE
+                // ligadas ao caminho de dados, não as implementadas. O `LayerPipeline`
+                // de 7 camadas não está na rota de produção — só os testes o exercitam
+                // (ver o banner em `mycelium_veil::layers`) —, então o número honesto é
+                // 0. As etapas 3-5 abaixo provam que o relay SOCKS5 LIVE funciona com
+                // essas 0 camadas do pipeline: o tráfego real vai por `planes::live` +
+                // `bridge`, e é esse circuito que o teste exercita de ponta a ponta.
+                assert_eq!(
+                    active_layers, 0,
+                    "active_layers deve reportar as camadas ligadas ao caminho de dados \
+                     (0 enquanto o LayerPipeline não estiver ligado à produção) — nunca \
+                     as 7 camadas apenas projetadas"
+                );
                 assert!(session_id.is_some(), "Deve possuir SessionID gerado");
                 let addr = socks5_addr.expect("socks5_addr deve estar definido");
                 assert_eq!(addr, socks5_addr_str);
