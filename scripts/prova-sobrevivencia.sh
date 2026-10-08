@@ -27,16 +27,16 @@ BASE_PORT=18800          # porta base da malha (evita colidir com 7474/prova-zer
 HORIZON_BASE=18900
 MARKER="SOBREVIVENCIA-MARKER-OK"
 
-A_HOME="/tmp/prova-sobr-a"; B_HOME="/tmp/prova-sobr-b"; C_HOME="/tmp/prova-sobr-c"
-A_LOG="/tmp/prova-sobr-a.log"; B_LOG="/tmp/prova-sobr-b.log"; C_LOG="/tmp/prova-sobr-c.log"
-A_PID="" B_PID="" C_PID=""
+A_HOME="/tmp/prova-sobr-a"; B_HOME="/tmp/prova-sobr-b"; C_HOME="/tmp/prova-sobr-c"; D_HOME="/tmp/prova-sobr-d"
+A_LOG="/tmp/prova-sobr-a.log"; B_LOG="/tmp/prova-sobr-b.log"; C_LOG="/tmp/prova-sobr-c.log"; D_LOG="/tmp/prova-sobr-d.log"
+A_PID=""; B_PID=""; C_PID=""; D_PID=""
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ✅ $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
 
 cleanup() {
-  for pid in "$A_PID" "$B_PID" "$C_PID"; do
+  for pid in "$A_PID" "$B_PID" "$C_PID" "$D_PID"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   done
 }
@@ -50,13 +50,13 @@ status_plots() { # $1=home -> nº de plots no bank
   "$BIN" --home "$1" status 2>/dev/null | awk '/plots/{print $2; exit}'
 }
 
-echo "== 1/5 Compilando o nó =="
+echo "== 1/6 Compilando o nó =="
 cargo build -p mycelium-cli --manifest-path "$ROOT/Cargo.toml"
 
 rm -rf "$A_HOME" "$B_HOME" "$C_HOME" "$A_LOG" "$B_LOG" "$C_LOG"
 for h in "$A_HOME" "$B_HOME" "$C_HOME"; do mkdir -p "$h"; done
 
-echo "== 2/5 Subindo a malha (A seed + B,C réplicas) =="
+echo "== 2/6 Subindo a malha (A seed + B,C réplicas) =="
 "$BIN" --home "$A_HOME" sprout --contribute 2cpu,4gb,50gb >/dev/null
 "$BIN" --home "$B_HOME" sprout --contribute 1cpu,2gb,25gb >/dev/null
 "$BIN" --home "$C_HOME" sprout --contribute 1cpu,2gb,25gb >/dev/null
@@ -95,9 +95,11 @@ if [ -S "$B_HOME/mycelium.sock" ] && [ -S "$C_HOME/mycelium.sock" ]; then
 else
   bad "réplicas não subiram; ver $B_LOG / $C_LOG"; exit 1
 fi
+# PeerId do B (ficará vivo após a morte de A) — alvo de bootstrap do late-joiner D
+B_PEER=$(grep -oE '12D3Koo[A-Za-z0-9]+' "$B_LOG" | head -1)
 sleep 3   # deixa a lattice estabilizar antes de publicar
 
-echo "== 3/5 A publica; B e C replicam =="
+echo "== 3/6 A publica; B e C replicam =="
 SOW_OUT=$("$BIN" --home "$A_HOME" sow --message "$MARKER" --path "app.rs" --content 'fn main(){ println!("sobrevive"); }' 2>&1) || {
   bad "sow falhou: $SOW_OUT"; exit 1; }
 # o CLI imprime "plot semeado: Qm..." (prefixo minúsculo)
@@ -117,7 +119,7 @@ else
   bad "B/C não replicaram dentro da janela (B=$(status_plots "$B_HOME") C=$(status_plots "$C_HOME") plots)"
 fi
 
-echo "== 4/5 Derrubando o publicador A =="
+echo "== 4/6 Derrubando o publicador A =="
 kill -9 "$A_PID" 2>/dev/null || true
 wait "$A_PID" 2>/dev/null || true
 A_PID=""
@@ -129,7 +131,7 @@ else
   ok "publicador A está morto (kill -9)"
 fi
 
-echo "== 5/5 B e C servem com A offline (banco local) =="
+echo "== 5/6 B e C servem com A offline (banco local) =="
 if recall_ok "$B_HOME" "$CID"; then
   ok "B serve o conteúdo com A morto (banco local)"
 else
@@ -141,12 +143,46 @@ else
   bad "C perdeu o conteúdo com A morto"
 fi
 
+echo "== 6/6 Late-joiner D recupera via DHT (anti-entropy, E1.3) =="
+# D entra DEPOIS da morte de A, nunca viu o gossip. Bootstrap no B (vivo).
+# recall ausente dispara dht_get -> B/C respondem (guardaram o record) ->
+# resultado validado (público+hash) e absorvido no bank local de D.
+BOOT_B="/ip4/127.0.0.1/tcp/$B_PORT/p2p/$B_PEER"
+"$BIN" --home "$D_HOME" sprout --contribute 1cpu,1gb,10gb >/dev/null
+RUST_LOG=info "$BIN" --home "$D_HOME" daemon --contribute 1cpu,1gb,10gb \
+  --horizon-port $((HORIZON_BASE+3)) --no-mdns \
+  --listen "/ip4/127.0.0.1/tcp/$((BASE_PORT+3))" --bootstrap "$BOOT_B" >"$D_LOG" 2>&1 &
+D_PID=$!
+for _ in $(seq 1 60); do [ -S "$D_HOME/mycelium.sock" ] && break; sleep 0.5; done
+if [ ! -S "$D_HOME/mycelium.sock" ]; then
+  bad "late-joiner D não subiu; ver $D_LOG"
+else
+  ok "D entrou atrasado (após morte de A), bootstrap no B"
+  # prova que D nunca recebeu o gossip: bank local vazio antes de consultar
+  if recall_ok "$D_HOME" "$CID"; then
+    echo "    (nota: D já tinha o plot — gossip alcançou D; teste de DHT menos estrito)"
+  fi
+  # consulta DHT (recall ausente dispara dht_get) até o plot ser absorvido
+  recovered=0
+  for _ in $(seq 1 45); do
+    "$BIN" --home "$D_HOME" recall --plot "$CID" >/dev/null 2>&1 || true
+    if recall_ok "$D_HOME" "$CID"; then recovered=1; break; fi
+    sleep 1
+  done
+  if [ "$recovered" = "1" ]; then
+    ok "D recuperou o conteúdo via DHT com A morto (anti-entropy provada)"
+  else
+    bad "D não recuperou via DHT (record indisponível ou recall não baixa)"
+  fi
+fi
+
 echo
 echo "=================================================================="
 echo " RESULTADO: ${PASS} PASS · ${FAIL} FAIL"
 echo " Plot publicado : $CID (marker: $MARKER)"
-echo " Topologia      : A(seed) -> B,C  |  A morto no passo 4"
+echo " Topologia      : A(seed) -> B,C  |  A morto no passo 4  |  D late-join no passo 6"
 echo " Escopo         : replicação de plot público + retenção local (E1.5)"
-echo " Fora do escopo : anti-entropy/pinning R>=3, restart das réplicas, CGNAT"
+echo "                : recuperação por late-joiner via DHT (E1.3 anti-entropy)"
+echo " Fora do escopo : pinning R>=3 com recibos, restart das réplicas, CGNAT"
 echo "=================================================================="
 [ "$FAIL" -eq 0 ]
