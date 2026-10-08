@@ -36,13 +36,22 @@ O arquivo fornecido contém somente `crates/`; **não** contém o `Cargo.toml` r
 2. Política de pinning voluntário com alvo de réplicas `R>=3` e recibos assinados de custódia; não contar DHT providers como cópias comprovadas.
 3. Reconciliação periódica anti-entropy entre pares; detectar peers offline e repinar cópias sem exigir o publicador.
 
-**Status parcial (2026-10-08)** — `scripts/prova-sobrevivencia.sh` (fase 6) prova a
-**recuperação sob demanda** anti-entropy: um late-joiner D que entra após a morte do
-publicador recupera o plot via consulta DHT (`recall` ausente → `dht_get` → record
-validado (público+hash) → `absorb_public`). Ainda **não** provado para fechar E1.3:
-  - [ ] reconciliação **periódica** (push/ticker) — hoje a recuperação é sob demanda
-    (disparada por `recall`), não um sweep proativo entre pares;
-  - [ ] detecção de peer offline + **repin** automático de cópias;
+**Status parcial (2026-10-08)** — `scripts/prova-sobrevivencia.sh` prova os **dois**
+lados do E1.3:
+  - **pull sob demanda** (fase 6): late-joiner D entra após a morte do publicador e
+    recupera via `recall` ausente → `dht_get` → record validado (público+hash) →
+    `absorb_public`;
+  - **push periódico proativo** (fase 7): `anti_entropy_tick` (organismo) republica os
+    esporos públicos locais na DHT + lattice a cada `MYCELIUM_ANTI_ENTROPY_SECS`
+    (default 180s). Um detentor P que **só puxou** o plot (não o publicou) o
+    republica; um nó passivo E, que **nunca consulta**, tem o bank preenchido
+    sozinho. O log de P é assertado com ≥ 2 re-anúncios (prova direta do tick).
+
+Ainda **não** provado para fechar E1.3:
+  - [ ] detecção **explícita** de peer offline — hoje o repin é cego/periódico, não
+    reativo à queda de um detentor;
+  - [ ] reconciliação dirigida por manifesto de IDs entre pares (o tick republica o
+    que o nó **tem**; não puxa o que lhe **falta** quando desconhece o CID);
   - [ ] queda de relay com reconexão (depende de E3, multi-host/CGNAT).
 4. Limites por peer e quota de armazenamento com garbage collection respeitando pins; métricas `desired/verified/available`.
 5. Aceitação: nó A publica; B, C e D recebem bytes e comprovam hashes; A é desligado; B e C mantêm acesso sem consultar A.
