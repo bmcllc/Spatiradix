@@ -38,6 +38,16 @@ O arquivo fornecido contém somente `crates/`; **não** contém o `Cargo.toml` r
 4. Limites por peer e quota de armazenamento com garbage collection respeitando pins; métricas `desired/verified/available`.
 5. Aceitação: nó A publica; B, C e D recebem bytes e comprovam hashes; A é desligado; B e C mantêm acesso sem consultar A.
 
+**Status parcial (2026-10-08)** — `scripts/prova-sobrevivencia.sh` prova parte desta
+aceitação em malha real de 3 nós (loopback): A publica, **duas** réplicas (B, C)
+recebem os bytes via gossip (`SporePrint` → `bank.absorb_public`) e os retêm no
+SporeBank local; com A morto (`kill -9`), B e C seguem servindo o plot do banco
+local. Ainda **não** provado para fechar E1.5 por completo:
+  - [ ] réplica **terceira** (D) — o critério pede B, C **e D**; hoje são 2;
+  - [ ] comprovação de **hash** por réplica (só conteúdo/marker verificado);
+  - [ ] anti-entropy e pinning `R>=3` com recibos (E1.2/E1.3);
+  - [ ] quota/GC e métricas `desired/verified/available` (E1.4).
+
 ## Etapa E2 — serviços vivos e estado
 
 1. Diferenciar serviços estáticos reproduzíveis, dinâmicos sem estado e dinâmicos com estado.
