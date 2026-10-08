@@ -75,3 +75,6 @@ xs
 
 # Config local do OpenCode (contém API key de provedor) — nunca versionar.
 opencode.json
+
+# Repo git embutido (próprio .git) — não versionar como gitlink aqui.
+/apps/mycelium-s1-portal/
