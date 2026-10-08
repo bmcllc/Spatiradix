@@ -1,0 +1,115 @@
+{
+  "all_sensor_max_c": 56.0,
+  "all_sensors_valid": true,
+  "captured_at": "2026-10-07T22:51:19.409105+00:00",
+  "cpu0_freq_max_mhz": 1477.528,
+  "cpu0_freq_min_mhz": 1032.961,
+  "cpu_package_max_c": 55.0,
+  "cpu_package_median_c": 55.0,
+  "cpu_package_min_c": 54.0,
+  "cqr_executed": false,
+  "interval_seconds": 0.25,
+  "mode": "READ_ONLY_THERMAL_DIAGNOSTIC_NOT_S1_OR_EXECUTION_AUTHORITY",
+  "over_75c_samples": 0,
+  "sample_count": 12,
+  "samples": [
+    {
+      "cpu0_freq_mhz": 1477.528,
+      "cpu_package_c": 54.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413479.4091048
+    },
+    {
+      "cpu0_freq_mhz": 1166.538,
+      "cpu_package_c": 54.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413479.667675
+    },
+    {
+      "cpu0_freq_mhz": 1184.237,
+      "cpu_package_c": 54.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413479.9265733
+    },
+    {
+      "cpu0_freq_mhz": 1152.423,
+      "cpu_package_c": 54.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413480.1878324
+    },
+    {
+      "cpu0_freq_mhz": 1072.447,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 56.0,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413480.449203
+    },
+    {
+      "cpu0_freq_mhz": 1034.991,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413480.709915
+    },
+    {
+      "cpu0_freq_mhz": 1154.117,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413480.9714816
+    },
+    {
+      "cpu0_freq_mhz": 1064.896,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413481.2321782
+    },
+    {
+      "cpu0_freq_mhz": 1135.88,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413481.496024
+    },
+    {
+      "cpu0_freq_mhz": 1176.573,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413481.7561233
+    },
+    {
+      "cpu0_freq_mhz": 1032.961,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413482.0140681
+    },
+    {
+      "cpu0_freq_mhz": 1248.464,
+      "cpu_package_c": 55.0,
+      "maximum_sensor_c": 55.05,
+      "sensor_error_count": 0,
+      "sensor_valid": true,
+      "time_unix_s": 1791413482.2701302
+    }
+  ],
+  "schema_version": 1,
+  "verified_nev": null
+}

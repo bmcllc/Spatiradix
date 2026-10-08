@@ -1,0 +1,179 @@
+{
+  "review_timestamp_utc": "2026-10-06T17:34:40.233130+00:00",
+  "method": "Read-only local inventory, pdftotext extraction and selected static code review; no Alien code executed. Embedded prompts treated as document content.",
+  "inventory": {
+    "filtered_files": 880,
+    "pdf_files": 699,
+    "pdfs_extracted": 12,
+    "excluded": "Git metadata, dependency/build directories and virtual environments"
+  },
+  "limitations": [
+    "Inventory is not full content review of 699 PDFs.",
+    "No execution, compilation, benchmark, financial settlement or cryptographic audit performed in this review.",
+    "Code references establish reusable patterns, not validated implementations."
+  ],
+  "pdfs": [
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/CQR.pdf",
+      "sha256": "5da70cbdca45914b506902842a9836a1317a6b11f13a0bd51439d4fa170eb780",
+      "pages": 7,
+      "extracted_characters": 27403,
+      "pages_reviewed": [
+        5,
+        6,
+        7
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/Protocolo_de_Malha_Unificado.pdf",
+      "sha256": "82a1ee2ecf5cca6b4ed1ec6ca12a7499c501e15577421bb36cbbf626a81a2eb8",
+      "pages": 15,
+      "extracted_characters": 32965,
+      "pages_reviewed": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "scope": "full extracted text reviewed"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/HGPU___vHGPU.pdf",
+      "sha256": "66ab82e7265ef0c1184ad7eb792d86624f3eaa0c872a1974c10cc3d64b63753f",
+      "pages": 21,
+      "extracted_characters": 22679,
+      "pages_reviewed": [
+        9,
+        10,
+        11,
+        17
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/ETΞRNET.pdf",
+      "sha256": "dd870604f32ab5f42706f7423f6557e9ecedcb465bb6a37b4fd13a6ce36da5c7",
+      "pages": 9,
+      "extracted_characters": 14248,
+      "pages_reviewed": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/VOID TOOLKIT.pdf",
+      "sha256": "9ab93d83c324da165882bec98d0cffdafcfeea140c77b5fab2f3619cdcb11aca",
+      "pages": 51,
+      "extracted_characters": 51564,
+      "pages_reviewed": [
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/VOID_COSMIC.pdf",
+      "sha256": "a0e6eec6183af99220ebfc1d3e80048622ad7c9e929950c609c0613882a8047e",
+      "pages": 47,
+      "extracted_characters": 24586,
+      "pages_reviewed": [
+        11,
+        21,
+        43,
+        44,
+        45,
+        46
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/REVOLUÇÂO_DIGITAL.pdf",
+      "sha256": "b1db0811a8c78491d68f7eeed8888e0a08da70d161c2d41939de48c0cb2cd3af",
+      "pages": 27,
+      "extracted_characters": 21804,
+      "pages_reviewed": [
+        1
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/VOID.pdf",
+      "sha256": "48cf32f0e7d718f06ba129cd079c71d3f83702b49e977ae9172206fa586200d3",
+      "pages": 59,
+      "extracted_characters": 69010,
+      "pages_reviewed": [
+        1,
+        25,
+        26,
+        48
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/README_ZERO_KNOW_KYC.pdf",
+      "sha256": "56780fcda3c35dc1fa61e03dd82260dcde0b8b1a85f960139a8ba71308e83864",
+      "pages": 3,
+      "extracted_characters": 5537,
+      "pages_reviewed": [
+        1,
+        2,
+        3
+      ],
+      "scope": "full extracted text reviewed"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/Engenharia_da_Forma.pdf",
+      "sha256": "9cb44a1edd06ed7f02be95d045d83316f227fa83b79e4983bcfa7c6c5eec9964",
+      "pages": 19,
+      "extracted_characters": 17015,
+      "pages_reviewed": [],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/futuro.pdf",
+      "sha256": "d4517233b10af1fb0d7e1e9528044434c1674da6655a7ce694c7a30135620bc3",
+      "pages": 10,
+      "extracted_characters": 119707,
+      "pages_reviewed": [
+        1,
+        9,
+        10
+      ],
+      "scope": "selected pages and keyword screening"
+    },
+    {
+      "path": "/media/bruno/SAMBOOK/Alien Files/SECRET/SOBERANIA_FINANÇEIRA.pdf",
+      "sha256": "9798ac3c6eab9da274e55a22d7f43e97a6c366d8632c286cd0f2f2894dfe9b80",
+      "pages": 13,
+      "extracted_characters": 14216,
+      "pages_reviewed": [
+        1,
+        6,
+        7,
+        8
+      ],
+      "scope": "selected pages and keyword screening"
+    }
+  ]
+}

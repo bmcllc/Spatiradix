@@ -1,0 +1,11 @@
+{
+  "binary": "../../target/debug/mycelium-economy",
+  "native_home": "var/eco-native",
+  "source_report": "var/s1-search-report.json",
+  "mupp_state": "/tmp/s1-mupp-state.json",
+  "agent_id": "mycelium-autonomous",
+  "estimated_job_cost_musd_micros": 10000,
+  "ttl_seconds": 60,
+  "poll_seconds": 30,
+  "max_source_age_seconds": 30
+}
