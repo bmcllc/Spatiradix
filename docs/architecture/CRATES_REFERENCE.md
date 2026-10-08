@@ -1,0 +1,289 @@
+# 📚 Guia e Dicionário Completo de Crates do Mycelium Network
+
+> **Classificação**: Referência Técnica Exaustiva do Monorepo  
+> **Total de Crates / Pacotes**: 30  
+> **Linguagem**: Rust (Edição 2021)  
+
+---
+
+## 1. Núcleo, Redes e Transporte (Substrato Básico)
+
+### 1.1. `mycelium-core`
+- **Caminho**: [`crates/mycelium-core`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-core)
+- **Papel**: Tipos primitivos compartilhados por todo o ecossistema.
+- **Tipos Fundamentais**:
+  - `NodeId(pub [u8; 32])`: Identificador canônico do nó, derivado via BLAKE3 da chave pública ed25519.
+  - `ContentId(pub [u8; 32])`: Endereço content-addressed (prefixo `Qm...` em hex) usado por plots, arquivos e dados.
+  - `Resources`: Estrutura de contribuição (`cpu_cores`, `ram_mib`, `storage_gib`, `bandwidth_mbps`).
+  - `Nutrient`: Enum das 5 moedas bioquímicas (`Atp`, `Enzymes`, `Mycelia`, `Spores`, `Resilience`).
+  - `Vitality`: Estado vital de um fruto (`Sprouting`, `Fruiting`, `Dormant`, `Decomposed`).
+  - `Membrane`: Papel fisiológico de conectividade de rede (`Floresta`, `Raiz`, `Folha`, `Esporocarp`).
+  - `trait FruitingBody`: Interface implementada por qualquer serviço que brota do micélio.
+
+---
+
+### 1.2. `mycelium-hyphae`
+- **Caminho**: [`crates/mycelium-hyphae`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-hyphae)
+- **Papel**: Camada de rede e transporte vivo sobre `libp2p`.
+- **Funcionalidades**:
+  - Conexões ponto-a-ponto via **QUIC** (UDP) e **TCP + Noise + Yamux**.
+  - Roteamento e busca de peers via **Kademlia DHT**.
+  - Barramento de mensagens e fofoca em tempo real via **Gossipsub** (tópicos de feromônios e lattice).
+  - Descoberta em rede local via **mDNS**.
+  - **Relay Mesh (Circuit Relay v2)** para conectar nós atrás de NAT/CGNAT.
+  - **Store-and-Forward / DTN Mailbox**: Armazém de mensagens e bundles tolerante a reboots e partições de rede (`DtnBundleStore`).
+  - Suporte a **WebRTC ICE** (`webrtc-direct`).
+
+---
+
+### 1.3. `mycelium-pheromones`
+- **Caminho**: [`crates/mycelium-pheromones`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-pheromones)
+- **Papel**: Reconhecimento químico e identidade descentralizada.
+- **Funcionalidades**:
+  - `Gland`: A glândula privada ed25519 do nó (`germinate()`, `from_seed()`, `sign_bytes()`).
+  - `Pheromone`: Pacote de presença assinado contendo `trail` (histórico de trabalho), `scent` (reputação), `decay_secs` (evaporação temporal) e membrana.
+  - Alarmes de onda química para notificação de peers maliciosos na malha.
+
+---
+
+### 1.4. `mycelium-nutrients`
+- **Caminho**: [`crates/mycelium-nutrients`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nutrients)
+- **Papel**: O ledger econômico metabólico da rede.
+- **Funcionalidades**:
+  - `Ledger`: Controle de saldos de nutrientes (`ATP`, `Enzymes`, `Mycelia`, `Spores`, `Resilience`).
+  - `SignedTransfer`: Transferências ponto-a-ponto assinadas criptograficamente com proteção contra double-spending e replay.
+  - Vouchers de liquidação e créditos automáticos por heartbeat e prestação de serviços.
+
+---
+
+### 1.5. `mycelium-sporebank`
+- **Caminho**: [`crates/mycelium-sporebank`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-sporebank)
+- **Papel**: Persistência de dados content-addressed no disco do nó.
+- **Funcionalidades**:
+  - `SporeBank`: Armazena objetos `Plot` serializados em `{home}/sporebank/plots/{cid}.json`.
+  - Indexação de chaves Kademlia DHT para busca global de conteúdos na rede.
+  - Recuperação rápida (`recall`) e cache local.
+
+---
+
+### 1.6. `mycelium-node`
+- **Caminho**: [`crates/mycelium-node`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-node)
+- **Papel**: O orquestrador central do nó (daemon do organismo).
+- **Funcionalidades**:
+  - `Organism`: Loop principal assíncrono que integra hifas, control socket, persistência e métricas.
+  - Plano de controle via Unix Domain Socket (`mycelium.sock`) e JSON-RPC.
+  - Servidor HTTP do Singularity Event Horizon (`:7474`).
+  - Servidores dos ions nativos: `/src/` (navegador de código), `/store/` (lojinha de jogos), `/seeds/` (catálogo de peers) e `/vitrine/` (vitrine da floresta).
+
+---
+
+## 2. Portadoras Físicas, Dormência & Mídia
+
+### 2.1. `mycelium-sclerotium`
+- **Caminho**: [`crates/mycelium-sclerotium`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-sclerotium)
+- **Papel**: Protocolo de dormência profunda (Sclerotium) e portadora fantasma (Ghost Carrier).
+- **Funcionalidades**:
+  - Máquina de estados: `Sprouting -> Alive <-> Dormant <-> Ghost -> Dead`.
+  - `GhostLease`: Delegação de presença para nós vizinhos sem compartilhar chaves privadas.
+  - `WakeToken` & `ImpulsePacket`: Despertar seletivo anti-DoS via HMAC e 50 bytes binários.
+  - `EthernetCarrier`: Despacho e recepção de Magic Packets Wake-on-LAN (WoL) com extensão SecureON.
+
+---
+
+### 2.2. `mycelium-media`
+- **Caminho**: [`crates/mycelium-media`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-media)
+- **Papel**: Motor descentralizado para streaming de áudio e vídeo (Mycelium Video).
+- **Funcionalidades**:
+  - Fatiamento de vídeos em chunks de 2MB indexados por hashes BLAKE3.
+  - `ChannelStore`: Gestão de canais descentralizados assinados por chaves ed25519/GhostID.
+  - `PlaylistService`: Criação e versão de playlists imutáveis compartilháveis na malha.
+  - `PinManager`: Fixação de vídeos no SporeBank local para evitar perda de dados.
+
+---
+
+### 2.3. `mycelium-store`
+- **Caminho**: [`crates/mycelium-store`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-store)
+- **Papel**: App Store P2P de software legado, jogos e motores de emulação.
+- **Funcionalidades**:
+  - Detecção automática de capacidades do sistema host: **RetroArch, MAME, QEMU, WASM, Bubblewrap**.
+  - Catálogo de spores de software (`SoftwareSpore`) com hashes de verificação de integridade.
+  - Execução isolada em sandbox Bubblewrap estrito (`store launch --sandbox`).
+
+---
+
+## 3. Privacidade, Anonimato & Pós-Quântica
+
+### 3.1. `mycelium-veil`
+- **Caminho**: [`crates/mycelium-veil`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-veil)
+- **Papel**: Rede de roteamento cebola (*onion routing*) pós-quântica VEIL Ω.
+- **Funcionalidades**:
+  - Cifragem cebola de 3 saltos (**Guard, Relay, Exit**) usando **ML-KEM-768 + X25519 + ChaCha20-Poly1305**.
+  - Servidor proxy **SOCKS5** local (`127.0.0.1:1080`).
+  - Blindagem **Anti-SSRF** estrita no nó de egresso (bloqueio de subredes privadas RFC1918 e metadados).
+  - Suporte a nós **Bridges** para evasão de censura estatal e bloqueios de IP.
+
+---
+
+### 3.2. `mycelium-pqc`
+- **Caminho**: [`crates/mycelium-pqc`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-pqc)
+- **Papel**: Primitivas criptográficas pós-quânticas padronizadas (NIST / FIPS).
+- **Funcionalidades**:
+  - **ML-KEM-768 / 1024** (Kyber): Encapsulamento e troca de chaves resistente a computadores quânticos.
+  - **ML-DSA-87** (Dilithium nível 5): Assinaturas digitais pós-quânticas de altíssima segurança.
+
+---
+
+### 3.3. `mycelium-zkp`
+- **Caminho**: [`crates/mycelium-zkp`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-zkp)
+- **Papel**: Provas de conhecimento zero, verificação de licenças e validação financeira.
+- **Funcionalidades**:
+  - Verificação de licenças de software **VOID-00** com vinculação a hardware seguro (`device_entropy`).
+  - Validação e inspeção de invoices Lightning Network (**BOLT11**) para a economia de vouchers.
+
+---
+
+### 3.4. `mycelium-ghostid`
+- **Caminho**: [`crates/mycelium-ghostid`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-ghostid)
+- **Papel**: Identidades efémeras secp256k1 compatíveis com Nostr (NIP-01 Schnorr).
+- **Funcionalidades**:
+  - Coleta de entropia do sistema e do ambiente (sem persistência em disco).
+  - Assinaturas Schnorr efêmeras e decoerência programada de identidade.
+
+---
+
+### 3.5. `mycelium-qel`
+- **Caminho**: [`crates/mycelium-qel`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-qel)
+- **Papel**: Quantum-resistant Erasure Layer (Camada de fragmentação e tolerância a desastres).
+- **Funcionalidades**:
+  - Fragmentação de arquivos em $N$ shards exigindo quórum de $K$ partes para reconstrução.
+  - Dispersão multicanal (Nostr, IPFS, RelayMesh, LoRa).
+
+---
+
+### 3.6. `entropy`
+- **Caminho**: [`crates/entropy`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/entropy)
+- **Papel**: Cofre de segredos e Shamir Secret Sharing (SSS) sobre Galois Field $\text{GF}(256)$.
+- **Funcionalidades**:
+  - `Vault`: Divisão de segredos mestres em $M$-de-$N$ `Shade`s com meia-vida programada.
+
+---
+
+### 3.7. `isotope`
+- **Caminho**: [`crates/isotope`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/isotope)
+- **Papel**: Estado distribuído com decaimento radioativo (CRDT Last-Write-Wins sobre gossip).
+- **Funcionalidades**:
+  - `Nucleus`: Armazena átomos de dados versionados com relógio LWW que se sincronizam via hifas.
+
+---
+
+## 4. O Pipeline de Computação "The Lattice"
+
+### 4.1. `giggs`
+- **Caminho**: [`crates/giggs`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/giggs)
+- **Papel**: Forja soberana de código e DAG de plots.
+- **Funcionalidades**:
+  - `Plot`: Objeto imutável content-addressed que representa um commit/snapshot da árvore de código.
+  - `Leaf`: Cada arquivo individual com caminho relativo e bytes de conteúdo fatiado.
+
+---
+
+### 4.2. `thefield`
+- **Caminho**: [`crates/thefield`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/thefield)
+- **Papel**: O campo de ressonância e coordenação de quórum.
+- **Funcionalidades**:
+  - `Signal`: Declaração pública de intenção de computação emitida na malha.
+  - `Resonance`: Assinatura de nós que concordam em executar o pipeline quando o quórum for atingido.
+
+---
+
+### 4.3. `inertia`
+- **Caminho**: [`crates/inertia`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/inertia)
+- **Papel**: Motor de execução de compilação, testes e atestações criptográficas.
+- **Funcionalidades**:
+  - `Vector`: Instrução precisa de execução de build/teste em cima de um snapshot exato.
+  - `SignedAttestation`: Prova criptográfica assinada de que o build foi realizado honestamente.
+
+---
+
+### 4.4. `vacuum`
+- **Caminho**: [`crates/vacuum`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/vacuum)
+- **Papel**: Camada de isolamento e execução segura de processos.
+- **Funcionalidades**:
+  - `Chamber`: O contêiner leve e isolado do Mycelium.
+  - Suporte automático a **Bubblewrap** (`bwrap`), namespaces de Linux e limites de memória `RLIMIT_AS`.
+
+---
+
+### 4.5. `plasma`
+- **Caminho**: [`crates/plasma`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/plasma)
+- **Papel**: Nuvem elástica de serviços e balanceamento de carga.
+- **Funcionalidades**:
+  - `Ion`: Instância de serviço em execução com carga eletrostática (`Positive`, `Neutral`, `Negative`).
+  - Dinâmica de repulsão e atração para escalonamento automático de réplicas entre nós da rede.
+
+---
+
+### 4.6. `singularity`
+- **Caminho**: [`crates/singularity`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/singularity)
+- **Papel**: O horizonte de eventos HTTP (gateway de entrada da internet tradicional).
+- **Funcionalidades**:
+  - `EventHorizon`: Reverse proxy HTTP na porta `:7474` que mapeia URLs `/{ion}/` até as Chambers vivas.
+  - Rate limiting por IP, injeção de security headers e console de status.
+
+---
+
+## 5. Transportes Heterogêneos & Pontes
+
+### 5.1. `mycelium-nostr` & `mycelium-nostr-transport`
+- **Caminho**: [`crates/mycelium-nostr`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nostr) e [`crates/mycelium-nostr-transport`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nostr-transport)
+- **Papel**: Túnel libp2p sobre relays Nostr (WSS outbound na porta 443).
+- **Funcionalidades**: Permite a dois nós atrás de CGNAT/firewalls restritivos se conectarem sem abrir portas no roteador.
+
+---
+
+### 5.2. `mycelium-ipfs`
+- **Caminho**: [`crates/mycelium-ipfs`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-ipfs)
+- **Papel**: Interoperabilidade com o ecossistema IPFS (blockstore local e CIDs).
+
+---
+
+### 5.3. `mycelium-tropical`
+- **Caminho**: [`crates/mycelium-tropical`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-tropical)
+- **Papel**: Roteamento ótimo sobre álgebra tropical $(\min, +)$ para cálculo de menor custo e menor latência na malha.
+
+---
+
+### 5.4. `mycelium-distancebridge`
+- **Caminho**: [`crates/mycelium-distancebridge`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-distancebridge)
+- **Papel**: Ponte de distância geodésica e estimativa de latência geográfica entre pares.
+
+---
+
+## 6. CLI e Plataformas COSMIC
+
+### 6.1. `cosmic-cli`
+- **Caminho**: [`crates/cosmic-cli`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/cosmic-cli)
+- **Papel**: Linha de comando para interação com a camada de computação e storage pós-quânticos COSMIC.
+
+---
+
+### 6.2. `platforms/cosmoplanck`
+- **Caminho**: [`platforms/cosmoplanck`](file:///media/bruno/SAMBOOK/Mycelium%20Network/platforms/cosmoplanck)
+- **Papel**: Adaptador de plataforma de baixíssimo nível para microcontroladores e dispositivos bare-metal.
+
+---
+
+### 6.3. `cli/mycelium-cli`
+- **Caminho**: [`cli/mycelium-cli`](file:///media/bruno/SAMBOOK/Mycelium%20Network/cli/mycelium-cli)
+- **Papel**: O binário principal de usuário `mycelium`.
+- **Comandos Principais**:
+  - `sprout`, `daemon`, `status`, `shutdown` (Ciclo de vida do nó)
+  - `sow`, `recall`, `signal`, `resonate`, `deploy` (The Lattice)
+  - `repo publish`, `repo clone`, `repos` (Git e GitHub soberano)
+  - `media publish`, `media pin`, `media pins` (Mycelium Video)
+  - `channel create`, `channel publish`, `channel show` (Canais descentralizados)
+  - `playlist create`, `playlist add` (Playlists)
+  - `store list`, `store caps`, `store launch`, `store publish` (Mycelium Store)
+  - `sclerotium hardware`, `sclerotium lease`, `sclerotium status`, `sclerotium wake` (Dormência e WoL)
+  - `veil start`, `veil stop`, `veil status`, `veil descriptor` (Onion Routing VEIL Ω)
+  - `license-verify`, `register-peer`, `bolt11` (ZKP e Economia)

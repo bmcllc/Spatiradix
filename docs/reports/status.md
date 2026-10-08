@@ -1,12 +1,21 @@
 # Status do Substrato
 
+> ### 📌 Contagem canônica de testes
+>
+> Este arquivo reúne relatórios de sessões distintas e **cada um reporta um total próprio**; as contagens divergem entre si porque **não são a mesma medição**:
+>
+> - **Medição A (atributos na árvore)** — contagem de atributos `#[test]` / `#[tokio::test]` presentes em `crates/` e `cli/`: da ordem de **368 atributos distribuídos em 93 arquivos**, mais **10 arquivos de integração** em `*/tests/*.rs` (≈2.776 linhas). Esta contagem **não** é um resultado de execução.
+> - **Medição B (totais reportados por crate)** — os números registrados nas seções abaixo vêm da saída real do runner por crate/sessão (137, 460, 130, 136…), e cada um cobre um recorte distinto: workspace default, `--release`, features distintas do `mycelium-zkp`, workspace parcial, ou exclusão de arquivos removidos na mesma sessão.
+>
+> **O número reconciliado e o método de medição estão em [`docs/VALIDACAO.md`](../VALIDACAO.md).** Todas as contagens divergentes citadas abaixo estão marcadas com `(contagem divergente — ver VALIDACAO.md)`.
+
 ## Build
 ```bash
 cargo build               → 0 erros
-cargo test --workspace    → 137 passed, 0 failed (incl. `mycelium-zkp`: 6/6, Phase 1 integrada de ET-COSMIC-OLD; +1 `recombine_anchor` em `mycelium-node`)
+cargo test --workspace    → 137 passed, 0 failed (contagem divergente — ver VALIDACAO.md) (incl. `mycelium-zkp`: 6/6, Phase 1 integrada de ET-COSMIC-OLD; +1 `recombine_anchor` em `mycelium-node`)
 cargo clippy --workspace --all-targets → 0 erros
 ```
-> B.A.S.E. (Forja): release compilado ✔ · workspace **460 testes, 0 falhas** ✔ (463 incluía 3 arquivos `scratch_*` removidos esta sessão) · `base-rtl` 4/4 testes ✔ (fix: cores SPARC/MIPS restaurados) · **semexec sweep SEMEXEC verde** (consertados bvs/bvc ColdFire 0x69/0x68 + mascaramento `tst` sh4; ColdFire agora P5, 268/268 sweep) · 4 lint-errors clippy pré-existentes do AArch64 (dead-code bitmasks; não gate da CI) deixados intactos para não alterar semântica de escalonamento · 3 testes de visibilidade `recall-code` novos ✔
+> B.A.S.E. (Forja): release compilado ✔ · workspace **460 testes, 0 falhas** ✔ (contagem divergente — ver VALIDACAO.md) (463 incluía 3 arquivos `scratch_*` removidos esta sessão) · `base-rtl` 4/4 testes ✔ (fix: cores SPARC/MIPS restaurados) · **semexec sweep SEMEXEC verde** (consertados bvs/bvc ColdFire 0x69/0x68 + mascaramento `tst` sh4; ColdFire agora P5, 268/268 sweep) · 4 lint-errors clippy pré-existentes do AArch64 (dead-code bitmasks; não gate da CI) deixados intactos para não alterar semântica de escalonamento · 3 testes de visibilidade `recall-code` novos ✔
 
 ## Legendas
 - ✅ **Feito e testado**
@@ -136,7 +145,7 @@ Testemunha: `docs/testes-realidade.md` (cenário 1A).
        - ColdFire `bvs`/`bvc` = `0x69`/`0x68` (não `0x1`/`0x0`, que alias 0x6100 = `bsr.w`/push); sweep 268/268 clean → preservação B.A.S.E. sobe P4→**P5** ✅
        - snapshots de cobertura atualizados para valores medidos honestos: `verify` 67→76, `r7_verify` 86→(Alpha/ColdFire/X86_64 76/71, Ppc 76, SH diff 81) ✅
        - `recall-code` gate de privacidade extraído em helper puro `recall_allowed` + 3 testes unitários ✅
-       - `cargo test --workspace --release`: BASE **460/0**, Mycelium **130/0**; clippy Mycelium 0 erros; demo e2e `lattice-remote-demo.sh` verde
+       - `cargo test --workspace --release`: BASE **460/0**, Mycelium **130/0** (contagem divergente — ver VALIDACAO.md); clippy Mycelium 0 erros; demo e2e `lattice-remote-demo.sh` verde
 - **Rodada 3 — integração ET‑COSMIC‑OLD (Phase A+B concluída)**:
   - **Phase A (ZKP engine)**: nova crate `crates/mycelium-zkp` (membro workspace) portada de `void_core`:
     - Sem feature: `HashChronicle` (blake3, consenso causal sem relógio), `PedersenCommitment`/`PedersenCommitmentRandom` (Ed25519), `ghost_id` (`hydra_◆_{hex}` Ed25519), `hashcash` PoW anti‑Sybil — **6/6 testes verdes, 0 clippy, build offline ✅**
@@ -145,7 +154,7 @@ Testemunha: `docs/testes-realidade.md` (cenário 1A).
   - **Fase 3 — LICENSE (VOID-00) + BOLT11** (duas features novas no `mycelium-zkp`):
     - Feature `license`: port nativo completo de `void_core/license.rs` — payload VOID-00 de 121 bytes, `compute_device_id`, `build_license_payload`, `license_verify_handshake` (ML-DSA-87 + device binding + janela temporal). 4 testes; ML-DSA-87 usa matemática pesada → testes rodam em thread com stack 32 MB (debug) e 100% verdes em release e debug ✅
     - Feature `bolt11`: port de `void_core/ldk.rs` — `parse_bolt11`/`validate_bolt11`/`extract_payment_hash` para BOLT11 Lightning invoices (voucher economy). Vetor de teste real do crate. 3 testes ✅
-    - **Validação final**: `mycelium-zkp` com `--features "range-proof,license,bolt11"` → **14/14 verdes, 0 clippy** (debug e release). Workspace default → **136/0**, clippy 0 erros (offline).
+    - **Validação final**: `mycelium-zkp` com `--features "range-proof,license,bolt11"` → **14/14 verdes, 0 clippy** (debug e release). Workspace default → **136/0** (contagem divergente — ver VALIDACAO.md), clippy 0 erros (offline).
   - **Fase 4 — integração fio-a-fio Mycelium ⇄ B.A.S.E. (`lattice build`)**:
     - Novo `scripts/lattice-build.sh` + subcomando `./lattice build`: **firmware viaja P2P (sem git) e o Forja sintetiza**.
     - Fluxo verde end-to-end: `seed-code` (120 arquivos → ContentId) → `recall-code` (puxa pela rede, fw.bin 28B) → `analyze` (HardwareSpec Uart @0x40013000, conf 0.95) → `synth` (SynthesizedSpec) → `design` (ST referência) → `prove` (**2/2 contratos: usart_init_to_tx, usart_tx_byte, Symbolic**) → `check` (trace original 5 eventos; NO_NEW_TRACE = recusa self-pass honesta).
