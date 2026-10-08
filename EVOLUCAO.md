@@ -35,6 +35,15 @@ O arquivo fornecido contém somente `crates/`; **não** contém o `Cargo.toml` r
 1. Manifesto imutável de Plot com hashes de cada layer, versão e autor verificável.
 2. Política de pinning voluntário com alvo de réplicas `R>=3` e recibos assinados de custódia; não contar DHT providers como cópias comprovadas.
 3. Reconciliação periódica anti-entropy entre pares; detectar peers offline e repinar cópias sem exigir o publicador.
+
+**Status parcial (2026-10-08)** — `scripts/prova-sobrevivencia.sh` (fase 6) prova a
+**recuperação sob demanda** anti-entropy: um late-joiner D que entra após a morte do
+publicador recupera o plot via consulta DHT (`recall` ausente → `dht_get` → record
+validado (público+hash) → `absorb_public`). Ainda **não** provado para fechar E1.3:
+  - [ ] reconciliação **periódica** (push/ticker) — hoje a recuperação é sob demanda
+    (disparada por `recall`), não um sweep proativo entre pares;
+  - [ ] detecção de peer offline + **repin** automático de cópias;
+  - [ ] queda de relay com reconexão (depende de E3, multi-host/CGNAT).
 4. Limites por peer e quota de armazenamento com garbage collection respeitando pins; métricas `desired/verified/available`.
 5. Aceitação: nó A publica; B, C e D recebem bytes e comprovam hashes; A é desligado; B e C mantêm acesso sem consultar A.
 
