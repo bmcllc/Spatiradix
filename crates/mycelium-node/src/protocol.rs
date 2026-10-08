@@ -125,6 +125,16 @@ pub enum Envelope {
         commit: String,
         description: String,
     },
+    /// Manifesto anti-entropy: um detentor anuncia os ContentIds **públicos**
+    /// que guarda. Permite aos pares (a) saber quem detém o quê, para detectar
+    /// detentores que caem, e (b) puxar do DHT os esporos que lhes faltam, sem
+    /// depender do push do publicador original.
+    SporeManifest {
+        /// PeerId (texto) do detentor que emite o manifesto.
+        holder: String,
+        /// ContentIds públicos detidos por este detentor.
+        ids: Vec<ContentId>,
+    },
     /// Overlay de zonas: entrega direcionada — só `to` processa `inner`.
     /// Nós intermediários replicam no gossip mas ignoram o conteúdo.
     Direct {
@@ -263,6 +273,22 @@ mod tests {
             Envelope::IonHeartbeat { node_id, ion } => {
                 assert_eq!(node_id, NodeId::derive(b"node"));
                 assert_eq!(ion, "webapp");
+            }
+            _ => panic!("tipo errado"),
+        }
+    }
+
+    #[test]
+    fn spore_manifest_roundtrip() {
+        let env = Envelope::SporeManifest {
+            holder: "12D3KooWtest".into(),
+            ids: vec![ContentId::of(b"plot-a"), ContentId::of(b"plot-b")],
+        };
+        let back = Envelope::decode(&env.encode().unwrap()).unwrap();
+        match back {
+            Envelope::SporeManifest { holder, ids } => {
+                assert_eq!(holder, "12D3KooWtest");
+                assert_eq!(ids, vec![ContentId::of(b"plot-a"), ContentId::of(b"plot-b")]);
             }
             _ => panic!("tipo errado"),
         }

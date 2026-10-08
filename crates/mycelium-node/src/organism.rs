@@ -4,6 +4,14 @@
 /// greedy) — evita loop infinito quando a layer não existe em lugar nenhum.
 pub const MAX_LAYER_NEED_HOPS: u8 = 4;
 
+/// Alvo de detentores (além do próprio nó) para um plot público. Abaixo disso,
+/// a queda de um detentor dispara repin (E1.3).
+const TARGET_SPORE_HOLDERS: usize = 2;
+
+/// TTL (epoch secs) de um detentor no índice anti-entropy: sem manifesto
+/// recente, é considerado morto e removido.
+const SPORE_HOLDER_TTL_SECS: u64 = 300;
+
 use crate::control::{ControlMsg, Request, Response, StatusReport};
 use crate::protocol::Envelope;
 use crate::store::{IonRecord, NodeStore, OrganismState, StoreError};
@@ -58,6 +66,14 @@ impl From<String> for OrganismError {
     fn from(s: String) -> Self {
         OrganismError::Msg(s)
     }
+}
+
+/// Epoch seconds (UTC), tolerante a clock pré-1970 (retorna 0).
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 pub struct OrganismConfig {
@@ -268,6 +284,10 @@ pub struct Organism {
     /// Catálogo global de ions que pares expõem no seu Horizon.
     /// Chave = NodeId do peer, Valor = (ions, último anúncio Unix secs).
     peer_ions: HashMap<NodeId, (Vec<String>, u64)>,
+    /// Detentores vivos por plot público, alimentado por `SporeManifest`:
+    /// `ContentId` → (PeerId declarado → último manifesto em epoch secs).
+    /// Base da detecção de detentor offline + repin (E1.3).
+    spore_holders: HashMap<ContentId, HashMap<String, u64>>,
     /// Flag: a console ErgOTOS foi visitada desde o último tick (auto-semeadura).
     console_hit: bool,
     /// Timestamp (unix secs) do último brotamento de ergot-seed (rate-limit 1/min).
@@ -597,6 +617,7 @@ impl Organism {
             ion_replica_peers: HashMap::new(),
             ion_replica_heartbeat: HashMap::new(),
             peer_ions: HashMap::new(),
+            spore_holders: HashMap::new(),
             console_hit: false,
             last_brood: 0,
             zero_load_windows: HashMap::new(),
@@ -1440,22 +1461,85 @@ impl Organism {
     fn anti_entropy_tick(&mut self) {
         // Bounded: re-publica no máximo N por tick (rede pequena / evitar flood).
         const MAX_PER_TICK: usize = 8;
+        // Poda detentores sem manifesto recente (evita crescer sem limite).
+        let now = unix_now();
+        self.spore_holders.retain(|_, holders| {
+            holders.retain(|_, ts| now.saturating_sub(*ts) < SPORE_HOLDER_TTL_SECS);
+            !holders.is_empty()
+        });
         let ids: Vec<ContentId> = self.bank.ids().iter().copied().take(MAX_PER_TICK).collect();
+        // Push de SporePrint (bytes) pode ser desligado para operar só por
+        // manifesto (anúncio de IDs + pull DHT sob demanda); útil em rede grande.
+        let push_bytes = std::env::var("MYCELIUM_ANTI_ENTROPY_PUSH")
+            .map(|v| v != "0")
+            .unwrap_or(true);
         let mut republished = 0usize;
+        let mut public_ids: Vec<ContentId> = Vec::new();
         for id in ids {
             let Some(bytes) = self.bank.public_spore_print(&id) else {
                 continue;
             };
             let _ = self.hyphae.dht_put(dht_key(&id), bytes.clone());
-            if let Ok(plot) = serde_json::from_slice::<Plot>(&bytes) {
-                if let Ok(encoded) = (Envelope::SporePrint { plot }).encode() {
-                    let _ = self.hyphae.broadcast_lattice(encoded);
+            if push_bytes {
+                if let Ok(plot) = serde_json::from_slice::<Plot>(&bytes) {
+                    if let Ok(encoded) = (Envelope::SporePrint { plot }).encode() {
+                        let _ = self.hyphae.broadcast_lattice(encoded);
+                    }
                 }
             }
+            public_ids.push(id);
             republished += 1;
         }
-        if republished > 0 {
+        if !public_ids.is_empty() {
+            // Manifesto: anuncia os IDs detidos para os pares (a) registarem
+            // detentores vivos e (b) puxarem o que lhes falta.
+            let holder = self.hyphae.peer_id().to_string();
+            if let Ok(encoded) = (Envelope::SporeManifest { holder, ids: public_ids }).encode() {
+                let _ = self.hyphae.broadcast_lattice(encoded);
+            }
             tracing::debug!(republished, "anti-entropy: esporos públicos re-anunciados");
+        }
+    }
+
+    /// Detecção de detentor offline: remove o peer caído do índice e, para cada
+    /// plot público que ficou abaixo de [`TARGET_SPORE_HOLDERS`], re-anuncia
+    /// (repin) na DHT + lattice, para a malha recompor as cópias **sem** depender
+    /// do publicador original (E1.3).
+    ///
+    /// ponytail: repin não é direcionado ao plot do peer caído — re-anuncia todo
+    /// público local abaixo do alvo. Endereçar por detentor quando o custo do
+    /// anúncio doer (rede grande).
+    fn note_peer_offline_and_repin(&mut self, holder: &str) {
+        let now = unix_now();
+        let mut holders_map = std::mem::take(&mut self.spore_holders);
+        let mut repin: Vec<ContentId> = Vec::new();
+        holders_map.retain(|id, holders| {
+            holders.remove(holder);
+            holders.retain(|_, ts| now.saturating_sub(*ts) < SPORE_HOLDER_TTL_SECS);
+            if holders.len() < TARGET_SPORE_HOLDERS
+                && self.bank.public_spore_print(id).is_some()
+            {
+                repin.push(*id);
+            }
+            !holders.is_empty()
+        });
+        self.spore_holders = holders_map;
+        for id in &repin {
+            if let Some(bytes) = self.bank.public_spore_print(id) {
+                let _ = self.hyphae.dht_put(dht_key(id), bytes.clone());
+                if let Ok(plot) = serde_json::from_slice::<Plot>(&bytes) {
+                    if let Ok(enc) = (Envelope::SporePrint { plot }).encode() {
+                        let _ = self.hyphae.broadcast_lattice(enc);
+                    }
+                }
+            }
+        }
+        if !repin.is_empty() {
+            tracing::info!(
+                count = repin.len(),
+                %holder,
+                "anti-entropy: detentor offline — repin disparado"
+            );
         }
     }
 
@@ -1931,6 +2015,31 @@ impl Organism {
                 let _ = self.hyphae.dht_store_local(dht_key(&id), bytes.clone());
                 let _ = self.hyphae.dht_put(dht_key(&id), bytes);
                 tracing::info!(plot = %id.short(), "spore print absorvido");
+            }
+            Envelope::SporeManifest { holder, ids } => {
+                // Registra o detentor declarado (base da detecção offline).
+                let now = unix_now();
+                for id in &ids {
+                    self.spore_holders
+                        .entry(*id)
+                        .or_default()
+                        .insert(holder.clone(), now);
+                }
+                // Reconciliação por manifesto: puxa do DHT o que nos falta.
+                let mut missing = 0usize;
+                for id in &ids {
+                    if self.bank.recall(id).is_none() {
+                        self.hyphae.dht_get(dht_key(id));
+                        missing += 1;
+                    }
+                }
+                if missing > 0 {
+                    tracing::debug!(
+                        missing,
+                        %holder,
+                        "anti-entropy: manifesto revelou plots ausentes; pull DHT"
+                    );
+                }
             }
             Envelope::SignalBroadcast { signal } => {
                 let id = self.state.field.absorb(signal);
@@ -5062,6 +5171,7 @@ impl Organism {
                         }
                         Some(HyphaEvent::Atrophy { peer }) => {
                             tracing::debug!(%peer, "hifa atrofiada");
+                            self.note_peer_offline_and_repin(&peer.to_string());
                             self.check_auto_materialize_orphaned_services();
                         }
                         Some(HyphaEvent::S1LiveReceived { from, data }) => {
