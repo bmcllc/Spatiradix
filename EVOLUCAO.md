@@ -1,7 +1,5 @@
 # Mycelium Network — Evolução incremental descentralizada
 
-> **Nota**: este arquivo é duplicata byte a byte de [`PLANO_EVOLUCAO_MYCELIUM.md`](PLANO_EVOLUCAO_MYCELIUM.md) e descreve uma entrega externa por tarball (`mycelium-evolucao-crates.tar.gz`), **não este repositório** — o commit `1b262b9` removeu a árvore descompactada (`mycelium-evolucao-crates/`) e deixou apenas o `.tar.gz`. Estado de validação deste repositório: [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
-
 ## Contrato arquitetural
 
 A rede nativa **não** depende de um gateway HTTP, domínio, VPS, servidor de bootstrap, relay ou PeerId único. Seeds e relays são substituíveis; os gateways HTTP são instâncias voluntárias do mesmo software, não autoridades sobre identidades, conteúdo ou execução. A disponibilidade depende de recursos e réplicas efetivamente online — descentralização não implica disponibilidade automática.
@@ -35,35 +33,8 @@ O arquivo fornecido contém somente `crates/`; **não** contém o `Cargo.toml` r
 1. Manifesto imutável de Plot com hashes de cada layer, versão e autor verificável.
 2. Política de pinning voluntário com alvo de réplicas `R>=3` e recibos assinados de custódia; não contar DHT providers como cópias comprovadas.
 3. Reconciliação periódica anti-entropy entre pares; detectar peers offline e repinar cópias sem exigir o publicador.
-
-**Status parcial (2026-10-08)** — E1.3 provado em malha real de loopback por dois scripts:
-  - `scripts/prova-sobrevivencia.sh`: **pull sob demanda** (late-joiner D recupera via
-    `recall` ausente → `dht_get` → validação público+hash → `absorb_public`) e **push
-    periódico** (`anti_entropy_tick` republica os esporos públicos locais na DHT +
-    lattice a cada `MYCELIUM_ANTI_ENTROPY_SECS`, default 180s; nó passivo tem o bank
-    preenchido sozinho);
-  - `scripts/prova-anti-entropy.sh`: **reconciliação por manifesto** (`Envelope::
-    SporeManifest` anuncia os ContentIds detidos; um nó que desconhece o CID o puxa do
-    DHT — provado com H em modo só-anúncio, sem push de bytes) e **detecção de detentor
-    offline + repin** (índice `spore_holders` alimentado por manifesto; ao cair um
-    detentor, plots abaixo de `TARGET_SPORE_HOLDERS` são re-anunciados na DHT + lattice
-    sem depender do publicador). Prova direta nos logs (`manifesto revelou plots
-    ausentes`, `detentor offline — repin disparado`).
-
-Ainda **não** provado para fechar E1.3:
-  - [ ] queda de relay com reconexão (depende de E3, multi-host/CGNAT — só loopback aqui).
 4. Limites por peer e quota de armazenamento com garbage collection respeitando pins; métricas `desired/verified/available`.
 5. Aceitação: nó A publica; B, C e D recebem bytes e comprovam hashes; A é desligado; B e C mantêm acesso sem consultar A.
-
-**Status parcial (2026-10-08)** — `scripts/prova-sobrevivencia.sh` prova parte desta
-aceitação em malha real de 3 nós (loopback): A publica, **duas** réplicas (B, C)
-recebem os bytes via gossip (`SporePrint` → `bank.absorb_public`) e os retêm no
-SporeBank local; com A morto (`kill -9`), B e C seguem servindo o plot do banco
-local. Ainda **não** provado para fechar E1.5 por completo:
-  - [ ] réplica **terceira** (D) — o critério pede B, C **e D**; hoje são 2;
-  - [ ] comprovação de **hash** por réplica (só conteúdo/marker verificado);
-  - [ ] anti-entropy e pinning `R>=3` com recibos (E1.2/E1.3);
-  - [ ] quota/GC e métricas `desired/verified/available` (E1.4).
 
 ## Etapa E2 — serviços vivos e estado
 
