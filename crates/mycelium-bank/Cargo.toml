@@ -1,0 +1,29 @@
+[package]
+name = "mycelium-bank"
+description = "Banco/corretora descentralizada e soberana sobre a Mycelium Network (PQC + P2P + NFC)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mycelium-pqc = { path = "../mycelium-pqc" }
+mycelium-core = { path = "../mycelium-core", optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+ed25519-dalek = { workspace = true }
+zeroize = "1"
+ml-dsa = { version = "0.1", optional = true }
+mycelium-hyphae = { path = "../mycelium-hyphae", optional = true }
+
+[features]
+default = []
+pqc-ml-dsa = ["dep:ml-dsa"]
+transport-mycelium = ["dep:mycelium-hyphae", "dep:mycelium-core"]
+persistence = []
+
+[dev-dependencies]
+tempfile = "3"

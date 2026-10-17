@@ -150,6 +150,7 @@ O projeto é modularizado em 30 crates e plataformas especializados:
 | `mycelium-sclerotium` | L0 / L1 | Dormência biológica, GhostLease, Wake-on-LAN e WakeToken anti-vampire attacks |
 | `mycelium-veil` | L2 | Rede cebola pós-quântica (ML-KEM-768), proxy SOCKS5, Anti-SSRF e bridges |
 | `mycelium-media` | L4 | Motor de streaming de áudio/vídeo em chunks de 2MB BLAKE3 e canais |
+| `mycelium-bank` | L4 | **Banco/corretora descentralizada**: carteira soberana PQC, ledger hash-encadeado, livro de ordens, pagamentos NFC P2P |
 | `mycelium-store` | L4 | App Store P2P e motores de emulação (RetroArch, MAME, QEMU, WASM) |
 | `mycelium-zkp` | L2 | Licenças pós-quânticas VOID-00 (ML-DSA-87) e validação Lightning BOLT11 |
 | `cosmic-cli` | L3 / L4 | CLI para computação verificável e storage em shards QEL |

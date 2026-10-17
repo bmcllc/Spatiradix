@@ -3043,6 +3043,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mycelium-bank"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "ml-dsa",
+ "mycelium-core",
+ "mycelium-hyphae",
+ "mycelium-pqc",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "zeroize",
+]
+
+[[package]]
 name = "mycelium-bot"
 version = "0.1.0"
 dependencies = [
