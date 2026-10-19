@@ -1,5 +1,26 @@
 # Testes de Realidade — Mycelium Network
 
+## ✅ 19 Out 2026 — `daemon --anonymous`: nenhuma conexão fora do Tor
+
+**Resultado:** anonimato de rede PASSOU; troca de dados entre pares NÃO (defeito anterior do transporte Nostr).
+
+| # | Passo | Resultado |
+|---|---|---|
+| 1 | `--anonymous --listen /ip4/0.0.0.0/tcp/4001` | recusado: `--listen em IP não é permitido` |
+| 2 | `--anonymous --public-bootstrap` | recusado |
+| 3 | `--anonymous --anon-socks 127.0.0.1:1` (proxy morto) | daemon não sobe: `SOCKS5 … indisponível` |
+| 4 | `MYCELIUM_ANNOUNCE_IP=1.2.3.4 … --anonymous` | recusado |
+| 5 | daemon real via Tor, `ss -tnp`/`ss -unap` após 75 s, 150 s e 300 s | única conexão TCP externa: `127.0.0.1:9050`; **0 sockets UDP**; 8 listeners, todos `127.0.0.1` |
+| 6 | anúncio de sessão CandidateRelay pelo Tor | publicado em 2–3 relays por minuto |
+| 7 | nó anônimo × nó comum (mesma máquina) no `relay.primal.net` | descoberta e handshake Nostr OK nos dois sentidos; **vizinhos = 0** |
+| 8 | controle: 2 nós comuns, sem Tor, mesmo relay | handshake OK, **vizinhos = 0**: o defeito é anterior e independe do modo anônimo |
+
+Relays via Tor (upgrade WebSocket): damus, primal, nostr.wine, snort, bitcoiner.social
+e nostr.net → `101`; `nos.lol` → timeout. Durante os testes o `relay.damus.io`
+passou a responder `banned: too many rate-limit violations` ao IP de teste.
+
+---
+
 ## ✅ 19 Out 2026 — Pkarr anônimo publicado e resolvido via Tor em relays públicos
 
 **Resultado:** PASSOU. Primeira evidência fora do loopback do `mycelium-pkarr`.

@@ -132,3 +132,57 @@ Segurança total não existe. Abaixo estão os limites reais deste componente:
 - Integrar ao daemon: republicação automática e endpoint Nostr derivado do
   `GhostID` efêmero.
 - Revisão externa da derivação de cegamento.
+
+---
+
+## 6. Nó anônimo: `mycelium daemon --anonymous`
+
+O registro anônimo só serve se o nó também não vazar ao ser contatado. Por
+isso o daemon ganhou um modo em que **todo** o tráfego de rede sai pelo SOCKS5
+local.
+
+```bash
+mycelium daemon --anonymous                           # Tor em 127.0.0.1:9050 (padrão)
+mycelium daemon --anonymous --anon-socks 127.0.0.1:1080   # SOCKS5 do VEIL
+```
+
+| Caminho de rede | Antes | No modo anônimo |
+|---|---|---|
+| WebSocket Nostr (transporte, CandidateRelay, RelayPool) | direto | só via SOCKS5, nome resolvido no proxy (`socks5h`), só `wss://`; sem fallback (`mycelium_nostr::net`) |
+| Swarm libp2p | TCP + QUIC + DNS Cloudflare + mDNS | só o transporte Nostr (+ circuitos relay por cima dele); endereço IP **não tem transporte** para discar |
+| Escuta | `0.0.0.0`/IPv6 global | nenhuma escuta em IP; só o endereço Nostr (GhostID + URL do relay) |
+| Health check de seeds | TCP cru até cada seed | desligado |
+| DuckDNS, sporocarp, relay server, UPnP | opcionais | recusados |
+| Event Horizon e ions HTTP | loopback | loopback obrigatório (`MYCELIUM_HORIZON_BIND` não-loopback é erro) |
+
+**Fail-closed:**
+- O daemon não sobe se o SOCKS5 não responder ao handshake.
+- Cada uma destas opções vira **erro**, não aviso: `--listen`,
+  `--announce-ip`, `--public-bootstrap`, `--bootstrap-url`, `--relay`,
+  `--sporocarp`, `--assume-reachable`, `--webrtc`, `--no-nostr-transport`,
+  papel VEIL que aceita conexões e as variáveis `MYCELIUM_ANNOUNCE_IP*`,
+  `MYCELIUM_DNS_SEEDS`, `MYCELIUM_REACHABLE` e `DUCKDNS_TOKEN`.
+- O mDNS é sempre desligado.
+- Relay Nostr padrão: `wss://relay.damus.io`, porque o `nos.lol` recusa saídas Tor.
+
+**Evidência (2026-10-19, [`testes-realidade.md`](../reports/testes-realidade.md)):**
+- Auditoria de sockets com `ss` durante 2,5–5 min de daemon real: a única conexão
+  TCP externa foi para `127.0.0.1:9050`; nenhum socket UDP; todos os listeners em
+  loopback.
+- Testes `crates/mycelium-hyphae/tests/anonymous_mode.rs`: uma isca TCP local
+  **nunca** recebe conexão quando o nó anônimo disca `/ip4`, `/ip6`, QUIC e `/dns4`
+  para ela. O controle (nó direto) **recebe**, o que prova que a isca funciona.
+  Opções que revelam IP são recusadas e o WebSocket segue o proxy do processo.
+
+**Limites conhecidos (não resolvidos aqui):**
+- O plano de dados do transporte Nostr não fechou conexão libp2p entre dois nós
+  sobre relays públicos. O handshake CandidateRelay completa, mas o stream não
+  vira vizinhança. O mesmo acontece **sem** Tor (teste de controle), então é um
+  defeito anterior do `mycelium-nostr-transport`, agravado pelo rate-limit dos
+  relays (o damus baniu o IP de teste). Enquanto isso não for corrigido, o nó
+  anônimo é encontrável e não vaza, mas ainda não troca dados com pares.
+- A descoberta CandidateRelay roda **dentro** do laço do organismo. Com a
+  latência do Tor, o daemon responde mais devagar (`status` levou ~25 s).
+- O GhostID do transporte Nostr é estável por home: liga as sessões entre si
+  (não ao IP). Rotação é trabalho futuro.
+- O VEIL como proxy deste modo não foi exercitado; o teste usou o Tor.

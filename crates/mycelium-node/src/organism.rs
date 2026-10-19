@@ -140,6 +140,9 @@ pub struct OrganismConfig {
     pub veil_bridge_listen: Option<String>,
     /// Endereço do Guard para o qual a bridge repassa o fluxo cru (papel `bridge`).
     pub veil_bridge_target: Option<String>,
+    /// **Modo anônimo** (`--anonymous`): SOCKS5 local (VEIL/Tor) por onde sai
+    /// todo o tráfego de rede do nó. Ver [`check_anonymous`].
+    pub anonymous_socks5: Option<std::net::SocketAddr>,
 }
 
 pub struct Organism {
@@ -166,6 +169,8 @@ pub struct Organism {
     /// Decays em curso (miss local → DecayQuery broadcast).
     pending_decays: HashSet<String>,
     sporocarp: bool,
+    /// Modo anônimo: nada de discagem TCP crua (health check de seeds, DuckDNS).
+    anonymous: bool,
     membrane: Membrane,
     dns_seed: Option<String>,
     /// Operador afirmou inbound alcançável (WAN relayável).
@@ -304,6 +309,72 @@ pub struct Organism {
     s1_live_inbox: VecDeque<(u64, String)>,
 }
 
+/// Relay Nostr padrão do modo anônimo: aceita WebSocket vindo de saídas Tor
+/// (medido em 2026-10-19; `nos.lol` não aceita).
+pub const ANONYMOUS_DEFAULT_NOSTR_RELAY: &str = "wss://relay.damus.io";
+
+/// Modo anônimo fail-closed: toda opção que revelaria o IP do nó é **erro**,
+/// não aviso. Variáveis de ambiente que mudariam isso também são recusadas.
+pub fn check_anonymous(config: &OrganismConfig) -> Result<(), OrganismError> {
+    let Some(proxy) = config.anonymous_socks5 else {
+        return Ok(());
+    };
+    let refuse = |why: &str| Err(OrganismError::Msg(format!("modo anônimo recusou: {why}")));
+    if !proxy.ip().is_loopback() {
+        return refuse("o SOCKS5 precisa ser loopback (127.0.0.1/::1)");
+    }
+    if config.public_bootstrap || config.bootstrap_url.is_some() {
+        return refuse("bootstrap público/HTTP buscaria seeds fora do proxy");
+    }
+    if config.sporocarp || config.enable_relay || config.assume_reachable {
+        return refuse("sporocarp/relay/inbound público expõe o IP");
+    }
+    if !config.listen.is_empty() {
+        return refuse("--listen em IP não é permitido");
+    }
+    if config.announce_ip.is_some() || config.announce_ip6.is_some() {
+        return refuse("--announce-ip não é permitido");
+    }
+    if config.enable_webrtc {
+        return refuse("WebRTC (UDP direto) não é permitido");
+    }
+    if config.nostr_transport == Some(false) {
+        return refuse("o transporte Nostr é o único transporte anônimo; não pode ser desligado");
+    }
+    if config.enable_mdns {
+        return refuse("mDNS anuncia o nó na LAN; use --no-mdns");
+    }
+    for var in [
+        "MYCELIUM_ANNOUNCE_IP",
+        "MYCELIUM_ANNOUNCE_IP6",
+        "MYCELIUM_DNS_SEEDS",
+        "MYCELIUM_REACHABLE",
+        "DUCKDNS_TOKEN",
+    ] {
+        if std::env::var(var).map(|v| !v.is_empty()).unwrap_or(false) {
+            return refuse(&format!("variável {var} definida"));
+        }
+    }
+    if let Ok(bind) = std::env::var("MYCELIUM_HORIZON_BIND") {
+        let ok = bind
+            .parse::<std::net::SocketAddr>()
+            .map(|a| a.ip().is_loopback())
+            .unwrap_or(false);
+        if !ok {
+            return refuse("MYCELIUM_HORIZON_BIND precisa ser loopback");
+        }
+    }
+    if let Some(role) = config.veil_role.as_deref() {
+        if role != "client" {
+            return refuse("papel VEIL que aceita conexões (relay/exit/bridge) expõe o IP");
+        }
+    }
+    if config.veil_listen.is_some() || config.veil_bridge_listen.is_some() || config.veil_advertise.is_some() {
+        return refuse("escuta/anúncio VEIL expõe o IP");
+    }
+    Ok(())
+}
+
 fn ensure_repo_publishable(plot: &Plot) -> Result<(), OrganismError> {
     if plot.is_public() {
         Ok(())
@@ -327,6 +398,8 @@ fn parse_veil_descriptor_source(s: &str) -> Result<mycelium_veil::planes::live::
 
 impl Organism {
     pub fn awaken(config: OrganismConfig) -> Result<Self, OrganismError> {
+        check_anonymous(&config)?;
+        let anonymous = config.anonymous_socks5.is_some();
         let store = NodeStore::open(&config.home)?;
         let gland = store.load_or_create_gland()?;
         let mut ledger = store.load_ledger();
@@ -387,13 +460,18 @@ impl Organism {
             .or_else(|| std::env::var("MYCELIUM_ANNOUNCE_IP6").ok());
         let has_global_ip6 = announce_ip6.is_some() || detect_global_ipv6();
         let assume_reachable = config.assume_reachable || env_assume_reachable();
-        let membrane = diagnose_membrane(
-            has_global_ip6,
-            announce_ip.as_deref(),
-            config.sporocarp,
-            config.membrane,
-            assume_reachable,
-        );
+        // Anônimo: sempre folha (sem inbound, sem relay server, sem anunciar IP).
+        let membrane = if anonymous {
+            Membrane::Folha
+        } else {
+            diagnose_membrane(
+                has_global_ip6,
+                announce_ip.as_deref(),
+                config.sporocarp,
+                config.membrane,
+                assume_reachable,
+            )
+        };
         if matches!(membrane, Membrane::Esporocarp) && !assume_reachable && config.sporocarp {
             tracing::warn!(
                 "esporocarp sem MYCELIUM_REACHABLE/--assume-reachable — IPv6 global \
@@ -409,6 +487,7 @@ impl Organism {
         let bootstrap_addrs = seed_book.multiaddrs_for(membrane);
         let dns_seed = std::env::var("MYCELIUM_DNS_SEEDS")
             .ok()
+            .filter(|_| !anonymous)
             .or_else(|| {
                 if config.public_bootstrap || config.sporocarp {
                     Some(DEFAULT_DNS_SEED_NAME.to_string())
@@ -427,6 +506,7 @@ impl Organism {
         // Raiz/Esporocarp: opt-in. `--no-nostr-transport` / `Some(false)` desliga.
         #[cfg(feature = "nostr-transport")]
         let enable_nostr_transport = match config.nostr_transport {
+            _ if anonymous => true,
             Some(v) => v,
             None => matches!(membrane, Membrane::Folha | Membrane::Floresta),
         };
@@ -451,9 +531,14 @@ impl Organism {
             webrtc_port: config.webrtc_port,
             enable_nostr_transport,
             nostr_home: Some(config.home.clone()),
-            nostr_relay: config.nostr_relay.clone(),
+            // nos.lol (padrão do transporte) recusa conexões vindas do Tor.
+            nostr_relay: config
+                .nostr_relay
+                .clone()
+                .or_else(|| anonymous.then(|| ANONYMOUS_DEFAULT_NOSTR_RELAY.to_string())),
             blocked_peers: Vec::new(),
             dtn_dir: Some(config.home.join("dtn")),
+            anonymous_socks5: config.anonymous_socks5,
             #[cfg(feature = "license")]
             licensed_peers: config.licensed_peers.as_ref().map(|pids| {
                 pids.iter()
@@ -539,7 +624,8 @@ impl Organism {
             build_artifacts: HashMap::new(),
             remote_done: HashSet::new(),
             pending_decays: HashSet::new(),
-            sporocarp: config.sporocarp || matches!(membrane, Membrane::Esporocarp),
+            sporocarp: !anonymous && (config.sporocarp || matches!(membrane, Membrane::Esporocarp)),
+            anonymous,
             membrane,
             dns_seed,
             assume_reachable,
@@ -5083,7 +5169,9 @@ impl Organism {
                             tracing::warn!(error = %e, "save_file seeds.txt");
                         }
                     }
-                    if let Ok(checked) = self.seed_book.health_check() {
+                    // health_check disca TCP cru até cada seed: proibido no modo anônimo.
+                    if self.anonymous {
+                    } else if let Ok(checked) = self.seed_book.health_check() {
                         if checked > 0 {
                             tracing::debug!(checked, "health check de seeds");
                         }

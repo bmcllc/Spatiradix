@@ -275,7 +275,7 @@ pub async fn dial_connection(
                         .iter()
                         .any(|t| t.len() >= 2 && t[0] == "p" && t[1] == local_pk)
             },
-            Duration::from_secs(25),
+            mycelium_nostr::net::proxied_timeout(Duration::from_secs(25)),
         )
         .await
         .map_err(|e| {

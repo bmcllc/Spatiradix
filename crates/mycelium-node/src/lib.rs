@@ -92,6 +92,8 @@ pub struct DaemonOptions {
     pub veil_bridge_listen: Option<String>,
     /// Endereço do Guard para o qual a bridge repassa o fluxo cru (papel `bridge`).
     pub veil_bridge_target: Option<String>,
+    /// Modo anônimo: SOCKS5 local (VEIL/Tor) para todo o tráfego do nó.
+    pub anonymous_socks5: Option<std::net::SocketAddr>,
 }
 
 impl Default for DaemonOptions {
@@ -133,12 +135,17 @@ impl Default for DaemonOptions {
             veil_bridges: Vec::new(),
             veil_bridge_listen: None,
             veil_bridge_target: None,
+            anonymous_socks5: None,
         }
     }
 }
 
 /// Desperta o daemon: socket de controle + loop do organismo.
 pub async fn run_daemon(home: PathBuf, opts: DaemonOptions) -> Result<(), OrganismError> {
+    if let Some(proxy) = opts.anonymous_socks5 {
+        probe_socks5(proxy).await?;
+        tracing::info!(%proxy, "modo anônimo: todo tráfego de rede sai pelo SOCKS5");
+    }
     let sporocarp = opts.sporocarp;
     let enable_relay = opts.enable_relay || sporocarp;
 
@@ -180,6 +187,7 @@ pub async fn run_daemon(home: PathBuf, opts: DaemonOptions) -> Result<(), Organi
         veil_bridges: opts.veil_bridges,
         veil_bridge_listen: opts.veil_bridge_listen,
         veil_bridge_target: opts.veil_bridge_target,
+        anonymous_socks5: opts.anonymous_socks5,
     })?;
     let sock = organism.home().join("mycelium.sock");
     let mut token = std::env::var("MYCELIUM_CONTROL_TOKEN")
@@ -233,4 +241,30 @@ pub async fn run_daemon(home: PathBuf, opts: DaemonOptions) -> Result<(), Organi
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     organism.run(rx).await
+}
+
+/// Confere, antes de qualquer conexão, que há um SOCKS5 respondendo no
+/// endereço dado. Sem proxy vivo o daemon **não sobe** (em vez de subir e
+/// tentar conectar de outro jeito).
+async fn probe_socks5(proxy: std::net::SocketAddr) -> Result<(), OrganismError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let fail = |why: String| OrganismError::Msg(format!("modo anônimo: SOCKS5 {proxy} indisponível ({why})"));
+    if !proxy.ip().is_loopback() {
+        return Err(fail("não é loopback".into()));
+    }
+    let probe = async {
+        let mut s = tokio::net::TcpStream::connect(proxy).await.map_err(|e| e.to_string())?;
+        s.write_all(&[5, 1, 0]).await.map_err(|e| e.to_string())?;
+        let mut reply = [0u8; 2];
+        s.read_exact(&mut reply).await.map_err(|e| e.to_string())?;
+        if reply == [5, 0] {
+            Ok(())
+        } else {
+            Err(format!("resposta inesperada {reply:?}"))
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), probe)
+        .await
+        .map_err(|_| fail("timeout".into()))?
+        .map_err(fail)
 }

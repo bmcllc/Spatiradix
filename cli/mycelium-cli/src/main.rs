@@ -151,6 +151,14 @@ enum Commands {
         /// Endereço do Guard para o qual a bridge repassa o fluxo cru (papel bridge).
         #[arg(long = "veil-bridge-target")]
         veil_bridge_target: Option<String>,
+        /// Modo anônimo fail-closed: todo tráfego sai pelo SOCKS5 de `--anon-socks`;
+        /// só transporte Nostr (wss), sem TCP/QUIC/mDNS/escuta em IP. Opções que
+        /// revelariam o IP viram erro. O daemon não sobe sem o proxy respondendo.
+        #[arg(long)]
+        anonymous: bool,
+        /// SOCKS5 local do modo anônimo (Tor: 127.0.0.1:9050 · VEIL: 127.0.0.1:1080).
+        #[arg(long = "anon-socks", default_value = "127.0.0.1:9050")]
+        anon_socks: std::net::SocketAddr,
     },
     Status,
     Sow {
@@ -948,6 +956,8 @@ fn main() {
             veil_bridges,
             veil_bridge_listen,
             veil_bridge_target,
+            anonymous,
+            anon_socks,
         } => {
             #[cfg(not(feature = "license"))]
             let _ = licensed_peers;
@@ -1001,6 +1011,7 @@ fn main() {
                 veil_bridges,
                 veil_bridge_listen,
                 veil_bridge_target,
+                anonymous_socks5: anonymous.then_some(anon_socks),
             },
             upnp,
             ))
@@ -1391,6 +1402,14 @@ async fn daemon(
 ) -> Result<(), String> {
     let resources = Resources::from_str(contribute).map_err(|e| e.to_string())?;
     opts.contribute = Some(resources);
+    if let Some(proxy) = opts.anonymous_socks5 {
+        // mDNS anuncia o nó na LAN: o modo anônimo o desliga sempre.
+        opts.no_mdns = true;
+        if upnp_flag {
+            return Err("modo anônimo: --upnp abriria porta no roteador".into());
+        }
+        println!("[🍄] 🕶️  modo anônimo — todo tráfego via SOCKS5 {proxy} (fail-closed)");
+    }
     println!("[🍄] Despertando organismo em {}…", home.display());
     println!("[🍄] Event Horizon em http://127.0.0.1:{}/", opts.horizon_port);
     if upnp_flag {

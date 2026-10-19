@@ -7,7 +7,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::time::{timeout, Duration};
-use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use mycelium_nostr::NostrEvent;
@@ -37,9 +36,9 @@ pub struct PersistentRelay {
 
 impl PersistentRelay {
     pub async fn connect(url: &str) -> Result<Self, WsError> {
-        let (ws, _) = connect_async(url)
+        let (ws, _) = mycelium_nostr::net::connect_ws(url)
             .await
-            .map_err(|e| WsError::Ws(e.to_string()))?;
+            .map_err(WsError::Ws)?;
         let (mut sink, mut stream) = ws.split();
         let (out_tx, mut out_rx) = mpsc::unbounded_channel::<String>();
         let (events, _) = broadcast::channel(256);

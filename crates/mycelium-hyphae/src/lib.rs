@@ -113,6 +113,12 @@ pub struct HyphaeConfig {
     pub blocked_peers: Vec<PeerId>,
     /// Diretório para persistência durável do armazém DTN (store-and-forward tolerante a reboot).
     pub dtn_dir: Option<std::path::PathBuf>,
+    /// **Modo anônimo**: SOCKS5 local (VEIL/Tor). Quando `Some`, o swarm só tem o
+    /// transporte Nostr (cujo WebSocket sai pelo proxy, ver `mycelium_nostr::net`):
+    /// sem TCP/QUIC/WebRTC direto, sem resolvedor DNS próprio, sem mDNS, sem
+    /// relay server, sem escuta em IP. Endereços IP simplesmente não têm
+    /// transporte para discar — vazamento impossível por construção.
+    pub anonymous_socks5: Option<std::net::SocketAddr>,
     /// **Gate de licença VOID-00**: se `Some(peers)`, apenas PeerIds listados
     /// são admitidos como vizinhos (fabrica de peers licenciados). Se `None`,
     /// o gate está desligado (admissão aberta). Requer feature `license`.
@@ -141,6 +147,7 @@ impl Default for HyphaeConfig {
             nostr_relay: None,
             blocked_peers: Vec::new(),
             dtn_dir: None,
+            anonymous_socks5: None,
             #[cfg(feature = "license")]
             licensed_peers: None,
         }
@@ -341,6 +348,141 @@ pub struct HyphaeNode {
     peer_bindings: HashMap<mycelium_core::NodeId, mycelium_core::PeerBinding>,
 }
 
+/// Comportamento do substrato (comum aos modos direto e anônimo).
+fn substrate_behaviour(
+    key: &libp2p::identity::Keypair,
+    relay_client: relay::client::Behaviour,
+    enable_mdns: bool,
+    enable_relay_server: bool,
+) -> Result<SubstrateBehaviour, Box<dyn std::error::Error + Send + Sync>> {
+    let peer_id = PeerId::from(key.public());
+
+    let mut kademlia = kad::Behaviour::new(
+        peer_id,
+        kad::store::MemoryStore::new(peer_id),
+    );
+    // Seeds / relay server entram como Server no DHT.
+    if enable_relay_server {
+        kademlia.set_mode(Some(kad::Mode::Server));
+    } else {
+        kademlia.set_mode(Some(kad::Mode::Client));
+    }
+
+    let gossip_config = gossipsub::ConfigBuilder::default()
+        .heartbeat_interval(Duration::from_secs(3))
+        .validation_mode(gossipsub::ValidationMode::Strict)
+        .build()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let gossipsub = gossipsub::Behaviour::new(
+        gossipsub::MessageAuthenticity::Signed(key.clone()),
+        gossip_config,
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let mdns = if enable_mdns {
+        Toggle::from(Some(mdns::tokio::Behaviour::new(
+            mdns::Config::default(),
+            peer_id,
+        )?))
+    } else {
+        tracing::info!("mDNS desligado — discovery só via seeds/bootstrap");
+        Toggle::from(None)
+    };
+
+    let identify = identify::Behaviour::new(identify::Config::new(
+        "/mycelium/substrate/0.1.0".into(),
+        key.public(),
+    ));
+
+    let relay = if enable_relay_server {
+        tracing::info!("relay server ligado (circuit v2)");
+        Toggle::from(Some(relay::Behaviour::new(
+            peer_id,
+            relay::Config::default(),
+        )))
+    } else {
+        Toggle::from(None)
+    };
+
+    Ok(SubstrateBehaviour {
+        kademlia,
+        gossipsub,
+        mdns,
+        identify,
+        relay,
+        relay_client,
+    })
+}
+
+/// Recusa (em vez de ignorar) opções que revelariam IP no modo anônimo.
+fn check_anonymous_config(config: &HyphaeConfig, proxy: std::net::SocketAddr) -> Result<(), HyphaeError> {
+    let refuse = |why: &str| Err(HyphaeError::Germination(format!("modo anônimo: {why}")));
+    if !proxy.ip().is_loopback() {
+        return refuse("SOCKS5 precisa ser loopback");
+    }
+    if !config.listen.is_empty() {
+        return refuse("escuta em IP (--listen) não é permitida");
+    }
+    if config.announce_ip.is_some() || config.announce_ip6.is_some() {
+        return refuse("anunciar IP não é permitido");
+    }
+    if config.enable_relay_server || config.assume_reachable {
+        return refuse("relay server / inbound público não é permitido");
+    }
+    if config.enable_webrtc {
+        return refuse("WebRTC (UDP direto) não é permitido");
+    }
+    if !cfg!(feature = "nostr-transport") {
+        return refuse("build sem feature nostr-transport (único transporte anônimo)");
+    }
+    mycelium_nostr_socks(proxy)
+}
+
+#[cfg(feature = "nostr-transport")]
+fn mycelium_nostr_socks(proxy: std::net::SocketAddr) -> Result<(), HyphaeError> {
+    mycelium_nostr::net::set_socks5_proxy(proxy).map_err(HyphaeError::Germination)
+}
+
+#[cfg(not(feature = "nostr-transport"))]
+fn mycelium_nostr_socks(_proxy: std::net::SocketAddr) -> Result<(), HyphaeError> {
+    Err(HyphaeError::Germination("modo anônimo exige feature nostr-transport".into()))
+}
+
+/// Swarm do modo anônimo: só o transporte Nostr (WebSocket via SOCKS5) e
+/// circuitos relay por cima dele. Sem TCP, QUIC, DNS próprio nem mDNS.
+#[cfg(feature = "nostr-transport")]
+fn build_anonymous_swarm(
+    keypair: libp2p::identity::Keypair,
+    config: &HyphaeConfig,
+) -> Result<Swarm<SubstrateBehaviour>, HyphaeError> {
+    let home = config
+        .nostr_home
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from(".mycelium"));
+    tracing::info!("modo anônimo: swarm só com transporte Nostr via SOCKS5");
+    Ok(SwarmBuilder::with_existing_identity(keypair)
+        .with_tokio()
+        .with_other_transport(move |key| {
+            mycelium_nostr_transport::build(key, home.clone())
+                .map_err(Box::<dyn std::error::Error + Send + Sync>::from)
+        })
+        .map_err(|e| HyphaeError::Germination(e.to_string()))?
+        .with_relay_client(noise::Config::new, yamux::Config::default)
+        .map_err(|e| HyphaeError::Germination(e.to_string()))?
+        .with_behaviour(|key, relay_client| substrate_behaviour(key, relay_client, false, false))
+        .map_err(|e| HyphaeError::Germination(e.to_string()))?
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(120)))
+        .build())
+}
+
+#[cfg(not(feature = "nostr-transport"))]
+fn build_anonymous_swarm(
+    _keypair: libp2p::identity::Keypair,
+    _config: &HyphaeConfig,
+) -> Result<Swarm<SubstrateBehaviour>, HyphaeError> {
+    Err(HyphaeError::Germination("modo anônimo exige feature nostr-transport".into()))
+}
+
 impl HyphaeNode {
     /// Germina com configuração padrão (seed opcional).
     pub fn germinate(seed: Option<[u8; 32]>) -> Result<Self, HyphaeError> {
@@ -358,129 +500,79 @@ impl HyphaeNode {
             None => libp2p::identity::Keypair::generate_ed25519(),
         };
 
-        let enable_mdns = config.enable_mdns;
-        let enable_relay_server = config.enable_relay_server;
+        let anonymous = config.anonymous_socks5.is_some();
+        let enable_mdns = config.enable_mdns && !anonymous;
+        let enable_relay_server = config.enable_relay_server && !anonymous;
         let enable_webrtc_listen = config.enable_webrtc && webrtc_available();
-        // Evita `with_dns()` → lê `/etc/resolv.conf` (ENOENT no Android).
-        let builder = SwarmBuilder::with_existing_identity(keypair)
-            .with_tokio()
-            .with_tcp(
-                tcp::Config::default(),
-                noise::Config::new,
-                yamux::Config::default,
-            )
-            .map_err(|e| HyphaeError::Germination(e.to_string()))?
-            .with_quic();
-
-        // Feature `webrtc`: transporte sempre registado (tipo SwarmBuilder estável).
-        // Listen opcional via `enable_webrtc` / `--webrtc`.
-        #[cfg(feature = "webrtc")]
-        let builder = {
-            tracing::info!("{}", webrtc_ice::transport::note());
-            builder
-                .with_other_transport(|key| {
-                    webrtc_ice::transport::build(key.clone()).map_err(|e| {
-                        Box::<dyn std::error::Error + Send + Sync>::from(e)
-                    })
-                })
-                .map_err(|e| HyphaeError::Germination(e.to_string()))?
-        };
-
-        #[cfg(feature = "nostr-transport")]
-        let builder = {
-            let home = config
-                .nostr_home
-                .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from(".mycelium"));
-            tracing::info!(?home, "transporte Nostr registado (CandidateRelay)");
-            builder
-                .with_other_transport(move |key| {
-                    mycelium_nostr_transport::build(key, home.clone())
-                        .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))
-                })
-                .map_err(|e| HyphaeError::Germination(e.to_string()))?
-        };
-
-        #[cfg(feature = "pqc-transport")]
-        let builder = {
-            tracing::info!("transporte PQC (ML-KEM-1024) registado — TCP+KEM+Noise+Yamux");
-            builder
-                .with_other_transport(|key| {
-                    crate::pqc::build(key)
-                        .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))
-                })
-                .map_err(|e| HyphaeError::Germination(e.to_string()))?
-        };
-
-        let mut swarm = builder
-            .with_dns_config(
-                libp2p::dns::ResolverConfig::cloudflare(),
-                libp2p::dns::ResolverOpts::default(),
-            )
-            .with_relay_client(noise::Config::new, yamux::Config::default)
-            .map_err(|e| HyphaeError::Germination(e.to_string()))?
-            .with_behaviour(move |key, relay_client| {
-                let peer_id = PeerId::from(key.public());
-
-                let mut kademlia = kad::Behaviour::new(
-                    peer_id,
-                    kad::store::MemoryStore::new(peer_id),
-                );
-                // Seeds / relay server entram como Server no DHT.
-                if enable_relay_server {
-                    kademlia.set_mode(Some(kad::Mode::Server));
-                } else {
-                    kademlia.set_mode(Some(kad::Mode::Client));
-                }
-
-                let gossip_config = gossipsub::ConfigBuilder::default()
-                    .heartbeat_interval(Duration::from_secs(3))
-                    .validation_mode(gossipsub::ValidationMode::Strict)
-                    .build()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                let gossipsub = gossipsub::Behaviour::new(
-                    gossipsub::MessageAuthenticity::Signed(key.clone()),
-                    gossip_config,
+        let mut swarm = if let Some(proxy) = config.anonymous_socks5 {
+            check_anonymous_config(&config, proxy)?;
+            build_anonymous_swarm(keypair, &config)?
+        } else {
+            // Evita `with_dns()` → lê `/etc/resolv.conf` (ENOENT no Android).
+            let builder = SwarmBuilder::with_existing_identity(keypair)
+                .with_tokio()
+                .with_tcp(
+                    tcp::Config::default(),
+                    noise::Config::new,
+                    yamux::Config::default,
                 )
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| HyphaeError::Germination(e.to_string()))?
+                .with_quic();
 
-                let mdns = if enable_mdns {
-                    Toggle::from(Some(mdns::tokio::Behaviour::new(
-                        mdns::Config::default(),
-                        peer_id,
-                    )?))
-                } else {
-                    tracing::info!("mDNS desligado — discovery só via seeds/bootstrap");
-                    Toggle::from(None)
-                };
+            // Feature `webrtc`: transporte sempre registado (tipo SwarmBuilder estável).
+            // Listen opcional via `enable_webrtc` / `--webrtc`.
+            #[cfg(feature = "webrtc")]
+            let builder = {
+                tracing::info!("{}", webrtc_ice::transport::note());
+                builder
+                    .with_other_transport(|key| {
+                        webrtc_ice::transport::build(key.clone()).map_err(|e| {
+                            Box::<dyn std::error::Error + Send + Sync>::from(e)
+                        })
+                    })
+                    .map_err(|e| HyphaeError::Germination(e.to_string()))?
+            };
 
-                let identify = identify::Behaviour::new(identify::Config::new(
-                    "/mycelium/substrate/0.1.0".into(),
-                    key.public(),
-                ));
+            #[cfg(feature = "nostr-transport")]
+            let builder = {
+                let home = config
+                    .nostr_home
+                    .clone()
+                    .unwrap_or_else(|| std::path::PathBuf::from(".mycelium"));
+                tracing::info!(?home, "transporte Nostr registado (CandidateRelay)");
+                builder
+                    .with_other_transport(move |key| {
+                        mycelium_nostr_transport::build(key, home.clone())
+                            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))
+                    })
+                    .map_err(|e| HyphaeError::Germination(e.to_string()))?
+            };
 
-                let relay = if enable_relay_server {
-                    tracing::info!("relay server ligado (circuit v2)");
-                    Toggle::from(Some(relay::Behaviour::new(
-                        peer_id,
-                        relay::Config::default(),
-                    )))
-                } else {
-                    Toggle::from(None)
-                };
+            #[cfg(feature = "pqc-transport")]
+            let builder = {
+                tracing::info!("transporte PQC (ML-KEM-1024) registado — TCP+KEM+Noise+Yamux");
+                builder
+                    .with_other_transport(|key| {
+                        crate::pqc::build(key)
+                            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))
+                    })
+                    .map_err(|e| HyphaeError::Germination(e.to_string()))?
+            };
 
-                Ok(SubstrateBehaviour {
-                    kademlia,
-                    gossipsub,
-                    mdns,
-                    identify,
-                    relay,
-                    relay_client,
+            builder
+                .with_dns_config(
+                    libp2p::dns::ResolverConfig::cloudflare(),
+                    libp2p::dns::ResolverOpts::default(),
+                )
+                .with_relay_client(noise::Config::new, yamux::Config::default)
+                .map_err(|e| HyphaeError::Germination(e.to_string()))?
+                .with_behaviour(move |key, relay_client| {
+                    substrate_behaviour(key, relay_client, enable_mdns, enable_relay_server)
                 })
-            })
-            .map_err(|e| HyphaeError::Germination(e.to_string()))?
-            .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(120)))
-            .build();
+                .map_err(|e| HyphaeError::Germination(e.to_string()))?
+                .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(120)))
+                .build()
+        };
 
         let pheromone_topic = gossipsub::IdentTopic::new(PHEROMONE_TOPIC);
         let lattice_topic = gossipsub::IdentTopic::new(LATTICE_TOPIC);
@@ -520,7 +612,9 @@ impl HyphaeNode {
             .subscribe(&dtn_topic)
             .map_err(|e| HyphaeError::Germination(e.to_string()))?;
 
-        let listen = if config.listen.is_empty() {
+        let listen = if anonymous {
+            Vec::new()
+        } else if config.listen.is_empty() {
             let has_v6 = config.announce_ip6.is_some() || detect_global_ipv6();
             default_listen_addrs(config.membrane, has_v6)
         } else {
@@ -533,7 +627,7 @@ impl HyphaeNode {
                 .map_err(|e| HyphaeError::Germination(e.to_string()))?;
         }
 
-        if enable_webrtc_listen {
+        if enable_webrtc_listen && !anonymous {
             let addr: Multiaddr = webrtc_listen_addr(config.webrtc_port)
                 .parse()
                 .map_err(|e| HyphaeError::Germination(format!("webrtc listen: {e}")))?;
@@ -552,7 +646,7 @@ impl HyphaeNode {
         }
 
         #[cfg(feature = "nostr-transport")]
-        if config.enable_nostr_transport {
+        if config.enable_nostr_transport || anonymous {
             let home = config
                 .nostr_home
                 .clone()

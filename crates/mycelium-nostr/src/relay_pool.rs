@@ -7,7 +7,6 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
-use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
 /// Relays públicos estáveis (mailbox outbound).
@@ -127,15 +126,15 @@ impl RelayPool {
         overall: Duration,
     ) -> Result<(), NostrError> {
         let fut = async {
-            let (mut ws, _) = connect_async(url)
+            let (mut ws, _) = crate::net::connect_ws(url)
                 .await
-                .map_err(|e| NostrError::WebSocket(e.to_string()))?;
+                .map_err(NostrError::WebSocket)?;
             ws.send(Message::Text(payload.to_string()))
                 .await
                 .map_err(|e| NostrError::WebSocket(e.to_string()))?;
 
             // Um relay só conta após `OK <event-id> true`; NOTICE não é ACK.
-            timeout(Duration::from_millis(800), async {
+            timeout(crate::net::proxied_timeout(Duration::from_millis(800)), async {
                 while let Some(msg) = ws.next().await {
                     let msg = msg.map_err(|e| NostrError::WebSocket(e.to_string()))?;
                     if let Message::Text(t) = msg {
@@ -154,7 +153,7 @@ impl RelayPool {
             let _ = ws.close(None).await;
             Ok(())
         };
-        timeout(overall, fut)
+        timeout(crate::net::proxied_timeout(overall), fut)
             .await
             .map_err(|_| NostrError::Timeout)?
     }
@@ -187,15 +186,15 @@ impl RelayPool {
         let sub_id = format!("mycelium-{}", &hex::encode(rand_id())[..8]);
         let req = json!(["REQ", sub_id, filter]);
         let fut = async {
-            let (mut ws, _) = connect_async(url)
+            let (mut ws, _) = crate::net::connect_ws(url)
                 .await
-                .map_err(|e| NostrError::WebSocket(e.to_string()))?;
+                .map_err(NostrError::WebSocket)?;
             ws.send(Message::Text(req.to_string()))
                 .await
                 .map_err(|e| NostrError::WebSocket(e.to_string()))?;
 
             let mut events = Vec::new();
-            let collect_deadline = Duration::from_secs(5);
+            let collect_deadline = crate::net::proxied_timeout(Duration::from_secs(5));
             let _ = timeout(collect_deadline, async {
                 while let Some(msg) = ws.next().await {
                     let msg = msg.map_err(|e| NostrError::WebSocket(e.to_string()))?;
@@ -224,7 +223,7 @@ impl RelayPool {
             let _ = ws.close(None).await;
             Ok(events)
         };
-        timeout(overall, fut)
+        timeout(crate::net::proxied_timeout(overall), fut)
             .await
             .map_err(|_| NostrError::Timeout)?
     }

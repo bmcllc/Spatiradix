@@ -4,6 +4,7 @@
 //! Relays públicos são mailbox/discovery; não substituem bitswap de plots grandes.
 
 mod candidate_relay;
+pub mod net;
 mod nip94;
 mod relay_pool;
 mod shard_event;
