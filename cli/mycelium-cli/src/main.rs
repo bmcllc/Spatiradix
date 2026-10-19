@@ -4435,8 +4435,14 @@ async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
                 RelayClient::new(&pkarr_relays(relays), pkarr_transport(socks, unsafe_direct))
                     .map_err(|e| e.to_string())?;
             let now = now_secs();
-            let mut last_err = String::from("nenhuma chave consultada");
-            for key in cap.lookup_keys(now).map_err(|e| e.to_string())? {
+            let mut errors = Vec::new();
+            for (i, key) in cap
+                .lookup_keys(now)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .enumerate()
+            {
+                let epoch = if i == 0 { "época atual" } else { "época anterior" };
                 match client.resolve(&key).await {
                     Ok(packet) => match mycelium_pkarr::open(&cap, &packet, now) {
                         Ok(record) => {
@@ -4446,12 +4452,12 @@ async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
                             );
                             return Ok(());
                         }
-                        Err(e) => last_err = e.to_string(),
+                        Err(e) => errors.push(format!("{epoch}: {e}")),
                     },
-                    Err(e) => last_err = e.to_string(),
+                    Err(e) => errors.push(format!("{epoch}: {e}")),
                 }
             }
-            Err(format!("não resolvido: {last_err}"))
+            Err(format!("não resolvido — {}", errors.join(" | ")))
         }
     }
 }

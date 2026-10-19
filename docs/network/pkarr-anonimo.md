@@ -2,9 +2,10 @@
 
 Data: 2026-10-18. Crate: [`crates/mycelium-pkarr`](../../crates/mycelium-pkarr).
 CLI: `mycelium pkarr {init,address,publish,resolve}`.
-Nível de validação: **(a)**. Há testes locais e interoperabilidade com a
-implementação de referência `pkarr` 8. **Não** houve publicação real em relay
-público nem teste por dentro de um circuito VEIL/Tor vivo (ver §5).
+Nível de validação: **(a)**, mais uma evidência real: publicação e resolução
+**via Tor** em 2 relays Pkarr públicos (2026-10-19, ver
+[`testes-realidade.md`](../reports/testes-realidade.md)). Ainda não testado por
+dentro de um circuito VEIL vivo.
 
 Atende o gate **G1** de [`EVOLUCAO_2NOS_SOBERANA.md`](../architecture/EVOLUCAO_2NOS_SOBERANA.md),
 adaptado a **um nó só e anônimo**: o nó fica encontrável por um endereço
@@ -126,8 +127,8 @@ Segurança total não existe. Abaixo estão os limites reais deste componente:
 
 ## 5. Próximos passos (para sair do nível (a))
 
-- Publicar e resolver por um circuito real (Tor ou VEIL) até um relay público e
-  registrar a evidência em `docs/reports/testes-realidade.md`.
+- ~~Publicar e resolver por um circuito real até um relay público~~: feito via
+  Tor em 2026-10-19. Falta repetir pelo VEIL.
 - Integrar ao daemon: republicação automática e endpoint Nostr derivado do
   `GhostID` efêmero.
 - Revisão externa da derivação de cegamento.

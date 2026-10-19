@@ -1,5 +1,46 @@
 # Testes de Realidade — Mycelium Network
 
+## ✅ 19 Out 2026 — Pkarr anônimo publicado e resolvido via Tor em relays públicos
+
+**Resultado:** PASSOU. Primeira evidência fora do loopback do `mycelium-pkarr`.
+Binário de `feat/mycelium-pkarr` (base `387c288` + correção do relatório de erros do
+`resolve`). Identidades descartáveis em diretório temporário.
+
+```
+transporte: Tor SOCKS5 127.0.0.1:9050 (check.torproject.org → IsTor=true)
+relays:     https://relay.pkarr.org, https://pkarr.pubky.org
+endpoint:   Plot a864f6a7…2a600 (registro de teste, sem IP)
+```
+
+| # | Passo | Resultado |
+|---|---|---|
+| 1 | `publish` (modo privado) nos 2 relays via Tor, 02:08:12Z | 2/2 `ok`, 10,9 s |
+| 2 | `resolve` do endereço completo via Tor | registro decifrado igual ao publicado, 3,2 s |
+| 3 | `resolve` só com a chave, **sem o segredo** | recusado: `época atual: falha de cifragem/autenticação` |
+| 4 | identidade **nova** publicada **só** em `relay.pkarr.org` (02:11:53Z) e resolvida **só** em `pkarr.pubky.org` | encontrada em ~7 s |
+
+**Leitura honesta:**
+
+- O passo 4 é consistente com a propagação pela Mainline DHT: o segundo relay não
+  tinha a chave nova em cache. Os dois relays podem ser do mesmo operador (Pubky)
+  e compartilhar backend; isso não foi excluído.
+- Um relay mantém em cache a versão anterior de uma chave já conhecida
+  (republicação na mesma época em `relay.pkarr.org` não apareceu em
+  `pkarr.pubky.org` em 2 min). Isso afeta a disponibilidade de atualizações, não o sigilo.
+- Prova o **registro** anônimo. **Não** prova que o nó é anônimo: o daemon ainda
+  conecta direto (Nostr/libp2p sem SOCKS). Ver `docs/network/pkarr-anonimo.md` §4.
+- Um host, uma rede; não conta para o nível (b) nem para o E6.
+
+```bash
+mycelium --home $H pkarr init --private
+mycelium --home $H pkarr publish --plot <cid> --socks 127.0.0.1:9050
+mycelium --home $H pkarr resolve 'myc1…' --socks 127.0.0.1:9050
+mycelium --home $H2 pkarr publish --plot <cid> --socks 127.0.0.1:9050 --relay https://relay.pkarr.org
+mycelium --home $H2 pkarr resolve 'myc1…' --socks 127.0.0.1:9050 --relay https://pkarr.pubky.org
+```
+
+---
+
 ## ✅ 30 Jul 2026 — CGNAT real (Vivo) ↔ 5G
 
 **Resultado:** CONECTADO. Primeira mesh CGNAT↔CGNAT via Nostr transport.
