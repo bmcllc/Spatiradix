@@ -1,0 +1,27 @@
+[package]
+name = "mycelium-pkarr"
+description = "Pkarr anônimo: registros assinados com chave cegada por época, cifrados e publicados só via SOCKS5 (VEIL/Tor) — descoberta sem seed, DNS ou VPS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ed25519-dalek = { workspace = true, features = ["hazmat", "zeroize"] }
+curve25519-dalek = { version = "4", features = ["digest"] }
+sha2 = "0.10"
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+zeroize = { version = "1.9", features = ["zeroize_derive"] }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["socks"] }
+url = "2"
+tokio = { workspace = true }
+
+[dev-dependencies]
+pkarr = { version = "8", default-features = false, features = ["signed_packet"] }
+bytes = { workspace = true }

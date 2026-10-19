@@ -51,6 +51,7 @@ docs/
 - **[`matriz_membranas.md`](network/matriz_membranas.md)** e **[`invariante_membrana.md`](network/invariante_membrana.md)**: Regras que regem os nós Folha, Floresta, Raiz e Esporocarp.
 - **[`volunteer-sporocarp.md`](network/volunteer-sporocarp.md)**: Instruções para operadores que desejam doar banda e ganhar nutrientes ATP como relay público.
 - **[`nostr-transport.md`](network/nostr-transport.md)**: Como o Mycelium atravessa firewalls residenciais via conexões WSS reversas sobre a rede Nostr.
+- **[`pkarr-anonimo.md`](network/pkarr-anonimo.md)**: Descoberta anônima de um nó sem seed, DNS ou VPS (`mycelium-pkarr`): chave cegada por época, registro cifrado e acolchoado, publicação só via SOCKS5 do VEIL/Tor; inclui modelo de ameaça e riscos residuais.
 - **[`nostr-qel.md`](network/nostr-qel.md)**: Integração de fragmentação QEL com transporte Nostr.
 - **[`candidatos.md`](network/candidatos.md)**, **[`candidate-relay.md`](network/candidate-relay.md)** e **[`candidatos.state.json`](network/candidatos.state.json)**: Gestão de candidatos a relay na rede mesh.
 - **[`mapa_cpe_vivo.md`](network/mapa_cpe_vivo.md)** e **[`engenharia-reversa-bloqueio.md`](network/engenharia-reversa-bloqueio.md)**: Comportamento de CPEs residenciais e análise de bloqueios de operadoras.

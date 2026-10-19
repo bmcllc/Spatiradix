@@ -432,6 +432,12 @@ enum Commands {
         #[command(subcommand)]
         action: SubCmd,
     },
+    /// Descoberta anônima sem seed/DNS/VPS: registro Pkarr com chave cegada por
+    /// época, conteúdo cifrado e publicação só via SOCKS5 local (VEIL/Tor).
+    Pkarr {
+        #[command(subcommand)]
+        action: PkarrCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -594,6 +600,62 @@ enum SclerotiumCmd {
         /// Razão do despertar (urgent_compute, exclusive_content, direct_session, operator_manual).
         #[arg(long, default_value = "urgent_compute")]
         reason: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PkarrCmd {
+    /// Cria a identidade mestra do serviço anônimo (separada do NodeId do nó).
+    Init {
+        /// Modo privado: o endereço passa a carregar um segredo de acesso;
+        /// sem ele, nem quem conhece a chave lê os endpoints.
+        #[arg(long)]
+        private: bool,
+    },
+    /// Mostra o endereço `myc1…` para entregar a quem pode achar o serviço.
+    Address,
+    /// Cifra, assina com a chave da época e publica nos relays Pkarr via SOCKS5.
+    Publish {
+        /// Pubkey Nostr (64 hex) do rendezvous.
+        #[arg(long)]
+        nostr_pubkey: Option<String>,
+        /// Relay Nostr do rendezvous (só wss:// com domínio). Repetível.
+        #[arg(long = "nostr-relay")]
+        nostr_relays: Vec<String>,
+        /// Endereço onion v3 (`<56>.onion[:porta]`).
+        #[arg(long)]
+        onion: Option<String>,
+        /// Descritor de entrada VEIL (hex).
+        #[arg(long)]
+        veil_descriptor: Option<String>,
+        /// ContentId de Plot público (64 hex). Repetível.
+        #[arg(long)]
+        plot: Vec<String>,
+        /// Relays Pkarr (https). Default: relays públicos padrão do Pkarr.
+        #[arg(long = "relay")]
+        relays: Vec<String>,
+        /// SOCKS5 local (VEIL ou Tor).
+        #[arg(long, default_value = mycelium_pkarr::VEIL_SOCKS5_DEFAULT)]
+        socks: std::net::SocketAddr,
+        /// Conecta direto aos relays, REVELANDO O IP. Só para teste.
+        #[arg(long)]
+        unsafe_direct: bool,
+        /// Republica a cada N segundos (±20% de jitter, mínimo 300) até Ctrl-C.
+        #[arg(long)]
+        every: Option<u64>,
+        /// Só monta e verifica o pacote, sem rede.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Resolve um endereço `myc1…` e mostra os endpoints decifrados.
+    Resolve {
+        address: String,
+        #[arg(long = "relay")]
+        relays: Vec<String>,
+        #[arg(long, default_value = mycelium_pkarr::VEIL_SOCKS5_DEFAULT)]
+        socks: std::net::SocketAddr,
+        #[arg(long)]
+        unsafe_direct: bool,
     },
 }
 
@@ -1119,6 +1181,7 @@ fn main() {
         Commands::Playlist { action } => rt.block_on(playlist_cmd(&home, action)),
         Commands::Sclerotium { action } => rt.block_on(sclerotium_cmd(&home, action)),
         Commands::Sub { action } => sub_cmd(&home, action),
+        Commands::Pkarr { action } => rt.block_on(pkarr_cmd(&home, action)),
     };
 
     if let Err(e) = result {
@@ -4217,3 +4280,182 @@ fn sub_cmd(home: &PathBuf, action: SubCmd) -> Result<(), String> {
     }
 }
 
+fn pkarr_transport(socks: std::net::SocketAddr, unsafe_direct: bool) -> mycelium_pkarr::Transport {
+    if unsafe_direct {
+        eprintln!("[🍄] ⚠️  --unsafe-direct: o relay verá o SEU IP. Sem anonimato.");
+        mycelium_pkarr::Transport::DirectRevealsIp
+    } else {
+        mycelium_pkarr::Transport::Anonymous { socks5: socks }
+    }
+}
+
+fn pkarr_relays(relays: Vec<String>) -> Vec<String> {
+    if relays.is_empty() {
+        mycelium_pkarr::DEFAULT_RELAYS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        relays
+    }
+}
+
+async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
+    use mycelium_pkarr::keystore::Keystore;
+    use mycelium_pkarr::{now_secs, AnonRecord, Capability, Endpoint, RelayClient};
+
+    let ks = Keystore::new(home.join("pkarr"));
+    let load_cap = |ks: &Keystore| -> Result<_, String> {
+        let (id, access) = ks.load().map_err(|e| e.to_string())?;
+        let cap = Capability {
+            master_public: id.public(),
+            access_secret: access.clone(),
+        };
+        Ok((id, access, cap))
+    };
+
+    match action {
+        PkarrCmd::Init { private } => {
+            let (id, secret) = ks.init(private).map_err(|e| e.to_string())?;
+            let cap = Capability {
+                master_public: id.public(),
+                access_secret: secret.map(zeroize_wrap),
+            };
+            println!(
+                "[🍄] identidade anônima criada em {}",
+                home.join("pkarr").display()
+            );
+            println!("[🍄] endereço: {}", cap.to_address());
+            println!(
+                "[🍄] guarde backup de {}/pkarr/ — sem ele o endereço morre.",
+                home.display()
+            );
+            Ok(())
+        }
+        PkarrCmd::Address => {
+            let (_, _, cap) = load_cap(&ks)?;
+            println!("{}", cap.to_address());
+            Ok(())
+        }
+        PkarrCmd::Publish {
+            nostr_pubkey,
+            nostr_relays,
+            onion,
+            veil_descriptor,
+            plot,
+            relays,
+            socks,
+            unsafe_direct,
+            every,
+            dry_run,
+        } => {
+            let (id, access, cap) = load_cap(&ks)?;
+            let mut endpoints = Vec::new();
+            match (nostr_pubkey, nostr_relays.is_empty()) {
+                (Some(pubkey), false) => endpoints.push(Endpoint::Nostr {
+                    pubkey,
+                    relays: nostr_relays,
+                }),
+                (None, true) => {}
+                _ => return Err("--nostr-pubkey e --nostr-relay vão juntos".into()),
+            }
+            if let Some(addr) = onion {
+                endpoints.push(Endpoint::Onion { addr });
+            }
+            if let Some(descriptor) = veil_descriptor {
+                endpoints.push(Endpoint::Veil { descriptor });
+            }
+            for content_id in plot {
+                endpoints.push(Endpoint::Plot { content_id });
+            }
+            let interval = every.map(|e| e.max(300));
+            let client = if dry_run {
+                None
+            } else {
+                Some(
+                    RelayClient::new(&pkarr_relays(relays), pkarr_transport(socks, unsafe_direct))
+                        .map_err(|e| e.to_string())?,
+                )
+            };
+            loop {
+                let now = now_secs();
+                let validity = interval
+                    .map(|i| i * 3)
+                    .unwrap_or(mycelium_pkarr::EPOCH_SECS);
+                let record = AnonRecord {
+                    endpoints: endpoints.clone(),
+                    not_after: now + validity,
+                };
+                let packet = mycelium_pkarr::seal(&id, access.as_deref(), &record, now)
+                    .map_err(|e| e.to_string())?;
+                // auto-checagem: o que publicamos tem de abrir com o endereço
+                mycelium_pkarr::open(&cap, &packet, now)
+                    .map_err(|e| format!("auto-checagem: {e}"))?;
+                let size = packet.to_relay_payload().len();
+                match &client {
+                    None => {
+                        println!(
+                            "[🍄] dry-run ok · época {} · {size} bytes · chave da época {}",
+                            mycelium_pkarr::epoch_of(now),
+                            mycelium_pkarr::zbase32::encode(packet.public_key())
+                        );
+                        return Ok(());
+                    }
+                    Some(c) => match c.publish(&packet).await {
+                        Ok(outcomes) => {
+                            for o in outcomes {
+                                let st = match o.result {
+                                    Ok(()) => "ok".to_string(),
+                                    Err(e) => e,
+                                };
+                                println!("[🍄] {} → {st}", o.relay);
+                            }
+                        }
+                        Err(e) if interval.is_some() => eprintln!("[🍄] publicação falhou: {e}"),
+                        Err(e) => return Err(e.to_string()),
+                    },
+                }
+                let Some(i) = interval else { return Ok(()) };
+                let jitter = rand::random::<f64>() * 0.4 - 0.2;
+                let wait = ((i as f64) * (1.0 + jitter)) as u64;
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(wait)) => {}
+                    _ = tokio::signal::ctrl_c() => return Ok(()),
+                }
+            }
+        }
+        PkarrCmd::Resolve {
+            address,
+            relays,
+            socks,
+            unsafe_direct,
+        } => {
+            let cap = Capability::from_address(&address).map_err(|e| e.to_string())?;
+            let client =
+                RelayClient::new(&pkarr_relays(relays), pkarr_transport(socks, unsafe_direct))
+                    .map_err(|e| e.to_string())?;
+            let now = now_secs();
+            let mut last_err = String::from("nenhuma chave consultada");
+            for key in cap.lookup_keys(now).map_err(|e| e.to_string())? {
+                match client.resolve(&key).await {
+                    Ok(packet) => match mycelium_pkarr::open(&cap, &packet, now) {
+                        Ok(record) => {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?
+                            );
+                            return Ok(());
+                        }
+                        Err(e) => last_err = e.to_string(),
+                    },
+                    Err(e) => last_err = e.to_string(),
+                }
+            }
+            Err(format!("não resolvido: {last_err}"))
+        }
+    }
+}
+
+fn zeroize_wrap(secret: [u8; 32]) -> zeroize::Zeroizing<[u8; 32]> {
+    zeroize::Zeroizing::new(secret)
+}

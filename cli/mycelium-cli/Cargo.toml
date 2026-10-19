@@ -32,6 +32,8 @@ base64 = "0.22"
 mycelium-media = { workspace = true }
 mycelium-sclerotium = { workspace = true }
 rand = { workspace = true }
+mycelium-pkarr = { workspace = true }
+zeroize = "1.9"
 
 [features]
 default = ["nostr", "nostr-transport", "pqc-transport"]
