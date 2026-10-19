@@ -8,9 +8,11 @@ mod connection;
 mod framing;
 mod transport;
 mod ws;
+#[cfg(any(test, feature = "test-relay"))]
+pub mod test_relay;
 
 pub use addr::{encode_nostr_multiaddr, is_nostr_multiaddr, parse_nostr_multiaddr};
-pub use framing::{Frame, ReliableState, WINDOW_SIZE};
+pub use framing::{Frame, ReliableState, MAX_PAYLOAD, WINDOW_SIZE};
 pub use transport::{build, listen_multiaddr, NostrTransport, NostrTransportError};
 pub use connection::NostrConnection;
 

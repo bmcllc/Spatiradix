@@ -174,15 +174,18 @@ mycelium daemon --anonymous --anon-socks 127.0.0.1:1080   # SOCKS5 do VEIL
   para ela. O controle (nó direto) **recebe**, o que prova que a isca funciona.
   Opções que revelam IP são recusadas e o WebSocket segue o proxy do processo.
 
-**Limites conhecidos (não resolvidos aqui):**
-- O plano de dados do transporte Nostr não fechou conexão libp2p entre dois nós
-  sobre relays públicos. O handshake CandidateRelay completa, mas o stream não
-  vira vizinhança. O mesmo acontece **sem** Tor (teste de controle), então é um
-  defeito anterior do `mycelium-nostr-transport`, agravado pelo rate-limit dos
-  relays (o damus baniu o IP de teste). Enquanto isso não for corrigido, o nó
-  anônimo é encontrável e não vaza, mas ainda não troca dados com pares.
-- A descoberta CandidateRelay roda **dentro** do laço do organismo. Com a
-  latência do Tor, o daemon responde mais devagar (`status` levou ~25 s).
+- **Troca de dados real pelo Tor (2026-10-19):** nó anônimo × nó comum no
+  `wss://relay.primal.net` viraram vizinhos em < 30 s; um Plot foi do par ao nó
+  anônimo e outro do nó anônimo ao par, com conteúdo íntegro dos dois lados.
+  Durante a troca, `ss` não mostrou nenhuma conexão fora do Tor, nenhum UDP e
+  nenhum listener fora de loopback. O `status` respondeu em 7 ms.
+
+**Limites conhecidos:**
+- Os dois nós estavam na **mesma máquina**. O relay e o Tor são reais, mas isso
+  não conta como teste multi-host (nível (b)).
+- Relays públicos ainda aplicam rate-limit: o damus respondeu `banned` uma vez
+  durante o teste. O transporte agora agrupa quadros e recua, mas um relay pode
+  bloquear mesmo assim. Use 2 ou mais relays que aceitem Tor.
 - O GhostID do transporte Nostr é estável por home: liga as sessões entre si
   (não ao IP). Rotação é trabalho futuro.
 - O VEIL como proxy deste modo não foi exercitado; o teste usou o Tor.

@@ -41,6 +41,7 @@ mycelium-veil = { workspace = true, optional = true }
 mycelium-pqc = { workspace = true, optional = true }
 
 [dev-dependencies]
+mycelium-nostr-transport = { workspace = true, features = ["test-relay"] }
 tokio = { workspace = true }
 tempfile = "3"
 reqwest = { workspace = true }

@@ -18,11 +18,15 @@ tracing = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 bytes = { workspace = true }
-sha2 = "0.10"
+base64 = "0.22"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 pin-project = "1"
 tokio-util = { version = "0.7", features = ["compat"] }
+
+[features]
+# Relay Nostr em memória para testes de aceitação (deste e de outros crates).
+test-relay = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

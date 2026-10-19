@@ -3303,6 +3303,7 @@ dependencies = [
  "mycelium-ghostid",
  "mycelium-hyphae",
  "mycelium-media",
+ "mycelium-nostr-transport",
  "mycelium-nutrients",
  "mycelium-pheromones",
  "mycelium-pqc",
@@ -3355,6 +3356,7 @@ dependencies = [
 name = "mycelium-nostr-transport"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "futures",
  "futures-util",
@@ -3366,7 +3368,6 @@ dependencies = [
  "rand 0.8.7",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.19",
  "tokio",
  "tokio-tungstenite",

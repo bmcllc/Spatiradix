@@ -179,10 +179,15 @@ pub struct Organism {
     physarum: PhysarumNetwork,
     physarum_phase: MyceliumPhase,
     enable_nostr_transport: bool,
-    #[allow(dead_code)]
+    /// Relay primário do transporte Nostr (o mesmo em que a hifa escuta).
+    #[cfg_attr(not(feature = "nostr-transport"), allow(dead_code))]
     nostr_relay: String,
-    #[cfg(feature = "nostr-transport")]
-    nostr_dialed: HashMap<String, std::time::Instant>,
+    /// Descoberta CandidateRelay corre numa tarefa; o resultado volta por aqui.
+    nostr_found_tx: mpsc::UnboundedSender<NostrFound>,
+    nostr_found_rx: Option<mpsc::UnboundedReceiver<NostrFound>>,
+    nostr_discovering: bool,
+    /// Início da última ronda (o fallback de mensagens não martela relays).
+    nostr_last_round: Option<Instant>,
     vault: entropy::Vault,
     remote_ledger: HashMap<NodeId, (HashMap<Nutrient, u64>, u64)>,
     known_zones: HashMap<String, Vec<NodeId>>,
@@ -312,6 +317,12 @@ pub struct Organism {
 /// Relay Nostr padrão do modo anônimo: aceita WebSocket vindo de saídas Tor
 /// (medido em 2026-10-19; `nos.lol` não aceita).
 pub const ANONYMOUS_DEFAULT_NOSTR_RELAY: &str = "wss://relay.damus.io";
+
+/// Resultado de uma ronda de descoberta Nostr entregue ao laço.
+#[cfg(feature = "nostr-transport")]
+type NostrFound = Result<mycelium_hyphae::NostrDiscovery, String>;
+#[cfg(not(feature = "nostr-transport"))]
+type NostrFound = ();
 
 /// Modo anônimo fail-closed: toda opção que revelaria o IP do nó é **erro**,
 /// não aviso. Variáveis de ambiente que mudariam isso também são recusadas.
@@ -599,6 +610,7 @@ impl Organism {
             store.save_nucleus(&nucleus)?;
         }
         let vault = store.load_vault();
+        let (nostr_found_tx, nostr_found_rx) = mpsc::unbounded_channel();
         let catalog = mycelium_store::StoreCatalog::open(&config.home)
             .map_err(|e| OrganismError::Msg(e.to_string()))?;
         let assets = crate::assets::AssetRegistry::open(&config.home)
@@ -632,11 +644,16 @@ impl Organism {
             physarum: PhysarumNetwork::new(4, 0.1, 0.01),
             physarum_phase: MyceliumPhase::Exploratory,
             enable_nostr_transport,
+            // Igual ao relay da hifa: a descoberta anuncia `qel-backchannel` com
+            // ele, e no modo anônimo o padrão (nos.lol) recusa o Tor.
             nostr_relay: config
                 .nostr_relay
+                .or_else(|| anonymous.then(|| ANONYMOUS_DEFAULT_NOSTR_RELAY.to_string()))
                 .unwrap_or_else(|| "wss://nos.lol".into()),
-            #[cfg(feature = "nostr-transport")]
-            nostr_dialed: HashMap::new(),
+            nostr_found_tx,
+            nostr_found_rx: Some(nostr_found_rx),
+            nostr_discovering: false,
+            nostr_last_round: None,
             vault,
             remote_ledger: HashMap::new(),
             known_zones: HashMap::new(),
@@ -1693,12 +1710,50 @@ impl Organism {
                 }
             }
 
-            // Fallback secundário opcional via Nostr backchannel quando configurado
-            #[cfg(feature = "nostr-transport")]
-            if self.enable_nostr_transport {
-                let _ = self.hyphae.send_nostr_fallback(&bytes);
+            // Fallback secundário via Nostr: procurar peers sem bloquear o laço;
+            // o bundle segue no DTN store e é entregue na anastomose. Uma
+            // rajada de mensagens não pode virar uma rajada de rondas.
+            if self
+                .nostr_last_round
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(10))
+            {
+                self.start_nostr_discovery();
             }
         }
+    }
+
+    /// Lança uma ronda de descoberta CandidateRelay (no máximo uma de cada vez).
+    fn start_nostr_discovery(&mut self) {
+        #[cfg(feature = "nostr-transport")]
+        if self.enable_nostr_transport && !self.nostr_discovering {
+            self.nostr_discovering = true;
+            self.nostr_last_round = Some(Instant::now());
+            self.hyphae
+                .spawn_nostr_discovery(&self.nostr_relay, self.nostr_found_tx.clone());
+        }
+        #[cfg(not(feature = "nostr-transport"))]
+        let _ = (
+            &self.nostr_found_tx,
+            self.nostr_discovering,
+            self.nostr_last_round,
+            self.enable_nostr_transport,
+        );
+    }
+
+    fn on_nostr_discovered(&mut self, found: NostrFound) {
+        self.nostr_discovering = false;
+        #[cfg(feature = "nostr-transport")]
+        match found {
+            Ok(found) => {
+                let n = self.hyphae.dial_nostr_discovered(found);
+                if n > 0 {
+                    tracing::info!(dialed = n, "nostr-transport: peers dialados");
+                }
+            }
+            Err(e) => tracing::debug!(error = %e, "nostr-transport discover"),
+        }
+        #[cfg(not(feature = "nostr-transport"))]
+        let _ = found;
     }
 
     fn signed_peer_binding(&self) -> mycelium_core::PeerBinding {
@@ -4833,7 +4888,17 @@ impl Organism {
         let mut seed_tick = tokio::time::interval(Duration::from_secs(120));
         let mut duckdns_tick = tokio::time::interval(Duration::from_secs(300));
         let mut physarum_tick = tokio::time::interval(Duration::from_secs(5));
-        let mut nostr_tick = tokio::time::interval(Duration::from_secs(45));
+        // Descoberta Nostr: primeira ronda logo no arranque (não bloqueia).
+        let nostr_secs = std::env::var("MYCELIUM_NOSTR_DISCOVERY_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(45)
+            .max(1);
+        let mut nostr_tick = tokio::time::interval(Duration::from_secs(nostr_secs));
+        let mut nostr_found_rx = self
+            .nostr_found_rx
+            .take()
+            .ok_or_else(|| OrganismError::Msg("laço do organismo já corre".into()))?;
         let mut metrics_tick = tokio::time::interval(Duration::from_secs(30));
         let mut balance_tick = tokio::time::interval(Duration::from_secs(60));
         let mut zone_tick = tokio::time::interval(Duration::from_secs(120));
@@ -4853,7 +4918,6 @@ impl Organism {
         // DuckDNS: espera um pouco para ter listen addrs.
         duckdns_tick.tick().await;
         physarum_tick.tick().await;
-        nostr_tick.tick().await;
         metrics_tick.tick().await;
         balance_tick.tick().await;
         zone_tick.tick().await;
@@ -4918,25 +4982,12 @@ impl Organism {
                 }
 
                 _ = nostr_tick.tick() => {
-                    #[cfg(feature = "nostr-transport")]
-                    if self.enable_nostr_transport {
-                        let relay = self.nostr_relay.clone();
-                        match self
-                            .hyphae
-                            .nostr_discover_and_dial(&relay, &mut self.nostr_dialed)
-                            .await
-                        {
-                            Ok(n) if n > 0 => {
-                                tracing::info!(dialed = n, "nostr-transport: peers dialados")
-                            }
-                            Ok(_) => {}
-                            Err(e) => tracing::debug!(error = %e, "nostr-transport discover"),
-                        }
-                    }
-                    #[cfg(not(feature = "nostr-transport"))]
-                    {
-                        let _ = self.enable_nostr_transport;
-                    }
+                    // Só dispara: a rede corre numa tarefa e o laço segue livre.
+                    self.start_nostr_discovery();
+                }
+
+                Some(found) = nostr_found_rx.recv() => {
+                    self.on_nostr_discovered(found);
                 }
 
                 _ = metrics_tick.tick() => {

@@ -1,5 +1,29 @@
 # Testes de Realidade — Mycelium Network
 
+## ✅ 19 Out 2026 — nó anônimo troca dados com um par via Tor
+
+**Resultado:** PASSOU. Com a correção do plano de dados do `mycelium-nostr-transport`
+(ainda não commitada na hora do teste), o `daemon --anonymous` troca dados.
+
+```
+nó A: daemon --anonymous (Tor 127.0.0.1:9050), relay wss://relay.primal.net
+nó B: daemon --no-mdns --nostr-transport, mesmo relay, conexão direta
+mesma máquina, homes separados
+```
+
+| # | Passo | Resultado |
+|---|---|---|
+| 1 | subir A e B | `vizinhos = 1` nos dois em < 30 s (03:51:13Z) |
+| 2 | B semeia `[public] PAR-PARA-ANON`, A extrai com `recall-code` | conteúdo íntegro: `ola do par 03:51:20` |
+| 3 | A semeia `[public] ANON-PARA-PAR`; B vê "ausente localmente" às 03:53:28 e o Plot às 03:53:48 | conteúdo íntegro: `ola do no anonimo 03:53:28` |
+| 4 | `ss` em A: 3 amostras durante a troca | 0 TCP fora do Tor · 1–2 TCP para 127.0.0.1:9050 · 0 UDP · 0 listeners fora de loopback |
+| 5 | controle: `ss` em B | conexão direta ao relay (`[2606:4700:…]:443`) |
+| 6 | `status` de A | 7 ms · `anastomoses=1 msg_in=84 msg_out=84` |
+
+Limite: uma máquina, então não conta para o nível (b). O damus registrou 1 `rate-limit` no log de A.
+
+---
+
 ## ✅ 19 Out 2026 — `daemon --anonymous`: nenhuma conexão fora do Tor
 
 **Resultado:** anonimato de rede PASSOU; troca de dados entre pares NÃO (defeito anterior do transporte Nostr).

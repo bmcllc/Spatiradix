@@ -359,10 +359,24 @@ pub async fn announce_session(
     Ok(pool.publish(&ann).await.unwrap_or(0))
 }
 
-/// Pool: relay primário + públicos (sem duplicar).
+/// Relay em loopback (`ws://127.0.0.1`, `localhost`, `[::1]`): rede de
+/// teste ou privada, que não deve vazar anúncios para relays públicos.
+fn is_loopback_relay(url: &str) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .is_some_and(|h| {
+            let h = h.trim_start_matches('[').trim_end_matches(']');
+            h == "localhost"
+                || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+        })
+}
+
+/// Pool: relay primário + públicos (sem duplicar). Com primário em loopback
+/// o pool é só ele.
 pub fn discover_relay_pool(primary: &str) -> RelayPool {
     let mut relays = vec![primary.to_string()];
-    for r in crate::relay_pool::PUBLIC_RELAYS {
+    for r in crate::relay_pool::PUBLIC_RELAYS.iter().filter(|_| !is_loopback_relay(primary)) {
         if *r != primary {
             relays.push((*r).to_string());
         }
@@ -656,6 +670,14 @@ pub async fn run_listen_round(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn loopback_primary_keeps_discovery_local() {
+        assert_eq!(discover_relay_pool("ws://127.0.0.1:7777").relays(), ["ws://127.0.0.1:7777"]);
+        assert_eq!(discover_relay_pool("ws://localhost:1").relays().len(), 1);
+        assert_eq!(discover_relay_pool("ws://[::1]:1").relays().len(), 1);
+        assert!(discover_relay_pool("wss://relay.damus.io").relays().len() > 1);
+    }
+
     use super::*;
 
     #[test]

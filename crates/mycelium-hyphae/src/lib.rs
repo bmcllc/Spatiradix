@@ -154,6 +154,29 @@ impl Default for HyphaeConfig {
     }
 }
 
+/// Resultado de uma ronda de descoberta CandidateRelay.
+#[cfg(feature = "nostr-transport")]
+#[derive(Debug, Clone)]
+pub struct NostrDiscovery {
+    /// Relay primário usado na ronda (fallback para peers sem `wss://`).
+    pub relay_url: String,
+    /// GhostID desta sessão.
+    pub self_ghost: String,
+    pub peers: Vec<mycelium_nostr::DiscoveredPeer>,
+}
+
+/// Memória dos dials Nostr entre rondas.
+#[cfg(feature = "nostr-transport")]
+#[derive(Debug, Default)]
+struct NostrDialState {
+    /// GhostID → peer com conexão viva por Nostr.
+    connected: HashMap<String, PeerId>,
+    /// Último dial por GhostID.
+    dialed: HashMap<String, Instant>,
+    /// Primeira ronda em que o GhostID apareceu (desempate).
+    first_seen: HashMap<String, Instant>,
+}
+
 /// Eventos que a hifa reporta ao organismo (CLI/daemon).
 #[derive(Debug)]
 pub enum HyphaEvent {
@@ -337,6 +360,9 @@ pub struct HyphaeNode {
     nostr_home: Option<std::path::PathBuf>,
     #[cfg(feature = "nostr-transport")]
     nostr_relay: Option<String>,
+    /// Estado da descoberta CandidateRelay (ver [`HyphaeNode::spawn_nostr_discovery`]).
+    #[cfg(feature = "nostr-transport")]
+    nostr: NostrDialState,
     /// Peers bloqueados para conexões diretas (isolamento de topologia multissalto).
     blocked_peers: Vec<PeerId>,
     /// Allowlist de peers licenciados (feature `license`); ver [`HyphaeConfig::licensed_peers`].
@@ -692,6 +718,8 @@ impl HyphaeNode {
             nostr_home: config.nostr_home.clone(),
             #[cfg(feature = "nostr-transport")]
             nostr_relay: config.nostr_relay.clone(),
+            #[cfg(feature = "nostr-transport")]
+            nostr: NostrDialState::default(),
             blocked_peers: config.blocked_peers.clone(),
             #[cfg(feature = "license")]
             licensed_peers: config.licensed_peers.clone(),
@@ -1335,56 +1363,85 @@ impl HyphaeNode {
         Ok(())
     }
 
-    /// Descoberta CandidateRelay (sessão estável) + dial dos peers frescos.
+    /// Lança uma ronda de descoberta CandidateRelay numa tarefa tokio.
+    ///
+    /// Toda a parte de rede (re-anúncio da sessão e busca de anúncios 39401,
+    /// com os prazos do Tor quando há proxy) corre fora de quem chama: o laço
+    /// do organismo continua a atender `status` e o resto. O resultado chega
+    /// por `tx`; quem chama passa-o a [`HyphaeNode::dial_nostr_discovered`].
     #[cfg(feature = "nostr-transport")]
-    pub async fn nostr_discover_and_dial(
-        &mut self,
+    pub fn spawn_nostr_discovery(
+        &self,
         relay_url: &str,
-        already: &mut std::collections::HashMap<String, std::time::Instant>,
-    ) -> Result<usize, HyphaeError> {
-        use mycelium_nostr::announce_and_discover_session;
-        use std::time::{Duration, Instant};
-
-        const RETRY_AFTER: Duration = Duration::from_secs(180);
+        tx: tokio::sync::mpsc::UnboundedSender<Result<NostrDiscovery, String>>,
+    ) {
         let home = self
             .nostr_home
             .clone()
             .unwrap_or_else(|| std::path::PathBuf::from(".mycelium"));
+        let relay_url = relay_url.to_string();
+        tokio::spawn(async move {
+            let res = mycelium_nostr::announce_and_discover_session(&home, &relay_url)
+                .await
+                .map(|(self_ghost, peers)| NostrDiscovery {
+                    relay_url,
+                    self_ghost,
+                    peers,
+                })
+                .map_err(|e| e.to_string());
+            let _ = tx.send(res);
+        });
+    }
 
-        let (_self_pk, peers) = announce_and_discover_session(&home, relay_url)
-            .await
-            .map_err(|e| HyphaeError::Gossip(e.to_string()))?;
-
+    /// Disca os peers de uma ronda de descoberta. Não faz I/O: só enfileira
+    /// dials no swarm. Evita eventos à toa nos relays:
+    /// - não disca GhostID já conectado nem rediscado há menos de 180 s;
+    /// - entre dois nós que se veem, só o de GhostID menor disca (o outro
+    ///   espera 90 s antes de discar ele próprio, caso o par não o veja);
+    /// - no máximo 4 dials por ronda.
+    #[cfg(feature = "nostr-transport")]
+    pub fn dial_nostr_discovered(&mut self, found: NostrDiscovery) -> usize {
+        const RETRY_AFTER: Duration = Duration::from_secs(180);
+        const DEFER: Duration = Duration::from_secs(90);
         let now = Instant::now();
-        already.retain(|_, t| now.duration_since(*t) < RETRY_AFTER);
+        let st = &mut self.nostr;
+        st.dialed.retain(|_, t| now.duration_since(*t) < RETRY_AFTER);
+        st.first_seen
+            .retain(|g, _| found.peers.iter().any(|p| &p.ghost_id == g));
 
-        let mut dialed = 0usize;
-        // Preferir listens; no máximo 4 dials por tick.
-        for peer in peers.into_iter().take(4) {
-            if let Some(t) = already.get(&peer.ghost_id) {
-                if now.duration_since(*t) < RETRY_AFTER {
-                    continue;
-                }
+        let mut targets = Vec::new();
+        for peer in &found.peers {
+            let first = *st.first_seen.entry(peer.ghost_id.clone()).or_insert(now);
+            if st.connected.contains_key(&peer.ghost_id) || st.dialed.contains_key(&peer.ghost_id) {
+                continue;
             }
-            let dial_relay = if peer.relay_url.starts_with("wss://") {
-                peer.relay_url.as_str()
+            if found.self_ghost > peer.ghost_id && now.duration_since(first) < DEFER {
+                tracing::debug!(peer = %peer.ghost_id, "nostr: o par disca (GhostID menor)");
+                continue;
+            }
+            let relay = if peer.relay_url.starts_with("wss://") {
+                peer.relay_url.clone()
             } else {
-                relay_url
+                found.relay_url.clone()
             };
-            match self.reach_nostr(dial_relay, &peer.ghost_id) {
-                Ok(()) => {
-                    tracing::info!(
-                        peer = %peer.ghost_id,
-                        listen = peer.is_listen,
-                        "nostr dial enfileirado"
-                    );
-                    already.insert(peer.ghost_id, now);
-                    dialed += 1;
-                }
-                Err(e) => tracing::warn!(error = %e, peer = %peer.ghost_id, "reach_nostr falhou"),
+            targets.push((peer.ghost_id.clone(), relay, peer.is_listen));
+            if targets.len() == 4 {
+                break;
             }
         }
-        Ok(dialed)
+
+        let mut dialed = 0usize;
+        for (ghost, relay, listen) in targets {
+            match self.reach_nostr(&relay, &ghost) {
+                Ok(()) => {
+                    tracing::info!(peer = %ghost, listen, "nostr dial enfileirado");
+                    self.nostr.dialed.insert(ghost, now);
+                    dialed += 1;
+                }
+                Err(e) => tracing::warn!(error = %e, peer = %ghost, "reach_nostr falhou"),
+            }
+        }
+        dialed
     }
 
     /// Deposita um record no DHT (Spore Bank).
@@ -1505,6 +1562,13 @@ impl HyphaeNode {
                         }
                     }
                     let remote_addr = endpoint.get_remote_address().clone();
+                    // Dialer: endereço discado; listener: send-back com o GhostID do dialer.
+                    #[cfg(feature = "nostr-transport")]
+                    if let Ok((_, ghost)) =
+                        mycelium_nostr_transport::parse_nostr_multiaddr(&remote_addr)
+                    {
+                        self.nostr.connected.insert(ghost, peer_id);
+                    }
                     if !self.blocked_peers.contains(&peer_id) {
                         self.swarm
                             .behaviour_mut()
@@ -1526,7 +1590,13 @@ impl HyphaeNode {
                     self.flush_dtn_bundles();
                     return Some(HyphaEvent::Anastomosis { peer: peer_id });
                 }
-                SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                SwarmEvent::ConnectionClosed { peer_id, num_established, .. } => {
+                    // Outra conexão ao mesmo peer continua viva (ex.: dials cruzados).
+                    if num_established > 0 {
+                        continue;
+                    }
+                    #[cfg(feature = "nostr-transport")]
+                    self.nostr.connected.retain(|_, p| *p != peer_id);
                     if let Some(link) = self.links.get_mut(&peer_id) {
                         link.connected = false;
                         link.atrophy_count += 1;
