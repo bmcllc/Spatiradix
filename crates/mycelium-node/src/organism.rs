@@ -3594,6 +3594,7 @@ impl Organism {
                 },
                 Err(e) => Response::Err { message: e },
             },
+            Request::DialNostr { relay, ghost } => self.dial_nostr(&relay, &ghost),
             Request::Bootstrap { addr } => match addr.parse() {
                 Ok(multiaddr) => match self.hyphae.reach(multiaddr) {
                     Ok(()) => {
@@ -4627,6 +4628,33 @@ impl Organism {
             Request::Shutdown => Response::Ok {
                 message: "encerrando".into(),
             },
+        }
+    }
+
+    /// Disca um endpoint Nostr validado. Só `wss://` com domínio e pubkey de
+    /// 64 hex — o mesmo critério que o resolvedor Pkarr aplica.
+    fn dial_nostr(&mut self, relay: &str, ghost: &str) -> Response {
+        let ghost_ok = ghost.len() == 64 && ghost.bytes().all(|b| b.is_ascii_hexdigit());
+        let relay_ok = relay.starts_with("wss://") && relay.len() <= 120;
+        if !ghost_ok || !relay_ok {
+            return Response::Err {
+                message: "endpoint Nostr inválido (wss:// + pubkey 64 hex)".into(),
+            };
+        }
+        #[cfg(feature = "nostr-transport")]
+        {
+            match self.hyphae.reach_nostr(relay, &ghost.to_ascii_lowercase()) {
+                Ok(()) => Response::Ok {
+                    message: format!("dialando {}… via {relay}", &ghost[..16]),
+                },
+                Err(e) => Response::Err { message: e.to_string() },
+            }
+        }
+        #[cfg(not(feature = "nostr-transport"))]
+        {
+            Response::Err {
+                message: "build sem feature nostr-transport".into(),
+            }
         }
     }
 

@@ -59,6 +59,12 @@ pub enum Request {
     Bootstrap {
         addr: String,
     },
+    /// Disca um nó pelo transporte Nostr (relay `wss://` + pubkey do GhostID),
+    /// p.ex. o endpoint obtido ao resolver um endereço `myc1…`.
+    DialNostr {
+        relay: String,
+        ghost: String,
+    },
     /// Escreve um átomo no Isotope e propaga via hifas.
     IsotopePut {
         key: String,

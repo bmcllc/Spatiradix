@@ -75,6 +75,21 @@ mycelium pkarr publish --plot <cid> --dry-run
 
 `--unsafe-direct` existe só para teste e avisa que revela o IP.
 
+### Recebi o endereço, conectei
+
+```bash
+# no nó anônimo: publica o próprio endpoint Nostr (GhostID + relay do daemon)
+mycelium pkarr publish --from-node --socks 127.0.0.1:9050 --every 1800
+# em qualquer outro nó com daemon rodando:
+mycelium pkarr connect 'myc1…' --socks 127.0.0.1:9050
+```
+
+`connect` resolve, decifra e envia `Request::DialNostr` ao daemon local para
+cada relay anunciado. Prova (2026-10-21): par configurado em `wss://nostr.wine`,
+nó anônimo em `wss://relay.primal.net`. O par ficou com 0 vizinhos até o
+`connect`; o único dial no log dele foi o do endereço resolvido e a vizinhança
+fechou em ~2 s. O nó anônimo seguiu sem conexão fora do Tor e sem UDP.
+
 ---
 
 ## 3. Evidência

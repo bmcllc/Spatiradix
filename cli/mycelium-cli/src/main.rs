@@ -624,6 +624,9 @@ enum PkarrCmd {
     Address,
     /// Cifra, assina com a chave da época e publica nos relays Pkarr via SOCKS5.
     Publish {
+        /// Preenche o endpoint Nostr com o GhostID e o relay do daemon local.
+        #[arg(long)]
+        from_node: bool,
         /// Pubkey Nostr (64 hex) do rendezvous.
         #[arg(long)]
         nostr_pubkey: Option<String>,
@@ -654,6 +657,17 @@ enum PkarrCmd {
         /// Só monta e verifica o pacote, sem rede.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Resolve um endereço `myc1…` e manda o daemon local discar os endpoints
+    /// Nostr encontrados ("recebi o endereço, conectei").
+    Connect {
+        address: String,
+        #[arg(long = "relay")]
+        relays: Vec<String>,
+        #[arg(long, default_value = mycelium_pkarr::VEIL_SOCKS5_DEFAULT)]
+        socks: std::net::SocketAddr,
+        #[arg(long)]
+        unsafe_direct: bool,
     },
     /// Resolve um endereço `myc1…` e mostra os endpoints decifrados.
     Resolve {
@@ -4357,6 +4371,7 @@ async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
             Ok(())
         }
         PkarrCmd::Publish {
+            from_node,
             nostr_pubkey,
             nostr_relays,
             onion,
@@ -4370,6 +4385,14 @@ async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
         } => {
             let (id, access, cap) = load_cap(&ks)?;
             let mut endpoints = Vec::new();
+            if from_node {
+                let (pubkey, relay) = node_nostr_endpoint(home).await?;
+                println!("[🍄] endpoint do nó: {}… via {relay}", &pubkey[..16]);
+                endpoints.push(Endpoint::Nostr {
+                    pubkey,
+                    relays: vec![relay],
+                });
+            }
             match (nostr_pubkey, nostr_relays.is_empty()) {
                 (Some(pubkey), false) => endpoints.push(Endpoint::Nostr {
                     pubkey,
@@ -4449,36 +4472,104 @@ async fn pkarr_cmd(home: &PathBuf, action: PkarrCmd) -> Result<(), String> {
             socks,
             unsafe_direct,
         } => {
-            let cap = Capability::from_address(&address).map_err(|e| e.to_string())?;
-            let client =
-                RelayClient::new(&pkarr_relays(relays), pkarr_transport(socks, unsafe_direct))
-                    .map_err(|e| e.to_string())?;
-            let now = now_secs();
-            let mut errors = Vec::new();
-            for (i, key) in cap
-                .lookup_keys(now)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .enumerate()
-            {
-                let epoch = if i == 0 { "época atual" } else { "época anterior" };
-                match client.resolve(&key).await {
-                    Ok(packet) => match mycelium_pkarr::open(&cap, &packet, now) {
-                        Ok(record) => {
-                            println!(
-                                "{}",
-                                serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?
-                            );
-                            return Ok(());
+            let record = pkarr_resolve(&address, relays, socks, unsafe_direct).await?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&record).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        PkarrCmd::Connect {
+            address,
+            relays,
+            socks,
+            unsafe_direct,
+        } => {
+            let record = pkarr_resolve(&address, relays, socks, unsafe_direct).await?;
+            let sock = home.join("mycelium.sock");
+            let mut dialed = 0usize;
+            for ep in &record.endpoints {
+                match ep {
+                    Endpoint::Nostr { pubkey, relays } => {
+                        for relay in relays {
+                            let req = Request::DialNostr {
+                                relay: relay.clone(),
+                                ghost: pubkey.clone(),
+                            };
+                            match call(&sock, req).await? {
+                                Response::Ok { message } => {
+                                    println!("[🍄] {message}");
+                                    dialed += 1;
+                                }
+                                Response::Err { message } => eprintln!("[🍄] {relay}: {message}"),
+                                other => eprintln!("[🍄] resposta inesperada: {other:?}"),
+                            }
                         }
-                        Err(e) => errors.push(format!("{epoch}: {e}")),
-                    },
-                    Err(e) => errors.push(format!("{epoch}: {e}")),
+                    }
+                    Endpoint::Plot { content_id } => {
+                        println!("[🍄] Plot anunciado: Qm{content_id} (mycelium recall-code --plot Qm{content_id})")
+                    }
+                    Endpoint::Onion { addr } => println!("[🍄] onion anunciado: {addr}"),
+                    Endpoint::Veil { .. } => println!("[🍄] descritor VEIL anunciado"),
                 }
             }
-            Err(format!("não resolvido — {}", errors.join(" | ")))
+            if dialed == 0 && record.endpoints.iter().any(|e| matches!(e, Endpoint::Nostr { .. })) {
+                return Err("nenhum endpoint Nostr aceito pelo daemon".into());
+            }
+            println!("[🍄] acompanhe com `mycelium status` (vizinhos)");
+            Ok(())
         }
     }
+}
+
+/// Resolve e decifra um endereço `myc1…` (época atual, depois a anterior).
+async fn pkarr_resolve(
+    address: &str,
+    relays: Vec<String>,
+    socks: std::net::SocketAddr,
+    unsafe_direct: bool,
+) -> Result<mycelium_pkarr::AnonRecord, String> {
+    use mycelium_pkarr::{now_secs, Capability, RelayClient};
+    let cap = Capability::from_address(address).map_err(|e| e.to_string())?;
+    let client = RelayClient::new(&pkarr_relays(relays), pkarr_transport(socks, unsafe_direct))
+        .map_err(|e| e.to_string())?;
+    let now = now_secs();
+    let mut errors = Vec::new();
+    for (i, key) in cap
+        .lookup_keys(now)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .enumerate()
+    {
+        let epoch = if i == 0 { "época atual" } else { "época anterior" };
+        match client.resolve(&key).await {
+            Ok(packet) => match mycelium_pkarr::open(&cap, &packet, now) {
+                Ok(record) => return Ok(record),
+                Err(e) => errors.push(format!("{epoch}: {e}")),
+            },
+            Err(e) => errors.push(format!("{epoch}: {e}")),
+        }
+    }
+    Err(format!("não resolvido — {}", errors.join(" | ")))
+}
+
+/// GhostID e relay do transporte Nostr do daemon local, lidos do `status`.
+async fn node_nostr_endpoint(home: &std::path::Path) -> Result<(String, String), String> {
+    let sock = home.join("mycelium.sock");
+    let Response::Status(report) = call(&sock, Request::Status).await? else {
+        return Err("daemon não devolveu status".into());
+    };
+    for addr in &report.listen_addrs {
+        let mut parts = addr.split('/').skip_while(|p| *p != "mycelium-nostr").skip(1);
+        if let (Some(relay_hex), Some(ghost)) = (parts.next(), parts.next()) {
+            let relay = hex::decode(relay_hex)
+                .ok()
+                .and_then(|b| String::from_utf8(b).ok())
+                .ok_or("relay hex inválido no listen")?;
+            return Ok((ghost.to_string(), relay));
+        }
+    }
+    Err("o daemon não escuta no transporte Nostr (use --anonymous ou --nostr-transport)".into())
 }
 
 fn zeroize_wrap(secret: [u8; 32]) -> zeroize::Zeroizing<[u8; 32]> {
