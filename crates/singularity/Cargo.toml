@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 mycelium-core = { workspace = true }
 mycelium-sporebank = { workspace = true }
+mycelium-pkarr = { workspace = true }
 vacuum = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

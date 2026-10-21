@@ -4915,6 +4915,8 @@ impl Organism {
         let mut heartbeat = tokio::time::interval(Duration::from_secs(3600));
         let mut seed_tick = tokio::time::interval(Duration::from_secs(120));
         let mut duckdns_tick = tokio::time::interval(Duration::from_secs(300));
+        // Gateway HTTP: Plots pedidos por navegador e ausentes viram consulta DHT.
+        let mut gateway_tick = tokio::time::interval(Duration::from_secs(2));
         let mut physarum_tick = tokio::time::interval(Duration::from_secs(5));
         // Descoberta Nostr: primeira ronda logo no arranque (não bloqueia).
         let nostr_secs = std::env::var("MYCELIUM_NOSTR_DISCOVERY_SECS")
@@ -5213,6 +5215,16 @@ impl Organism {
                 _ = heartbeat.tick() => {
                     self.ledger.heartbeat(1);
                     let _ = self.store.save_ledger(&self.ledger);
+                }
+
+                _ = gateway_tick.tick() => {
+                    let wanted = { self.horizon.write().unwrap().take_wanted_plots() };
+                    for id in wanted {
+                        if self.bank.recall(&id).is_none() {
+                            tracing::debug!(plot = %id.short(), "gateway: buscando Plot na malha");
+                            self.hyphae.dht_get(dht_key(&id));
+                        }
+                    }
                 }
 
                 _ = duckdns_tick.tick() => {

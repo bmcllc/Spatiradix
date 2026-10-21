@@ -204,3 +204,41 @@ mycelium daemon --anonymous --anon-socks 127.0.0.1:1080   # SOCKS5 do VEIL
 - O GhostID do transporte Nostr é estável por home: liga as sessões entre si
   (não ao IP). Rotação é trabalho futuro.
 - O VEIL como proxy deste modo não foi exercitado; o teste usou o Tor.
+
+---
+
+## 7. Gateway: abrir pelo navegador comum
+
+Qualquer nó comum (não anônimo) pode servir sites publicados como Plot para
+quem **não** roda Mycelium:
+
+```bash
+# no nó anônimo: publica a pasta do site e anuncia no endereço
+mycelium seed-code --path ./meu-site --name meu-site --description "site"
+mycelium pkarr publish --from-node --plot <cid-sem-Qm> --socks 127.0.0.1:9050
+# no nó gateway (voluntário, IP público):
+MYCELIUM_HORIZON_BIND=0.0.0.0:7474 mycelium daemon --no-mdns --nostr-transport
+mycelium pkarr connect 'myc1…'
+# qualquer navegador:
+#   http://<gateway>:7474/myc/<myc1…>/            (pelo endereço)
+#   http://<gateway>:7474/site/Qm<cid>/index.html  (pelo ContentId)
+```
+
+- Plot ausente no gateway → `503 Retry-After: 5` e busca na malha. No teste,
+  o primeiro pedido deu 503 e o segundo, 10 s depois, 200.
+- Só Plots públicos; `..`, `\` e caminhos absolutos dão 400.
+- Cada site sai com CSP `sandbox` (origem opaca): um site não lê cookies nem
+  storage de outro site, nem do gateway. Respostas `immutable` (conteúdo é hash).
+- O gateway resolve `myc1…` direto ou por `MYCELIUM_GATEWAY_SOCKS`, com cache de 5 min.
+
+Prova (2026-10-21): nó anônimo via Tor publicou o site; o nó gateway (outro
+relay) conectou pelo endereço e serviu a página no Firefox com CSS:
+![site via gateway](gateway-myc1.png)
+
+**Limites:**
+- **HTTPS** não é feito pelo gateway. Use um proxy reverso com certificado
+  (ex.: Caddy no domínio do voluntário) ou exponha o gateway como serviço onion
+  (Tor Browser). Sem isso, o tráfego navegador↔gateway vai em claro.
+- **Endereço privado na URL** (`myc1….<segredo>`) entrega o segredo ao operador
+  do gateway. Use endereço público para sites.
+- O operador do gateway vê quais sites são acessados (não quem os publicou).

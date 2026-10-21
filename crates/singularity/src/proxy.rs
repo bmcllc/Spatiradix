@@ -6,7 +6,7 @@ use axum::extract::{ConnectInfo, Path, Request, State};
 use axum::http::{header, StatusCode, Uri};
 use axum::middleware::{from_fn, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{any, post};
+use axum::routing::{any, get, post};
 use axum::Router;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -161,6 +161,12 @@ pub async fn serve_horizon(
         .route("/metrics", any(metrics))
         .route("/plots/{id}", any(serve_plot))
         .route("/layers/{id}", any(serve_layer))
+        .route("/site/{id}", get(crate::gateway::site_root))
+        .route("/site/{id}/", get(crate::gateway::site_index))
+        .route("/site/{id}/{*path}", get(crate::gateway::site_path))
+        .route("/myc/{addr}", get(crate::gateway::myc_root))
+        .route("/myc/{addr}/", get(crate::gateway::myc_index))
+        .route("/myc/{addr}/{*path}", get(crate::gateway::myc_path))
         .route("/seedwebhook", post(seedwebhook))
         .fallback(any(proxy))
         .layer(from_fn(admin_gate))

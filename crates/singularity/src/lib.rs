@@ -4,6 +4,7 @@
 //! externo entram aqui e são proxyadas por **rizomorfos** até o upstream
 //! da Chamber com maior gravidade.
 
+mod gateway;
 mod proxy;
 
 pub use proxy::{serve_horizon, HorizonHandle};
@@ -66,6 +67,9 @@ pub struct EventHorizon {
     /// Contador de visitas à console ErgotOS — gatilha auto-semeadura
     /// (efeito manada sem intervencção humana).
     console_hits: AtomicU64,
+    /// Plots pedidos pelo gateway HTTP e ausentes do Spore Bank local;
+    /// o organismo drena e dispara a busca na malha.
+    wanted_plots: std::collections::HashSet<mycelium_core::ContentId>,
 }
 
 impl EventHorizon {
@@ -209,6 +213,17 @@ impl EventHorizon {
     /// req/s e alimenta `Ion::sense` do Plasma.
     pub fn take_request_counts(&mut self) -> HashMap<String, u64> {
         std::mem::take(&mut self.ion_requests)
+    }
+
+    /// Marca um Plot para busca na malha (limite de 256 pendentes).
+    pub fn want_plot(&mut self, id: mycelium_core::ContentId) {
+        if self.wanted_plots.len() < 256 {
+            self.wanted_plots.insert(id);
+        }
+    }
+
+    pub fn take_wanted_plots(&mut self) -> Vec<mycelium_core::ContentId> {
+        self.wanted_plots.drain().collect()
     }
 
     /// Registra uma visita à console ErgotOS (gatilha auto-semeadura).
