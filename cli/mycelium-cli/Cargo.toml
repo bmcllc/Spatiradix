@@ -33,6 +33,7 @@ mycelium-media = { workspace = true }
 mycelium-sclerotium = { workspace = true }
 rand = { workspace = true }
 mycelium-pkarr = { workspace = true }
+mycelium-root = { workspace = true }
 zeroize = "1.9"
 
 [features]

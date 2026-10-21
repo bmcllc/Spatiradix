@@ -36,6 +36,7 @@ members = [
     "crates/mycelium-bot",
     "crates/mycelium-bank",
     "crates/mycelium-pkarr",
+    "crates/mycelium-root",
 ]
 
 [workspace.package]
@@ -77,6 +78,7 @@ mycelium-sclerotium = { path = "crates/mycelium-sclerotium" }
 mycelium-economy = { path = "crates/mycelium-economy" }
 mycelium-bank = { path = "crates/mycelium-bank" }
 mycelium-pkarr = { path = "crates/mycelium-pkarr" }
+mycelium-root = { path = "crates/mycelium-root" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

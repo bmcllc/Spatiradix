@@ -32,6 +32,9 @@ docs/
 - **[`protocol.md`](protocol.md)**: Especificação binária e JSON dos envelopes que trafegam nas hifas.
 - **[`glossary.md`](glossary.md)**: Dicionário terminológico comparando conceitos da micologia real com a engenharia de software.
 
+### 1b. 🌱 Root — nuvem sem servidor e sem P2P (`docs/root/`)
+- **[`ROOT.md`](root/ROOT.md)**: Cofre cifrado K-de-N espalhado pelos seus meios físicos (pendrive, SD, celular, HD), Reed-Solomon + chave Shamir, sincronização por contato, montável como pendrive (`mycelium root`).
+
 ### 2. 🧅 Privacidade & Roteamento Cebola (`docs/veil/`)
 - **[`VEIL_ONION_ROUTING.md`](veil/VEIL_ONION_ROUTING.md)**: Visão executiva e técnica do roteamento cebola de 3 saltos com ML-KEM-768, proxy SOCKS5 e blindagem Anti-SSRF.
 - **[`VEIL_OMEGA_SPEC.md`](veil/VEIL_OMEGA_SPEC.md)**: Especificação formal do protocolo de transporte e encriptação de camadas do Veil.

@@ -89,6 +89,24 @@ impl Vault {
         Self::default()
     }
 
+    /// Recalcula a Shade de índice `x` a partir de `threshold` Shades válidas,
+    /// sem revelar o segredo — serve para repor um custodiante perdido.
+    pub fn shade_at(shades: &[Shade], threshold: u8, x: u8) -> Result<Shade, EntropyError> {
+        if x == 0 {
+            return Err(EntropyError::CorruptShades);
+        }
+        // valida índices/tamanhos com o mesmo critério da reconstrução
+        reconstruct(shades, threshold)?;
+        let used = &shades[..threshold as usize];
+        let len = used[0].shares.len();
+        let mut shares = Vec::with_capacity(len);
+        for byte_idx in 0..len {
+            let points: Vec<(u8, u8)> = used.iter().map(|s| (s.index, s.shares[byte_idx])).collect();
+            shares.push(lagrange_at(&points, x)?);
+        }
+        Ok(Shade { index: x, shares })
+    }
+
     /// Divide um segredo em N Shades; qualquer M delas reconstrói.
     pub fn shatter(secret: &[u8], m: u8, n: u8) -> Result<Vec<Shade>, EntropyError> {
         if m == 0 || n == 0 || m > n || n as usize > 255 {
@@ -183,6 +201,11 @@ fn reconstruct(shades: &[Shade], threshold: u8) -> Result<Vec<u8>, EntropyError>
 
 /// Interpolação de Lagrange em x=0 sobre GF(256).
 fn lagrange_at_zero(points: &[(u8, u8)]) -> Result<u8, EntropyError> {
+    lagrange_at(points, 0)
+}
+
+/// Interpolação de Lagrange num `x` qualquer: ℓ_i(x) = Π (x − x_j)/(x_i − x_j).
+fn lagrange_at(points: &[(u8, u8)], x: u8) -> Result<u8, EntropyError> {
     let mut secret = 0u8;
     for (i, &(xi, yi)) in points.iter().enumerate() {
         let mut num = 1u8;
@@ -191,9 +214,8 @@ fn lagrange_at_zero(points: &[(u8, u8)]) -> Result<u8, EntropyError> {
             if i == j {
                 continue;
             }
-            // ℓ_i(0) = Π (0 - x_j) / (x_i - x_j) = Π x_j / (x_i - x_j)
-            // em GF(256), -a = a (característica 2).
-            num = gf_mul(num, xj);
+            // em GF(256), -a = a (característica 2): (x - x_j) = x ^ x_j.
+            num = gf_mul(num, gf_add(x, xj));
             den = gf_mul(den, gf_add(xi, xj));
         }
         let li = gf_mul(num, gf_inv(den)?);
@@ -245,6 +267,16 @@ fn gf_inv(a: u8) -> Result<u8, EntropyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shade_at_recovers_lost_custodian() {
+        let shades = Vault::shatter(b"segredo-do-root-32-bytes-aqui!!", 2, 4).unwrap();
+        // perdeu a shade 3: recalcula a partir de 1 e 4
+        let rebuilt = Vault::shade_at(&[shades[0].clone(), shades[3].clone()], 2, 3).unwrap();
+        assert_eq!(rebuilt, shades[2]);
+        let key = ChaosKey::materialize(&[rebuilt, shades[1].clone()], 2).unwrap();
+        assert_eq!(key.reveal().unwrap(), b"segredo-do-root-32-bytes-aqui!!");
+    }
 
     #[test]
     fn shatter_and_reconstruct_roundtrip() {

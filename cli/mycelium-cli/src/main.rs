@@ -446,6 +446,12 @@ enum Commands {
         #[command(subcommand)]
         action: PkarrCmd,
     },
+    /// Root: nuvem sem servidor e sem P2P — cofre K-de-N espalhado pelos seus
+    /// pendrives/cartões/discos, sincronizado por contato, montável como pendrive.
+    Root {
+        #[command(subcommand)]
+        action: RootCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -609,6 +615,77 @@ enum SclerotiumCmd {
         #[arg(long, default_value = "urgent_compute")]
         reason: String,
     },
+}
+
+#[derive(clap::Args)]
+struct RootSel {
+    /// Usa as raízes encontradas em /media, /run/media e /mnt.
+    #[arg(long)]
+    auto: bool,
+    /// Caminhos das raízes (pendrives, cartões, pastas).
+    roots: Vec<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum RootCmd {
+    /// Cria um Root K-de-N: uma raiz em cada caminho.
+    Init {
+        #[arg(long)]
+        k: u8,
+        #[arg(long, default_value = "root")]
+        label: String,
+        #[arg(required = true)]
+        roots: Vec<PathBuf>,
+    },
+    /// Lista os arquivos.
+    Ls {
+        #[command(flatten)]
+        sel: RootSel,
+    },
+    /// Grava arquivos/pastas: `root put R1 R2 -- foto.jpg docs/`.
+    Put {
+        #[command(flatten)]
+        sel: RootSel,
+        #[arg(last = true, required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Lê um arquivo: `root get R1 R2 -- docs/a.txt ./a.txt`.
+    Get {
+        #[command(flatten)]
+        sel: RootSel,
+        #[arg(last = true, num_args = 2, required = true)]
+        args: Vec<String>,
+    },
+    /// Apaga um arquivo ou pasta (o histórico guarda): `root rm R1 R2 -- a.txt`.
+    Rm {
+        #[command(flatten)]
+        sel: RootSel,
+        #[arg(last = true, required = true)]
+        paths: Vec<String>,
+    },
+    /// Monta como pasta (pendrive): `root mount R1 R2 -- ~/Root`. Ctrl-C desmonta.
+    Mount {
+        #[command(flatten)]
+        sel: RootSel,
+        #[arg(last = true, num_args = 1, required = true)]
+        mountpoint: Vec<PathBuf>,
+    },
+    /// Sincroniza por contato as raízes plugadas (não precisa de K).
+    Sync {
+        #[command(flatten)]
+        sel: RootSel,
+    },
+    /// Recria uma raiz perdida num meio novo.
+    Heal {
+        #[command(flatten)]
+        sel: RootSel,
+        #[arg(long)]
+        replace: u8,
+        #[arg(long)]
+        into: PathBuf,
+    },
+    /// Procura raízes em mídias montadas.
+    Scan,
 }
 
 #[derive(Subcommand)]
@@ -1207,6 +1284,7 @@ fn main() {
         Commands::Sclerotium { action } => rt.block_on(sclerotium_cmd(&home, action)),
         Commands::Sub { action } => sub_cmd(&home, action),
         Commands::Pkarr { action } => rt.block_on(pkarr_cmd(&home, action)),
+        Commands::Root { action } => root_cmd(action),
     };
 
     if let Err(e) = result {
@@ -4574,4 +4652,142 @@ async fn node_nostr_endpoint(home: &std::path::Path) -> Result<(String, String),
 
 fn zeroize_wrap(secret: [u8; 32]) -> zeroize::Zeroizing<[u8; 32]> {
     zeroize::Zeroizing::new(secret)
+}
+
+fn root_paths(sel: RootSel) -> Result<Vec<PathBuf>, String> {
+    let mut paths = sel.roots;
+    if sel.auto {
+        for p in mycelium_root::roots::scan() {
+            if !paths.contains(&p) {
+                paths.push(p);
+            }
+        }
+    }
+    if paths.is_empty() {
+        return Err("informe as raízes (ou --auto)".into());
+    }
+    Ok(paths)
+}
+
+fn root_cmd(action: RootCmd) -> Result<(), String> {
+    use mycelium_root::log::Node;
+    use mycelium_root::Vault;
+    let err = |e: mycelium_root::RootError| e.to_string();
+    match action {
+        RootCmd::Init { k, label, roots } => {
+            let v = Vault::create(&roots, k, &label).map_err(err)?;
+            println!(
+                "[🌱] Root {}-de-{} criado (cofre {}). Qualquer {} destas raízes abre tudo:",
+                v.k(),
+                v.n(),
+                &v.vault_id()[..8],
+                v.k()
+            );
+            for r in &roots {
+                println!("     {}", r.display());
+            }
+            Ok(())
+        }
+        RootCmd::Ls { sel } => {
+            let v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            println!("[🌱] raízes presentes {:?} de {} (K={})", v.present(), v.n(), v.k());
+            for (path, node) in v.tree().iter() {
+                match node {
+                    Node::File { size, .. } => println!("{size:>12}  {path}"),
+                    Node::Dir { .. } => println!("{:>12}  {path}/", "-"),
+                }
+            }
+            Ok(())
+        }
+        RootCmd::Put { sel, files } => {
+            let mut v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            let mut count = 0usize;
+            for f in files {
+                let base = f.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                let mut stack = vec![f.clone()];
+                while let Some(p) = stack.pop() {
+                    let rel = p.strip_prefix(&base).unwrap_or(&p).to_string_lossy().to_string();
+                    if p.is_dir() {
+                        v.mkdir(&rel).map_err(err)?;
+                        for e in std::fs::read_dir(&p).map_err(|e| e.to_string())?.flatten() {
+                            stack.push(e.path());
+                        }
+                    } else {
+                        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+                        v.write_file(&rel, &data).map_err(err)?;
+                        println!("[🌱] + {rel} ({} bytes)", data.len());
+                        count += 1;
+                    }
+                }
+            }
+            let missing = v.n() as usize - v.present().len();
+            println!("[🌱] {count} arquivo(s) gravado(s).");
+            if missing > 0 {
+                println!("[🌱] {missing} raiz(es) ausente(s) recebem os fragmentos por contato (`root sync`).");
+            }
+            Ok(())
+        }
+        RootCmd::Get { sel, args } => {
+            let v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            let data = v.read_file(&args[0]).map_err(err)?;
+            std::fs::write(&args[1], &data).map_err(|e| e.to_string())?;
+            println!("[🌱] {} → {} ({} bytes)", args[0], args[1], data.len());
+            Ok(())
+        }
+        RootCmd::Rm { sel, paths } => {
+            let mut v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            for p in paths {
+                v.remove(&p).map_err(err)?;
+                println!("[🌱] - {p}");
+            }
+            Ok(())
+        }
+        RootCmd::Mount { sel, mountpoint } => {
+            let v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            let mp = &mountpoint[0];
+            std::fs::create_dir_all(mp).map_err(|e| e.to_string())?;
+            println!(
+                "[🌱] Root montado em {} (raízes {:?}). Para desmontar: fusermount3 -u {}",
+                mp.display(),
+                v.present(),
+                mp.display()
+            );
+            mycelium_root::mount::mount(v, mp).map_err(err)
+        }
+        RootCmd::Sync { sel } => {
+            let r = mycelium_root::sync(&root_paths(sel)?).map_err(err)?;
+            println!(
+                "[🌱] contato: {} entrada(s) de log copiada(s), {} fragmento(s) entregue(s)",
+                r.log_copied, r.delivered
+            );
+            Ok(())
+        }
+        RootCmd::Heal { sel, replace, into } => {
+            let mut v = Vault::open(&root_paths(sel)?).map_err(err)?;
+            v.heal(replace, &into).map_err(err)?;
+            println!("[🌱] raiz {replace} recriada em {}", into.display());
+            Ok(())
+        }
+        RootCmd::Scan => {
+            let found = mycelium_root::roots::scan();
+            if found.is_empty() {
+                println!("[🌱] nenhuma raiz em mídia montada");
+            }
+            for p in found {
+                match mycelium_root::roots::Root::open(&p) {
+                    Ok(r) => println!(
+                        "{}  cofre {} · raiz {}/{} · K={} · {}",
+                        p.display(),
+                        &r.meta.vault[..8],
+                        r.meta.index,
+                        r.meta.n,
+                        r.meta.k,
+                        r.meta.label
+                    ),
+                    Err(e) => println!("{}  ({e})", p.display()),
+                }
+            }
+            Ok(())
+        }
+    }
 }
