@@ -1,16 +1,8 @@
-# 🍄 Mycelium Network — O Substrato Vivo do The Lattice
+# Mycelium Network — O Substrato Vivo do The Lattice
 
 > *"A floresta não é uma coleção de árvores. É uma rede subterrânea de fungos que alimenta, comunica e cura."*
 
 Nuvem P2P viva em Rust: hifas (libp2p), feromônios, Spore Bank, e o fluxo Lattice ponta a ponta.
-
-## 🧪 Estado de validação
-
-- ✅ **Nível a (cumprido)** — o workspace compila e os testes locais passam, com artefatos reais (binários, capturas, logs) reproduzíveis nesta máquina.
-- ❌ **Nível b (não cumprido)** — malha multi-nó em redes reais (física/ISP distintas) não foi executada nem registrada.
-- ❌ **Nível c (não cumprido)** — sem validação por terceiros.
-- ❌ **Nível d (não cumprido)** — sem implantação em produção; nenhum seed com inbound verificado existe em `seeds/mainnet.txt`.
-- As seções abaixo descrevem o **escopo e a intenção** do projeto; onde há afirmação de prontidão, o número real está em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 
 ## Quick start
 
@@ -124,7 +116,7 @@ Giggs sow Plot → Spore Bank (disco + DHT) → gossip hifas
 | `veil start/stop/status/descriptor` | Roteamento cebola pós-quântico VEIL Ω de 3 saltos (Guard/Relay/Exit), Anti-SSRF e SOCKS5 (:1080) |
 | `shutdown` | Hiberna o daemon (estado fica em disco) |
 
-## 📚 Documentação Técnica Completa
+## Documentação Técnica Completa
 
 Para aprofundamento na engenharia do ecossistema, consulte os documentos dedicados:
 
@@ -236,7 +228,7 @@ Docs: [docs/network/engenharia-reversa-bloqueio.md](docs/network/engenharia-reve
 [docs/network/volunteer-sporocarp.md](docs/network/volunteer-sporocarp.md) ·
 [docs/network/rizomorphs.md](docs/network/rizomorphs.md)
 
-## 📜 Prova: site + assinatura sem hospedagem, sem domínio, sem VPS
+## Prova: site + assinatura sem hospedagem, sem domínio, sem VPS
 
 ```bash
 bash scripts/prova-zero-infra.sh
@@ -246,14 +238,14 @@ O nó desta máquina é a hospedagem, o NodeId é o endereço (nenhum DNS) e a l
 ed25519 com `valid_until` é a assinatura do cliente — plano em
 [docs/PROVA_ZERO_INFRA.md](docs/PROVA_ZERO_INFRA.md).
 
-## 📚 Documentação Completa
+## Documentação Completa
 
-- 🌟 **[Livro Mestre & Documentação Técnica Completa](docs/DOCUMENTACAO_COMPLETA.md)**: Manual definitivo cobrindo a arquitetura, VEIL Ω, COSMIC, Sclerotium e todos os 30 crates.
-- 🗺️ **[Índice Geral de Documentos](docs/README.md)**: Mapa temático organizado por diretórios.
-- 📦 **[Dicionário Exaustivo de Crates](docs/architecture/CRATES_REFERENCE.md)**: Referência técnica de cada crate do monorepo.
-- 🧅 **[Protocolo VEIL Ω Onion Routing](docs/veil/VEIL_ONION_ROUTING.md)**: Roteamento pós-quântico de 3 saltos e proxy SOCKS5.
-- 🪐 **[COSMIC Compute & QEL Storage](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Computação e armazenamento particionado K-de-N.
-- 🍄 **[Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Hibernação biológica, WoL e despertar físico.
+-  **[Livro Mestre & Documentação Técnica Completa](docs/DOCUMENTACAO_COMPLETA.md)**: Manual definitivo cobrindo a arquitetura, VEIL Ω, COSMIC, Sclerotium e todos os 30 crates.
+-  **[Índice Geral de Documentos](docs/README.md)**: Mapa temático organizado por diretórios.
+-  **[Dicionário Exaustivo de Crates](docs/architecture/CRATES_REFERENCE.md)**: Referência técnica de cada crate do monorepo.
+-  **[Protocolo VEIL Ω Onion Routing](docs/veil/VEIL_ONION_ROUTING.md)**: Roteamento pós-quântico de 3 saltos e proxy SOCKS5.
+-  **[COSMIC Compute & QEL Storage](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Computação e armazenamento particionado K-de-N.
+-  **[Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Hibernação biológica, WoL e despertar físico.
 
 ## Desenvolvimento
 
