@@ -207,6 +207,8 @@ pub struct Organism {
     pending_mint_claims: Vec<mycelium_mint::WorkClaim>,
     /// Atestados de esporocarpos agrupados por `batch_root` da época ativa.
     pending_mint_attestations: HashMap<[u8; 32], Vec<mycelium_mint::SporocarpAttestation>>,
+    /// Supreme Meta-Gateway (Pix, SWIFT CSP, BRICS Pay e trilho MYC estilo USDC).
+    meta_gateway: mycelium_meta_gateway::MetaGatewayEngine,
     #[cfg(feature = "veil")]
     veil_engine: Option<std::sync::Arc<mycelium_veil::VeilEngine>>,
     #[cfg(feature = "veil")]
@@ -624,6 +626,23 @@ impl Organism {
             store.save_nucleus(&nucleus)?;
         }
         let vault = store.load_vault();
+        let mut meta_gateway = mycelium_meta_gateway::MetaGatewayEngine::new(
+            ed25519_dalek::SigningKey::from_bytes(&gland.seed()),
+            gland.verifying_key().as_bytes(),
+        );
+        meta_gateway.pix = Some(mycelium_meta_gateway::adapters::PixAdapter {
+            psp_endpoint: "https://pix.mycelium.local/v2/cob".into(),
+            icp_brasil_cert_thumbprint: format!("icp:{}", gland.node_id().short()),
+        });
+        meta_gateway.swift = Some(mycelium_meta_gateway::adapters::SwiftAdapter {
+            architecture: mycelium_meta_gateway::SwiftCspType::A4,
+            bic_sender: "MYCEBRSPXXX".into(),
+            channel_endpoint: "mq://secure-zone-local:1414".into(),
+        });
+        meta_gateway.brics = Some(mycelium_meta_gateway::adapters::BricsPayAdapter::new(
+            "https://dcms.mycelium.local/v1/tx",
+            ed25519_dalek::SigningKey::from_bytes(&gland.seed()),
+        ));
         let mint_engine = if let Some(saved) = store.load_mint_engine() {
             tracing::info!(
                 chain_id = %saved.chain_id,
@@ -719,6 +738,7 @@ impl Organism {
             mint_engine,
             pending_mint_claims: Vec::new(),
             pending_mint_attestations: HashMap::new(),
+            meta_gateway,
             #[cfg(feature = "veil")]
             veil_engine: None,
             #[cfg(feature = "veil")]
@@ -3997,6 +4017,54 @@ impl Organism {
                             "mint claim submetido à malha: work_id={work_id} epoch={epoch}"
                         ),
                     }
+                }
+            }
+            Request::GatewayPay {
+                receiver_id,
+                amount_micros,
+                currency,
+                compliance_json,
+            } => {
+                let compliance: serde_json::Value = match compliance_json {
+                    Some(raw) if !raw.trim().is_empty() => match serde_json::from_str(&raw) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Response::Err {
+                                message: format!("compliance_json inválido: {e}"),
+                            };
+                        }
+                    },
+                    _ => serde_json::json!({}),
+                };
+                let sender_did = format!("did:mycelium:{}", self.gland.node_id());
+                match mycelium_meta_gateway::PaymentIntent::auto_route(
+                    amount_micros,
+                    currency,
+                    sender_did,
+                    receiver_id,
+                    compliance,
+                ) {
+                    Ok(intent) => {
+                        let (myc_micros, usdc_micros) =
+                            intent.myc_usdc_parity(&self.meta_gateway.monetary_policy);
+                        match self.meta_gateway.execute(intent) {
+                            Ok(outcome) => Response::GatewayPayResult {
+                                intent_id: outcome.intent.id,
+                                gateway: format!("{:?}", outcome.receipt.gateway),
+                                state: outcome.intent.state.label().to_string(),
+                                external_ref: outcome.receipt.external_ref,
+                                myc_micros,
+                                usdc_equivalent_micros: usdc_micros,
+                                native_payload: outcome.receipt.native_payload,
+                            },
+                            Err(e) => Response::Err {
+                                message: format!("meta-gateway rejeitou pagamento: {e}"),
+                            },
+                        }
+                    }
+                    Err(e) => Response::Err {
+                        message: format!("destino/valor inválido para meta-gateway: {e}"),
+                    },
                 }
             }
             Request::Balance => {

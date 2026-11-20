@@ -12,6 +12,9 @@ mycelium-hyphae = { workspace = true }
 mycelium-pheromones = { workspace = true }
 mycelium-nutrients = { workspace = true }
 mycelium-mint = { workspace = true }
+mycelium-meta-gateway = { workspace = true }
+ed25519-dalek = { workspace = true }
+mycelium-pqc = { workspace = true }
 mycelium-ghostid = { workspace = true }
 mycelium-sporebank = { workspace = true }
 mycelium-tropical = { workspace = true }
@@ -43,7 +46,6 @@ mycelium-ipfs = { workspace = true }
 mycelium-distancebridge = { workspace = true }
 mycelium-nostr = { workspace = true }
 mycelium-pkarr = { workspace = true }
-mycelium-pqc = { workspace = true }
 mycelium-zkp = { workspace = true, features = ["license", "bolt11"] }
 mycelium-veil = { workspace = true, optional = true }
 

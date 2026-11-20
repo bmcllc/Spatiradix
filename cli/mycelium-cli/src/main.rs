@@ -384,6 +384,11 @@ enum Commands {
         #[command(subcommand)]
         action: MintCmd,
     },
+    /// Supreme Meta-Gateway: pagamentos unificados (pix:, swift:, brics:, myc:) com paridade 1 MYC = 8 USDC.
+    Gateway {
+        #[command(subcommand)]
+        action: GatewayCmd,
+    },
     /// CandidateRelay (kind 39401/39406): descoberta + backchannel CGNAT↔CGNAT.
     Candidate {
         #[command(subcommand)]
@@ -970,6 +975,31 @@ enum MintCmd {
 }
 
 #[derive(Subcommand)]
+enum GatewayCmd {
+    /// Roteia e executa um pagamento pelo Meta-Gateway (prefixos: pix:, swift:, brics:, myc:).
+    Pay {
+        /// Destinatário qualificado (ex.: pix:chave@email.com, swift:CHASUS33XXX, brics:node-09, myc:<node_id>).
+        #[arg(long = "to")]
+        to: String,
+        /// Valor em micro-unidades (6 casas decimais; ex.: 10000000 = 10.000000).
+        #[arg(long = "amount-micros")]
+        amount_micros: u64,
+        /// Moeda da intenção (MYC, USDC, BRL, USD).
+        #[arg(long, default_value = "MYC")]
+        currency: String,
+        /// Flag de conformidade SWIFT CSP/CSCF (obrigatória para swift:).
+        #[arg(long = "swift-csp-compliant")]
+        swift_csp_compliant: bool,
+        /// ID do log da Secure Zone (obrigatório para swift:).
+        #[arg(long = "secure-zone-log")]
+        secure_zone_log: Option<String>,
+        /// Hora local (0..23) para checagem de limite noturno do Pix.
+        #[arg(long = "local-hour")]
+        local_hour: Option<u64>,
+    },
+}
+
+#[derive(Subcommand)]
 enum SeedsCmd {
     /// Lista seeds em `{home}/seeds.txt`.
     List,
@@ -1309,6 +1339,7 @@ fn main() {
         }
         Commands::Entropy { action } => rt.block_on(entropy_cmd(&home, action)),
         Commands::Mint { action } => rt.block_on(mint_cmd(&home, action)),
+        Commands::Gateway { action } => rt.block_on(gateway_cmd(&home, action)),
         Commands::Candidate {
             cmd,
             r#loop,
@@ -1871,6 +1902,45 @@ async fn mint_cmd(home: &PathBuf, action: MintCmd) -> Result<(), String> {
                 hashcash_bits,
             );
             let resp = call(&sock, Request::MintClaim { claim }).await?;
+            print_response(resp)
+        }
+    }
+}
+
+async fn gateway_cmd(home: &PathBuf, action: GatewayCmd) -> Result<(), String> {
+    let sock = mycelium_node::NodeStore::open(home)
+        .map_err(|e| e.to_string())?
+        .socket_path();
+    match action {
+        GatewayCmd::Pay {
+            to,
+            amount_micros,
+            currency,
+            swift_csp_compliant,
+            secure_zone_log,
+            local_hour,
+        } => {
+            let mut meta = serde_json::Map::new();
+            if swift_csp_compliant {
+                meta.insert("swift_csp_compliant".into(), serde_json::Value::Bool(true));
+            }
+            if let Some(log_id) = secure_zone_log {
+                meta.insert("secure_zone_log_id".into(), serde_json::Value::String(log_id));
+            }
+            if let Some(h) = local_hour {
+                meta.insert("local_hour".into(), serde_json::Value::Number(h.into()));
+            }
+            let compliance_json = Some(serde_json::Value::Object(meta).to_string());
+            let resp = call(
+                &sock,
+                Request::GatewayPay {
+                    receiver_id: to,
+                    amount_micros,
+                    currency,
+                    compliance_json,
+                },
+            )
+            .await?;
             print_response(resp)
         }
     }
@@ -2823,6 +2893,26 @@ fn print_response(resp: Response) -> Result<(), String> {
             );
             println!("    orçamento    : {:.8} MYC/época", epoch_budget as f64 / coin);
             println!("    claims pend. : {pending_claims} (quórum mín.: {min_quorum})");
+            Ok(())
+        }
+        Response::GatewayPayResult {
+            intent_id,
+            gateway,
+            state,
+            external_ref,
+            myc_micros,
+            usdc_equivalent_micros,
+            native_payload,
+        } => {
+            println!("[🍄] Supreme Meta-Gateway ({gateway}) — estado: {state}");
+            println!("    intent_id    : {intent_id}");
+            println!("    external_ref : {external_ref}");
+            println!(
+                "    liquidação   : {:.6} MYC ≈ {:.6} USDC (1 MYC = 8 USDC)",
+                myc_micros as f64 / 1_000_000.0,
+                usdc_equivalent_micros as f64 / 1_000_000.0
+            );
+            println!("    payload      : {native_payload}");
             Ok(())
         }
         Response::Status(s) => {

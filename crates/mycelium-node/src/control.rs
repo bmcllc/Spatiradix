@@ -94,6 +94,14 @@ pub enum Request {
     MintClaim {
         claim: mycelium_mint::WorkClaim,
     },
+    /// Executa um pagamento pelo Supreme Meta-Gateway (auto-roteamento pix:/swift:/brics:/myc:).
+    GatewayPay {
+        receiver_id: String,
+        amount_micros: u64,
+        currency: String,
+        #[serde(default)]
+        compliance_json: Option<String>,
+    },
     /// Mostra balance local + de peers.
     Balance,
     /// Dispara migração de Ion para outro nó.
@@ -607,6 +615,16 @@ pub enum Response {
         total_supply_usdc: u64,
         pending_claims: usize,
         min_quorum: usize,
+    },
+    /// Resultado da execução de uma intenção no Supreme Meta-Gateway.
+    GatewayPayResult {
+        intent_id: String,
+        gateway: String,
+        state: String,
+        external_ref: String,
+        myc_micros: u64,
+        usdc_equivalent_micros: u64,
+        native_payload: String,
     },
 }
 
