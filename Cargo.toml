@@ -41,6 +41,7 @@ members = [
     "crates/mycelium-keyring",
     "crates/mycelium-pay",
     "crates/mycelium-mint",
+    "crates/mycelium-meta-gateway",
 ]
 
 [workspace.package]
@@ -86,6 +87,7 @@ mycelium-root = { path = "crates/mycelium-root" }
 mycelium-royalty = { path = "crates/mycelium-royalty" }
 mycelium-pay = { path = "crates/mycelium-pay" }
 mycelium-mint = { path = "crates/mycelium-mint" }
+mycelium-meta-gateway = { path = "crates/mycelium-meta-gateway" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
