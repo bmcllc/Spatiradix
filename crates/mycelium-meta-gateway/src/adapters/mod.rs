@@ -414,7 +414,27 @@ impl MetaGatewayAdapter for SwiftAdapter {
     }
 }
 
-// ─── 4.3 O Adapter BRICS Pay (O Espírito): DCMS P2P ──────────────────────────
+// ─── 4.3 O Adapter BRICS Pay (O Espírito): DCMS P2P (MT103 / ISO 20022) ─────
+
+/// Mensagem estruturada DCMS (Decentralized Cross-Border Messaging System)
+/// mapeando `PaymentIntent` para o padrão MT103 / `pacs.008` do BRICS Pay.
+#[cfg(feature = "brics")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DcmsMessage {
+    pub protocol: String,
+    pub msg_type: String,
+    pub uetr: String,
+    pub sender_did: String,
+    pub receiver_node: String,
+    pub node_url: String,
+    pub value_date: String,
+    pub currency: String,
+    pub amount: String,
+    pub myc_reference_micros: u64,
+    pub remittance_info: String,
+    pub signer_pubkey_hex: String,
+    pub signature_ed25519_hex: String,
+}
 
 #[cfg(feature = "brics")]
 #[derive(Clone)]
@@ -451,24 +471,55 @@ impl MetaGatewayAdapter for BricsPayAdapter {
         }
 
         let sig = self.node_signing_key.sign(&intent.canonical_bytes());
+        let h = blake3::hash(&intent.canonical_bytes());
+        let b = h.as_bytes();
+        let uetr = format!(
+            "{}-{}-{}-{}-{}",
+            hex::encode(&b[0..4]),
+            hex::encode(&b[4..6]),
+            hex::encode(&b[6..8]),
+            hex::encode(&b[8..10]),
+            hex::encode(&b[10..16]),
+        );
         let dcms_tx_id = format!(
             "dcms:{}",
             hex::encode(&blake3::hash(&sig.to_bytes()).as_bytes()[..16])
         );
-        let payload = serde_json::json!({
-            "protocol": "DCMS-P2P-v1",
-            "node_url": self.dcms_node_url,
-            "target_node": target_node,
-            "intent_id": intent.id,
-            "amount_micros": intent.amount_micros,
-            "currency": intent.currency,
-            "signature_hex": hex::encode(sig.to_bytes()),
-        });
+        let amount_fmt = format!(
+            "{}.{:02}",
+            intent.amount_micros / MICRO_UNIT,
+            (intent.amount_micros % MICRO_UNIT) / 10_000
+        );
+        let value_date = intent
+            .compliance_metadata
+            .get("value_date")
+            .and_then(|v| v.as_str())
+            .unwrap_or("2026-11-20")
+            .to_string();
+        let (myc_reference_micros, _) = intent.myc_usdc_parity(&MonetaryPolicy::mainnet());
+
+        let msg = DcmsMessage {
+            protocol: "DCMS-P2P-v1".into(),
+            msg_type: "DCMS.pacs.008.MT103".into(),
+            uetr,
+            sender_did: intent.sender_did.clone(),
+            receiver_node: target_node.to_string(),
+            node_url: self.dcms_node_url.clone(),
+            value_date,
+            currency: intent.currency.clone(),
+            amount: amount_fmt,
+            myc_reference_micros,
+            remittance_info: format!("MYCELIUM:{}", &intent.id[..16]),
+            signer_pubkey_hex: hex::encode(self.node_signing_key.verifying_key().as_bytes()),
+            signature_ed25519_hex: hex::encode(sig.to_bytes()),
+        };
+        let payload = serde_json::to_string(&msg)
+            .map_err(|e| GatewayError::Crypto(format!("serialize DCMS message: {e}")))?;
 
         Ok(DispatchReceipt {
             gateway: GatewayType::BricsPay,
             external_ref: dcms_tx_id,
-            native_payload: payload.to_string(),
+            native_payload: payload,
             settled_immediately: true,
         })
     }

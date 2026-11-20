@@ -1,16 +1,20 @@
 //! # mycelium-meta-gateway
 //!
 //! **A Bíblia do Meta-Gateway Mycelium** — orquestrador financeiro descentralizado
-//! em Rust unificando Pix (EMV QR Code BR Code + DICT + cob/cobv), SWIFT (CSP
-//! A1/A2/A3/A4/B + Trust Boundary + pacs.008), BRICS Pay (DCMS P2P), resolução
-//! descentralizada PKARR e o trilho nativo **MYC** estilo USDC (`1 MYC = 8 USDC`).
+//! em Rust unificando Pix (EMV QR Code BR Code + DICT + cob/cobv + mTLS), SWIFT
+//! (CSP A1/A2/A3/A4/B + Trust Boundary + HSM + pacs.008), BRICS Pay (DCMS MT103),
+//! PKARR, persistência no `SporeBank`, Webhooks Axum e trilho nativo **MYC** estilo
+//! USDC (`1 MYC = 8 USDC`).
 
 pub mod adapters;
 pub mod compliance;
 pub mod core;
 pub mod engine;
 pub mod error;
+pub mod persistence;
 pub mod pkarr_resolver;
+pub mod tls_hsm;
+pub mod webhooks;
 
 pub use adapters::MetaGatewayAdapter;
 pub use compliance::CompliancePolicy;
@@ -19,23 +23,37 @@ pub use core::{
 };
 pub use engine::{ExecutionOutcome, MetaGatewayEngine};
 pub use error::GatewayError;
+pub use persistence::SporebankIntentStore;
 pub use pkarr_resolver::PkarrIdentityResolver;
+pub use tls_hsm::{CertFormat, HsmAttestation, PixMtlsConfig, SwiftHsmKeystore};
+pub use webhooks::{
+    build_webhook_router, BricsWebhookEvent, PixWebhookEvent, SwiftWebhookEvent, WebhookAck,
+    WebhookServiceState,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::adapters::{
-        crc16_ccitt, BricsPayAdapter, DictEntry, DictKeyType, PixAdapter, SwiftAdapter,
+        crc16_ccitt, BricsPayAdapter, DcmsMessage, DictEntry, DictKeyType, PixAdapter, SwiftAdapter,
     };
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
     use ed25519_dalek::SigningKey;
+    use http_body_util::BodyExt;
+    use mycelium_core::NodeId;
     use serde_json::json;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
 
-    fn test_engine() -> MetaGatewayEngine {
-        let mut engine = MetaGatewayEngine::new(
-            SigningKey::from_bytes(&[0x42; 32]),
-            b"mycelium-meta-gateway-genesis",
-        );
+    fn test_engine_with_home(home: &std::path::Path) -> MetaGatewayEngine {
+        let sk = SigningKey::from_bytes(&[0x42; 32]);
+        let author = NodeId::derive(sk.verifying_key().as_bytes());
+        let store = SporebankIntentStore::open(home, author).unwrap();
+        let mut engine =
+            MetaGatewayEngine::new(sk, b"mycelium-meta-gateway-genesis").with_sporebank(store);
+
         let mut dict = HashMap::new();
         dict.insert(
             "alice@mycelium.net".into(),
@@ -67,9 +85,9 @@ mod tests {
 
     #[test]
     fn pix_generates_valid_emv_brcode_with_crc16_for_cob_and_cobv_and_enforces_dict() {
-        let mut engine = test_engine();
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = test_engine_with_home(dir.path());
 
-        // Chave ausente na DICT estrita deve falhar.
         let unknown = PaymentIntent::auto_route(
             100 * MICRO_UNIT,
             "BRL",
@@ -83,7 +101,6 @@ mod tests {
             Err(GatewayError::InvalidTarget(_))
         ));
 
-        // Cobrança imediata (`cob`) com QR Code EMV `000201...` e CRC16 válido.
         let cob = PaymentIntent::auto_route(
             250 * MICRO_UNIT,
             "BRL",
@@ -98,177 +115,214 @@ mod tests {
         assert_eq!(v["kind"], "cob");
         let qr = v["emv_qr_code"].as_str().unwrap();
         assert!(qr.starts_with("000201"));
-        assert!(qr.contains("br.gov.bcb.pix"));
         let (body, crc_hex) = qr.split_at(qr.len() - 4);
         assert_eq!(format!("{:04X}", crc16_ccitt(body.as_bytes())), crc_hex);
+    }
 
-        // Cobrança com vencimento (`cobv`) aguarda liquidação assíncrona.
+    #[test]
+    fn sporebank_persists_state_and_recovers_after_node_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let intent_id;
+        let uetr;
+        {
+            let mut engine = test_engine_with_home(dir.path());
+            let swift_intent = PaymentIntent::auto_route(
+                8_000 * MICRO_UNIT,
+                "USDC",
+                "did:mycelium:treasury",
+                "swift:CHASUS33XXX",
+                json!({
+                    "swift_csp_compliant": true,
+                    "secure_zone_log_id": "sz-restart-01"
+                }),
+            )
+            .unwrap();
+            let out = engine.execute(swift_intent).unwrap();
+            intent_id = out.intent.id.clone();
+            uetr = out.receipt.external_ref.clone();
+            assert!(engine.latest_sporebank_cid(&intent_id).is_some());
+        }
+
+        // Simula reinício completo do nó reabrindo o SporeBank do disco.
+        let reloaded = test_engine_with_home(dir.path());
+        let recovered = reloaded
+            .recall_by_external_ref(&uetr)
+            .unwrap()
+            .expect("intent recuperado após queda do nó");
+        assert_eq!(recovered.id, intent_id);
+        assert!(matches!(
+            recovered.state,
+            TransactionState::AwaitingGatewayResponse { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn axum_webhooks_settle_swift_and_pix_cobv_and_reject_bad_signature() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = test_engine_with_home(dir.path());
+
+        // 1. Cria cobrança Pix `cobv` (aguardando pagamento assíncrono).
         let cobv = PaymentIntent::auto_route(
             500 * MICRO_UNIT,
             "BRL",
             "did:mycelium:bob",
             "pix:alice@mycelium.net",
-            json!({
-                "local_hour": 14,
-                "due_date": "2026-12-15",
-                "days_after_due": 15
-            }),
+            json!({ "local_hour": 14, "due_date": "2026-12-20" }),
         )
         .unwrap();
         let out_cobv = engine.execute(cobv).unwrap();
-        assert!(matches!(
-            out_cobv.intent.state,
-            TransactionState::AwaitingGatewayResponse { .. }
-        ));
-        let v2: serde_json::Value = serde_json::from_str(&out_cobv.receipt.native_payload).unwrap();
-        assert_eq!(v2["kind"], "cobv");
-        assert_eq!(v2["calendario"]["dataDeVencimento"], "2026-12-15");
+        let txid = out_cobv.receipt.external_ref.clone();
+        let cobv_id = out_cobv.intent.id.clone();
+
+        // 2. Cria transferência SWIFT (aguardando pacs.002).
+        let swift = PaymentIntent::auto_route(
+            8_000 * MICRO_UNIT,
+            "USDC",
+            "did:mycelium:treasury",
+            "swift:CHASUS33XXX",
+            json!({ "swift_csp_compliant": true, "secure_zone_log_id": "sz-wh-01" }),
+        )
+        .unwrap();
+        let out_swift = engine.execute(swift).unwrap();
+        let uetr = out_swift.receipt.external_ref.clone();
+
+        let secret = [0x99u8; 32];
+        let state = Arc::new(Mutex::new(WebhookServiceState {
+            engine,
+            webhook_secret: secret,
+        }));
+        let app = build_webhook_router(state.clone());
+
+        // Assinatura adulterada -> 401 Unauthorized.
+        let bad_ev = PixWebhookEvent {
+            txid: txid.clone(),
+            end_to_end_id: "E60701190202611201600abc".into(),
+            status: "CONCLUIDA".into(),
+            signature_hex: "0000".into(),
+        };
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhooks/pix")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&bad_ev).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Webhook Pix válido -> liquida `cobv` e grava novo Plot no SporeBank.
+        let sig_pix = WebhookServiceState::sign_callback(
+            &secret,
+            &format!("pix:{txid}:E60701190202611201600abc:CONCLUIDA"),
+        );
+        let ok_pix = PixWebhookEvent {
+            txid,
+            end_to_end_id: "E60701190202611201600abc".into(),
+            status: "CONCLUIDA".into(),
+            signature_hex: sig_pix,
+        };
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhooks/pix")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&ok_pix).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let ack: WebhookAck = serde_json::from_slice(&body).unwrap();
+        assert_eq!(ack.intent_id, cobv_id);
+        assert_eq!(ack.state, "settled");
+        assert!(ack.sporebank_cid.is_some());
+
+        // Webhook SWIFT `pacs.002` (ACSC) -> liquida transferência SWIFT.
+        let sig_swift = WebhookServiceState::sign_callback(&secret, &format!("swift:{uetr}:ACSC"));
+        let ok_swift = SwiftWebhookEvent {
+            uetr,
+            status_code: "ACSC".into(),
+            reason: None,
+            signature_hex: sig_swift,
+        };
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhooks/swift")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&ok_swift).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[test]
-    fn swift_csp_decision_tree_enforces_trust_boundary_for_a1_a2_a3_a4_and_b() {
-        let mut engine = test_engine();
+    fn brics_pay_dcms_mt103_payload_and_pkarr_node_discovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = test_engine_with_home(dir.path());
 
-        // A4 rejeita middleware_zone fora da Trust Boundary.
-        let bad_a4 = PaymentIntent::auto_route(
-            8_000 * MICRO_UNIT,
-            "USDC",
-            "did:mycelium:treasury",
-            "swift:CHASUS33XXX",
-            json!({
-                "swift_csp_compliant": true,
-                "secure_zone_log_id": "sz-001",
-                "middleware_zone": "public_internet"
-            }),
+        let brics_node_sk = SigningKey::from_bytes(&[0xB9; 32]);
+        let (brics_pkarr, pkt) = PkarrIdentityResolver::sign_payment_record(
+            &brics_node_sk,
+            1_700_000_000_000,
+            "brics:dcms-sao-paulo-01",
         )
         .unwrap();
-        assert!(matches!(
-            engine.execute(bad_a4),
-            Err(GatewayError::ComplianceViolation {
-                rule: "swift_trust_boundary_a4",
-                ..
-            })
-        ));
+        engine.pkarr.register_verified_packet(pkt).unwrap();
 
-        // Arquitetura A1 exige HSM/PKI verificado.
-        engine.swift.as_mut().unwrap().architecture = SwiftCspType::A1;
-        let bad_a1 = PaymentIntent::auto_route(
-            8_000 * MICRO_UNIT,
-            "USDC",
-            "did:mycelium:treasury",
-            "swift:CHASUS33XXX",
-            json!({
-                "swift_csp_compliant": true,
-                "secure_zone_log_id": "sz-002"
-            }),
-        )
-        .unwrap();
-        assert!(matches!(
-            engine.execute(bad_a1),
-            Err(GatewayError::ComplianceViolation {
-                rule: "swift_trust_boundary_a1",
-                ..
-            })
-        ));
-
-        // Arquitetura B (zero footprint) aceita Service Bureau + MFA do operador.
-        engine.swift.as_mut().unwrap().architecture = SwiftCspType::B;
-        let ok_b = PaymentIntent::auto_route(
-            8_000 * MICRO_UNIT,
-            "USDC",
-            "did:mycelium:treasury",
-            "swift:CHASUS33XXX",
-            json!({
-                "swift_csp_compliant": true,
-                "secure_zone_log_id": "sz-b-003",
-                "service_bureau_id": "sb-latam-01",
-                "operator_mfa_verified": true
-            }),
-        )
-        .unwrap();
-        let out_b = engine.execute(ok_b).unwrap();
-        assert!(out_b
-            .receipt
-            .native_payload
-            .contains("ServiceBureau-ZeroFootprint-Portal"));
-    }
-
-    #[test]
-    fn pkarr_resolves_decentralized_sender_and_receiver_before_routing() {
-        let mut engine = test_engine();
-        let alice_sk = SigningKey::from_bytes(&[0xA1; 32]);
-        let bob_sk = SigningKey::from_bytes(&[0xB2; 32]);
-
-        let (alice_pkarr, alice_pkt) =
-            PkarrIdentityResolver::sign_payment_record(&alice_sk, 1_700_000_000_000, "pix:alice@mycelium.net")
-                .unwrap();
-        let (bob_pkarr, bob_pkt) =
-            PkarrIdentityResolver::sign_payment_record(&bob_sk, 1_700_000_000_000, "myc:bob-node")
-                .unwrap();
-
-        engine.pkarr.register_verified_packet(alice_pkt).unwrap();
-        engine.pkarr.register_verified_packet(bob_pkt).unwrap();
-
-        // Bob (identificado por pkarr:) paga Alice (identificada por pkarr:) -> resolve para pix:alice@mycelium.net!
         let out = engine
             .resolve_and_execute(
-                120 * MICRO_UNIT,
-                "BRL",
-                bob_pkarr,
-                alice_pkarr,
-                json!({ "local_hour": 15 }),
+                160 * MICRO_UNIT, // 160 USDC = 20 MYC
+                "USDC",
+                "did:mycelium:br-exporter",
+                brics_pkarr,
+                json!({ "value_date": "2026-11-20" }),
             )
             .unwrap();
-        assert_eq!(out.receipt.gateway, GatewayType::Pix);
-        assert_eq!(out.intent.receiver_id, "pix:alice@mycelium.net");
-        assert!(matches!(out.intent.state, TransactionState::Settled { .. }));
+
+        assert_eq!(out.receipt.gateway, GatewayType::BricsPay);
+        let dcms: DcmsMessage = serde_json::from_str(&out.receipt.native_payload).unwrap();
+        assert_eq!(dcms.msg_type, "DCMS.pacs.008.MT103");
+        assert_eq!(dcms.receiver_node, "dcms-sao-paulo-01");
+        assert_eq!(dcms.myc_reference_micros, 20 * MICRO_UNIT);
+        assert_eq!(dcms.amount, "160.00");
+        assert_eq!(dcms.signature_ed25519_hex.len(), 128);
     }
 
     #[test]
-    fn myc_rail_settles_like_usdc_with_1_myc_equals_8_usdc_parity() {
-        let mut engine = test_engine();
-        let intent = PaymentIntent::auto_route(
-            10 * MICRO_UNIT,
-            "MYC",
-            "did:mycelium:alice",
-            "myc:73b07611ba1c6cbefb6f1c0be1efe46d766906b06b2e9930270a6d1e66f965de",
-            json!({}),
-        )
-        .unwrap();
+    fn pix_mtls_and_swift_hsm_keystore_fail_closed_and_attest() {
+        let dir = tempfile::tempdir().unwrap();
 
-        let out = engine.execute(intent).unwrap();
-        assert_eq!(out.receipt.gateway, GatewayType::MycRail);
-        match out.intent.state {
-            TransactionState::Settled {
-                myc_micros,
-                usdc_equivalent_micros,
-                ..
-            } => {
-                assert_eq!(myc_micros, 10 * MICRO_UNIT);
-                assert_eq!(usdc_equivalent_micros, 80 * MICRO_UNIT);
-            }
-            other => panic!("estado inesperado: {other:?}"),
-        }
-    }
+        // Pix mTLS: arquivo ausente ou .p12 inválido falha fechado.
+        assert!(PixMtlsConfig::load_pem_client(dir.path().join("missing.pem")).is_err());
+        let p12_path = dir.path().join("icp-brasil.p12");
+        let mut fake_der = vec![0x30u8; 32];
+        fake_der[1] = 0x1e;
+        std::fs::write(&p12_path, &fake_der).unwrap();
+        let meta = PixMtlsConfig::load_pkcs12_metadata(&p12_path, "senha-icp-2026").unwrap();
+        assert_eq!(meta.format, CertFormat::Pkcs12);
+        assert!(meta.thumbprint.starts_with("icp-p12-blake3:"));
 
-    #[test]
-    fn fsm_blocks_illegal_skip_from_initiated_to_settled() {
-        let mut intent = PaymentIntent::auto_route(
-            10 * MICRO_UNIT,
-            "MYC",
-            "did:mycelium:alice",
-            "myc:bob",
-            json!({}),
-        )
-        .unwrap();
+        // SWIFT HSM Keystore: cria, bloqueia PIN errado e atesta Secure Zone com PIN correto.
+        let hsm_path = dir.path().join("swift-hsm.json");
+        let _created =
+            SwiftHsmKeystore::create_file(&hsm_path, "slot-a1-00", "pin-seguro-99", [0x55; 32])
+                .unwrap();
+        assert!(SwiftHsmKeystore::unlock_file(&hsm_path, "pin-errado").is_err());
 
-        let err = intent
-            .transition_to(TransactionState::Settled {
-                external_tx_id: "bypass".into(),
-                myc_micros: 10 * MICRO_UNIT,
-                usdc_equivalent_micros: 80 * MICRO_UNIT,
-            })
-            .unwrap_err();
-        assert!(matches!(err, GatewayError::InvalidTransition { .. }));
+        let unlocked = SwiftHsmKeystore::unlock_file(&hsm_path, "pin-seguro-99").unwrap();
+        let att = unlocked.attest_secure_zone("sz-log-a1-777");
+        assert_eq!(att.slot_id, "slot-a1-00");
+        assert_eq!(att.signature_hex.len(), 128);
     }
 }

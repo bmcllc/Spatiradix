@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-meta-gateway"
-description = "Supreme Meta-Gateway: orquestrador financeiro descentralizado (Pix EMV/DICT cob/cobv, SWIFT CSP A1-A4/B, BRICS Pay, PKARR e trilho MYC estilo USDC 1 MYC = 8 USDC)"
+description = "Supreme Meta-Gateway: orquestrador financeiro descentralizado (Pix EMV/DICT cob/cobv + mTLS, SWIFT CSP A1-B + HSM, BRICS Pay DCMS MT103, PKARR, SporeBank e Webhooks Axum)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,9 +19,20 @@ mycelium-zkp = { workspace = true }
 mycelium-pqc = { workspace = true }
 mycelium-pkarr = { workspace = true }
 mycelium-bank = { workspace = true }
+mycelium-sporebank = { workspace = true }
+giggs = { workspace = true }
 blake3 = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tower = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }

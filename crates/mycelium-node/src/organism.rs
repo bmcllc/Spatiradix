@@ -630,6 +630,11 @@ impl Organism {
             ed25519_dalek::SigningKey::from_bytes(&gland.seed()),
             gland.verifying_key().as_bytes(),
         );
+        if let Ok(intent_store) =
+            mycelium_meta_gateway::SporebankIntentStore::open(&config.home, gland.node_id())
+        {
+            meta_gateway = meta_gateway.with_sporebank(intent_store);
+        }
         meta_gateway.pix = Some(mycelium_meta_gateway::adapters::PixAdapter {
             psp_endpoint: "https://pix.mycelium.local/v2".into(),
             icp_brasil_cert_thumbprint: format!("icp:{}", gland.node_id().short()),

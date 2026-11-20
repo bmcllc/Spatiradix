@@ -1,6 +1,6 @@
-//! Livro VI (Josué): O Roteador Supremo (`MetaGatewayEngine`) com resolução PKARR
-//! descentralizada, selo pós-quântico (ML-KEM-1024), assinatura Ed25519, âncora causal
-//! (`hash_chronicle`), compromisso de Pedersen e liquidação unificada MYC ↔ USDC (`1 MYC = 8 USDC`).
+//! Livro VI (Josué): O Roteador Supremo (`MetaGatewayEngine`) com resolução PKARR,
+//! selo pós-quântico (ML-KEM-1024), persistência automática no `SporeBank` logo no
+//! `CryptographicSeal`, e liquidação unificada MYC ↔ USDC (`1 MYC = 8 USDC`).
 
 #[cfg(feature = "brics")]
 use crate::adapters::BricsPayAdapter;
@@ -12,8 +12,10 @@ use crate::adapters::{MetaGatewayAdapter, MycSettlementAdapter};
 use crate::compliance::CompliancePolicy;
 use crate::core::{DispatchReceipt, GatewayType, PaymentIntent, TransactionState};
 use crate::error::GatewayError;
+use crate::persistence::SporebankIntentStore;
 use crate::pkarr_resolver::PkarrIdentityResolver;
 use ed25519_dalek::{Signer, SigningKey};
+use mycelium_core::ContentId;
 use mycelium_mint::MonetaryPolicy;
 use mycelium_pqc::{mlkem_encapsulate, mlkem_keygen, KemKeyPair};
 use mycelium_zkp::{hash_chronicle, pedersen_commit};
@@ -38,6 +40,8 @@ pub struct MetaGatewayEngine {
     pub monetary_policy: MonetaryPolicy,
     /// Resolvedor PKARR (DHT/SignedPacket) para descentralizar `sender_did` e `receiver_id`.
     pub pkarr: PkarrIdentityResolver,
+    /// Persistência imutável no `SporeBank` (`[private]` Plots encadeados por `ContentId`).
+    pub sporebank: Option<SporebankIntentStore>,
     node_signing_key: SigningKey,
     pqc_keypair: KemKeyPair,
     chronicle_head: [u8; 32],
@@ -58,20 +62,47 @@ impl MetaGatewayEngine {
             compliance: CompliancePolicy::default(),
             monetary_policy: MonetaryPolicy::mainnet(),
             pkarr: PkarrIdentityResolver::new(),
+            sporebank: None,
             node_signing_key,
             pqc_keypair: mlkem_keygen(),
             chronicle_head,
         }
     }
 
+    /// Anexa uma instância de `SporebankIntentStore` para persistência automática em disco.
+    pub fn with_sporebank(mut self, store: SporebankIntentStore) -> Self {
+        self.sporebank = Some(store);
+        self
+    }
+
     pub fn chronicle_head(&self) -> [u8; 32] {
         self.chronicle_head
     }
 
+    pub fn recall_by_id(&self, intent_id: &str) -> Result<Option<PaymentIntent>, GatewayError> {
+        match self.sporebank.as_ref() {
+            Some(store) => store.load_by_id(intent_id),
+            None => Ok(None),
+        }
+    }
+
+    pub fn recall_by_external_ref(
+        &self,
+        external_ref: &str,
+    ) -> Result<Option<PaymentIntent>, GatewayError> {
+        match self.sporebank.as_ref() {
+            Some(store) => store.load_by_external_ref(external_ref),
+            None => Ok(None),
+        }
+    }
+
+    pub fn latest_sporebank_cid(&self, intent_id: &str) -> Option<ContentId> {
+        self.sporebank
+            .as_ref()
+            .and_then(|s| s.latest_cid(intent_id))
+    }
+
     /// Resolve `receiver_id` (e valida `sender_did`) via PKARR antes de rotear e executar.
-    ///
-    /// Se `receiver_id` começar com `pkarr:` ou `did:pkarr:`, busca o `SignedPacket`
-    /// verificado, extrai o destino real (`pix:`, `swift:`, `brics:`, `myc:`) e dispara.
     pub fn resolve_and_execute(
         &mut self,
         amount_micros: u64,
@@ -82,7 +113,6 @@ impl MetaGatewayEngine {
     ) -> Result<ExecutionOutcome, GatewayError> {
         let sender = sender_did.into();
         if PkarrIdentityResolver::extract_zbase32(&sender).is_some() {
-            // Valida que o remetente PKARR possui pacote assinado válido antes do despacho.
             let _ = self.pkarr.resolve_route(&sender)?;
         }
 
@@ -103,12 +133,8 @@ impl MetaGatewayEngine {
         self.execute(intent)
     }
 
-    /// Executa o fluxo completo:
-    /// 1. Resolução PKARR (caso `receiver_id` seja `pkarr:` / `did:pkarr:`)
-    /// 2. Compliance-as-Code
-    /// 3. Selo Criptográfico (Ed25519 + ML-KEM-1024 + Pedersen + `hash_chronicle`)
-    /// 4. Despacho pelo adaptador isolado (incluindo Trust Boundary SWIFT / DICT+EMV Pix)
-    /// 5. Transição FSM para `AwaitingGatewayResponse` ou `Settled`.
+    /// Executa o fluxo completo com persistência imediata no `SporeBank` assim que o
+    /// `CryptographicSeal` é gerado (recuperável em caso de queda antes da resposta externa).
     pub fn execute(&mut self, mut intent: PaymentIntent) -> Result<ExecutionOutcome, GatewayError> {
         if PkarrIdentityResolver::extract_zbase32(&intent.receiver_id).is_some() {
             let resolved = self.pkarr.resolve_route(&intent.receiver_id)?;
@@ -139,6 +165,11 @@ impl MetaGatewayEngine {
             pedersen_commit_hex: hex::encode(commit),
         })?;
         self.chronicle_head = next_chronicle;
+
+        // 2b. Persistência imediata no SporeBank antes do despacho externo
+        if let Some(store) = self.sporebank.as_mut() {
+            store.persist_intent(&intent, None)?;
+        }
 
         // 3. Despacho para o adaptador correspondente
         let receipt = match intent.gateway {
@@ -187,7 +218,7 @@ impl MetaGatewayEngine {
             GatewayType::MycRail => self.myc_rail.dispatch(&intent)?,
         };
 
-        // 4. Avança a FSM: AwaitingGatewayResponse -> Settled (se liquidação imediata)
+        // 4. Avança a FSM e persiste o novo estado indexado por `external_ref`
         intent.transition_to(TransactionState::AwaitingGatewayResponse {
             external_ref: receipt.external_ref.clone(),
         })?;
@@ -200,19 +231,46 @@ impl MetaGatewayEngine {
             })?;
         }
 
+        if let Some(store) = self.sporebank.as_mut() {
+            store.persist_intent(&intent, Some(&receipt.external_ref))?;
+        }
+
         Ok(ExecutionOutcome { intent, receipt })
     }
 
+    /// Confirma liquidação assíncrona (webhook Pix `cobv`, SWIFT `pacs.002` ou DCMS) e persiste no `SporeBank`.
     pub fn confirm_settlement(
-        &self,
+        &mut self,
         intent: &mut PaymentIntent,
         external_tx_id: impl Into<String>,
     ) -> Result<(), GatewayError> {
+        let tx_id = external_tx_id.into();
         let (myc_micros, usdc_micros) = intent.myc_usdc_parity(&self.monetary_policy);
         intent.transition_to(TransactionState::Settled {
-            external_tx_id: external_tx_id.into(),
+            external_tx_id: tx_id.clone(),
             myc_micros,
             usdc_equivalent_micros: usdc_micros,
-        })
+        })?;
+        if let Some(store) = self.sporebank.as_mut() {
+            store.persist_intent(intent, Some(&tx_id))?;
+        }
+        Ok(())
+    }
+
+    /// Registra falha explícita (ex.: `RJCT` no SWIFT `pacs.002`) e persiste no `SporeBank`.
+    pub fn fail_intent(
+        &mut self,
+        intent: &mut PaymentIntent,
+        code: u32,
+        reason: impl Into<String>,
+    ) -> Result<(), GatewayError> {
+        intent.transition_to(TransactionState::Failed {
+            code,
+            reason: reason.into(),
+        })?;
+        if let Some(store) = self.sporebank.as_mut() {
+            store.persist_intent(intent, None)?;
+        }
+        Ok(())
     }
 }
