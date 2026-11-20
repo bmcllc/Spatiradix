@@ -143,6 +143,12 @@ pub struct OrganismConfig {
     /// **Modo anônimo** (`--anonymous`): SOCKS5 local (VEIL/Tor) por onde sai
     /// todo o tráfego de rede do nó. Ver [`check_anonymous`].
     pub anonymous_socks5: Option<std::net::SocketAddr>,
+    /// Inicializa automaticamente o motor de emissão mainnet (`mycelium-mint`, 1 MYC = 8 USDC).
+    pub mint_mainnet: bool,
+    /// Chain ID da mainnet para o motor de emissão.
+    pub mint_chain_id: String,
+    /// Quórum mínimo de esporocarpos na inicialização do gênesis local.
+    pub mint_quorum: usize,
 }
 
 pub struct Organism {
@@ -195,6 +201,12 @@ pub struct Organism {
     known_zones_ts: HashMap<NodeId, u64>,
     /// Quantas vezes resolveu rota DHT (`ClosestPeers`) no overlay de zonas.
     routing_hits: u64,
+    /// Motor determinístico de emissão cripto de mainnet (PoUW-DAG, 1 MYC = 8 USDC).
+    mint_engine: Option<mycelium_mint::MainnetMintEngine>,
+    /// Claims de trabalho útil acumulados na época ativa aguardando quórum.
+    pending_mint_claims: Vec<mycelium_mint::WorkClaim>,
+    /// Atestados de esporocarpos agrupados por `batch_root` da época ativa.
+    pending_mint_attestations: HashMap<[u8; 32], Vec<mycelium_mint::SporocarpAttestation>>,
     #[cfg(feature = "veil")]
     veil_engine: Option<std::sync::Arc<mycelium_veil::VeilEngine>>,
     #[cfg(feature = "veil")]
@@ -312,6 +324,8 @@ pub struct Organism {
     pending_accepted_migrations: HashSet<String>,
     /// Inbox efêmera S1 LIVE. Nunca é persistida em disco.
     s1_live_inbox: VecDeque<(u64, String)>,
+    /// Estado em RAM da ponte AEX × Mycelium (chaves efêmeras zeroized on drop + inbox DTN AEX).
+    aex_bridge: crate::aex_bridge::AexBridgeState,
 }
 
 /// Relay Nostr padrão do modo anônimo: aceita WebSocket vindo de saídas Tor
@@ -610,6 +624,49 @@ impl Organism {
             store.save_nucleus(&nucleus)?;
         }
         let vault = store.load_vault();
+        let mint_engine = if let Some(saved) = store.load_mint_engine() {
+            tracing::info!(
+                chain_id = %saved.chain_id,
+                epoch = saved.current_epoch,
+                supply = saved.total_supply,
+                "motor mycelium-mint restaurado de mint_state.json"
+            );
+            Some(saved)
+        } else if config.mint_mainnet {
+            let mut sporocarps = HashMap::new();
+            let my_pk = gland.verifying_key().to_bytes();
+            sporocarps.insert(gland.node_id(), my_pk);
+            let quorum = config.mint_quorum.clamp(1, sporocarps.len());
+            let chain_id = if config.mint_chain_id.trim().is_empty() {
+                "mycelium-mainnet".to_string()
+            } else {
+                config.mint_chain_id.clone()
+            };
+            match mycelium_mint::MainnetMintEngine::genesis(
+                chain_id.clone(),
+                gland.verifying_key().as_bytes(),
+                mycelium_mint::MonetaryPolicy::mainnet(),
+                sporocarps,
+                quorum,
+            ) {
+                Ok(engine) => {
+                    let _ = store.save_mint_engine(&engine);
+                    tracing::info!(
+                        chain_id = %chain_id,
+                        usdc_per_myc = engine.policy.usdc_per_myc,
+                        quorum,
+                        "motor mycelium-mint inicializado em boot automático (1 MYC = 8 USDC)"
+                    );
+                    Some(engine)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "falha ao inicializar mycelium-mint no boot");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let (nostr_found_tx, nostr_found_rx) = mpsc::unbounded_channel();
         let catalog = mycelium_store::StoreCatalog::open(&config.home)
             .map_err(|e| OrganismError::Msg(e.to_string()))?;
@@ -659,6 +716,9 @@ impl Organism {
             known_zones: HashMap::new(),
             known_zones_ts: HashMap::new(),
             routing_hits: 0,
+            mint_engine,
+            pending_mint_claims: Vec::new(),
+            pending_mint_attestations: HashMap::new(),
             #[cfg(feature = "veil")]
             veil_engine: None,
             #[cfg(feature = "veil")]
@@ -728,6 +788,7 @@ impl Organism {
             known_repos: HashMap::new(),
             pending_accepted_migrations: HashSet::new(),
             s1_live_inbox: VecDeque::new(),
+            aex_bridge: crate::aex_bridge::AexBridgeState::default(),
         };
 
         // Restaura catálogo de peers do estado persistido.
@@ -823,6 +884,9 @@ impl Organism {
         self.store.save_ledger(&self.ledger)?;
         self.store.save_nucleus(&self.nucleus)?;
         self.store.save_vault(&self.vault)?;
+        if let Some(ref engine) = self.mint_engine {
+            self.store.save_mint_engine(engine)?;
+        }
         let addrs: Vec<String> = self
             .hyphae
             .dialable_addrs()
@@ -2583,9 +2647,165 @@ impl Organism {
                     }
                 }
             }
+            Envelope::MintClaimSubmit { claim } => {
+                self.handle_mint_claim(claim);
+            }
+            Envelope::MintEpochAttest { attestation } => {
+                self.handle_mint_attestation(attestation);
+            }
+            Envelope::MintEpochSettled {
+                epoch,
+                batch_root: _,
+                receipts,
+            } => {
+                self.handle_mint_settled(epoch, receipts);
+            }
         }
         self.persist()?;
         Ok(())
+    }
+
+    /// Ativa o motor de emissão mainnet (`mycelium-mint`) neste nó.
+    pub fn enable_mint_engine(&mut self, engine: mycelium_mint::MainnetMintEngine) {
+        self.mint_engine = Some(engine);
+        self.pending_mint_claims.clear();
+        self.pending_mint_attestations.clear();
+    }
+
+    /// Submete um `WorkClaim` local à malha via Gossipsub (`mycelium/lattice/v1`).
+    pub fn submit_mint_claim(&mut self, claim: mycelium_mint::WorkClaim) {
+        self.handle_mint_claim(claim.clone());
+        let env = Envelope::MintClaimSubmit { claim };
+        if let Ok(bytes) = env.encode() {
+            let _ = self.hyphae.broadcast_lattice(bytes);
+        }
+    }
+
+    fn handle_mint_claim(&mut self, claim: mycelium_mint::WorkClaim) {
+        let Some(engine) = self.mint_engine.as_ref() else {
+            return;
+        };
+        if let Err(e) = claim.verify(
+            &engine.chain_id,
+            engine.current_epoch,
+            engine.policy.min_hashcash_bits,
+        ) {
+            tracing::warn!(error = %e, "mint claim rejeitado");
+            return;
+        }
+        let nullifier = claim.nullifier(&engine.chain_id);
+        if engine.used_nullifiers.contains(&nullifier)
+            || self
+                .pending_mint_claims
+                .iter()
+                .any(|c| c.nullifier(&engine.chain_id) == nullifier)
+        {
+            return;
+        }
+        self.pending_mint_claims.push(claim);
+
+        let my_id = self.gland.node_id();
+        if self.sporocarp && engine.sporocarps.contains_key(&my_id) {
+            let epoch = engine.current_epoch;
+            let batch_root = engine.compute_batch_root(epoch, &self.pending_mint_claims);
+            let payload = mycelium_mint::SporocarpAttestation::payload_bytes(
+                &engine.chain_id,
+                epoch,
+                &batch_root,
+            );
+            let attestation = mycelium_mint::SporocarpAttestation {
+                validator: my_id,
+                epoch,
+                batch_root,
+                signature: self.gland.sign_bytes(&payload),
+            };
+            let env = Envelope::MintEpochAttest {
+                attestation: attestation.clone(),
+            };
+            if let Ok(bytes) = env.encode() {
+                let _ = self.hyphae.broadcast_lattice(bytes);
+            }
+            self.handle_mint_attestation(attestation);
+        }
+    }
+
+    fn handle_mint_attestation(&mut self, attestation: mycelium_mint::SporocarpAttestation) {
+        let Some(engine) = self.mint_engine.as_mut() else {
+            return;
+        };
+        if attestation.epoch != engine.current_epoch {
+            return;
+        }
+        let batch_root = attestation.batch_root;
+        let entry = self
+            .pending_mint_attestations
+            .entry(batch_root)
+            .or_default();
+        if entry.iter().any(|a| a.validator == attestation.validator) {
+            return;
+        }
+        entry.push(attestation);
+
+        if entry.len() < engine.min_quorum {
+            return;
+        }
+        let expected_root =
+            engine.compute_batch_root(engine.current_epoch, &self.pending_mint_claims);
+        if expected_root != batch_root {
+            return;
+        }
+
+        let settled_epoch = engine.current_epoch;
+        let settle_result = engine.settle_epoch(&self.pending_mint_claims, entry);
+        match settle_result {
+            Ok(receipts) => {
+                self.pending_mint_claims.clear();
+                self.pending_mint_attestations.clear();
+                self.apply_local_mint_receipts(&receipts);
+                let env = Envelope::MintEpochSettled {
+                    epoch: settled_epoch,
+                    batch_root,
+                    receipts,
+                };
+                if let Ok(bytes) = env.encode() {
+                    let _ = self.hyphae.broadcast_lattice(bytes);
+                }
+                let _ = self.persist();
+                tracing::info!(epoch = settled_epoch, "época mainnet liquidada via quórum");
+            }
+            Err(e) => tracing::warn!(error = %e, "falha ao liquidar época mainnet"),
+        }
+    }
+
+    fn handle_mint_settled(&mut self, epoch: u64, receipts: Vec<mycelium_mint::MintReceipt>) {
+        self.apply_local_mint_receipts(&receipts);
+        tracing::debug!(epoch, count = receipts.len(), "recibos de emissão processados");
+    }
+
+    fn apply_local_mint_receipts(&mut self, receipts: &[mycelium_mint::MintReceipt]) {
+        let my_id = self.gland.node_id();
+        for receipt in receipts {
+            if receipt.beneficiary != my_id {
+                continue;
+            }
+            let guard_id = ContentId(receipt.nullifier);
+            if !self.processed.insert(guard_id) {
+                continue;
+            }
+            if let Err(e) =
+                mycelium_mint::MainnetMintEngine::apply_receipt_to_ledger(receipt, &mut self.ledger)
+            {
+                self.processed.remove(&guard_id);
+                tracing::warn!(error = %e, "recibo de emissão rejeitado");
+            } else {
+                tracing::info!(
+                    epoch = receipt.epoch,
+                    amount = receipt.amount,
+                    nutrient = ?receipt.nutrient,
+                    "emissão mainnet creditada no ledger local"
+                );
+            }
+        }
     }
 
     /// Inicia o handshake de migração enviando `IonOffer` unicast ao acceptor.
@@ -3731,6 +3951,54 @@ impl Organism {
                     ),
                 }
             }
+            Request::MintStatus => match self.mint_engine.as_ref() {
+                Some(engine) => {
+                    let epoch_budget = engine.current_epoch_budget();
+                    let total_supply_usdc =
+                        u64::try_from(engine.policy.myc_to_usdc(engine.total_supply))
+                            .unwrap_or(u64::MAX);
+                    Response::MintStatus {
+                        active: true,
+                        chain_id: engine.chain_id.clone(),
+                        current_epoch: engine.current_epoch,
+                        total_supply: engine.total_supply,
+                        max_supply: engine.policy.max_supply,
+                        epoch_budget,
+                        usdc_per_myc: engine.policy.usdc_per_myc,
+                        total_supply_usdc,
+                        pending_claims: self.pending_mint_claims.len(),
+                        min_quorum: engine.min_quorum,
+                    }
+                }
+                None => Response::MintStatus {
+                    active: false,
+                    chain_id: "inactive".into(),
+                    current_epoch: 0,
+                    total_supply: 0,
+                    max_supply: mycelium_mint::DEFAULT_MAX_SUPPLY,
+                    epoch_budget: 0,
+                    usdc_per_myc: mycelium_mint::DEFAULT_USDC_PER_MYC,
+                    total_supply_usdc: 0,
+                    pending_claims: 0,
+                    min_quorum: 0,
+                },
+            },
+            Request::MintClaim { claim } => {
+                if self.mint_engine.is_none() {
+                    Response::Err {
+                        message: "motor mycelium-mint não está ativo neste daemon".into(),
+                    }
+                } else {
+                    let work_id = claim.work_id;
+                    let epoch = claim.epoch;
+                    self.submit_mint_claim(claim);
+                    Response::Ok {
+                        message: format!(
+                            "mint claim submetido à malha: work_id={work_id} epoch={epoch}"
+                        ),
+                    }
+                }
+            }
             Request::Balance => {
                 let mut msg = format!(
                     "ATP={} Enzymes={} Mycelia={} Spores={} Resilience={} (local)\n",
@@ -4625,6 +4893,122 @@ impl Organism {
                     }
                 }
             }
+            Request::AexBridgeInfo => crate::aex_bridge::handle_bridge_info(),
+            Request::AexQelFragment {
+                data_b64,
+                content_id,
+                threshold,
+                total,
+                ttl_secs,
+                recipient_nostr_pubkey_hex,
+            } => crate::aex_bridge::handle_qel_fragment(
+                &data_b64,
+                &content_id,
+                threshold,
+                total,
+                ttl_secs,
+                recipient_nostr_pubkey_hex.as_deref(),
+            ),
+            Request::AexQelReconstruct { shards } => {
+                crate::aex_bridge::handle_qel_reconstruct(&shards)
+            }
+            Request::AexIpfsPutLocal { data_b64 } => {
+                crate::aex_bridge::handle_ipfs_put_local(&self.home, &data_b64)
+            }
+            Request::AexIpfsGetLocal { content_id } => {
+                crate::aex_bridge::handle_ipfs_get_local(&self.home, &content_id)
+            }
+            Request::AexSporePutEncrypted {
+                namespace,
+                key,
+                ciphertext_b64,
+            } => crate::aex_bridge::handle_spore_put_encrypted(
+                &self.home,
+                &namespace,
+                &key,
+                &ciphertext_b64,
+            ),
+            Request::AexSporeGetEncrypted { namespace, key } => {
+                crate::aex_bridge::handle_spore_get_encrypted(&self.home, &namespace, &key)
+            }
+            Request::AexDistancebridgeSelect {
+                online,
+                latency_ms,
+                bandwidth_kbps,
+                packet_loss_pct,
+                anonymity_required,
+                payload_bytes,
+            } => crate::aex_bridge::handle_distancebridge_select(
+                online,
+                latency_ms,
+                bandwidth_kbps,
+                packet_loss_pct,
+                anonymity_required,
+                payload_bytes,
+            ),
+            Request::AexGhostSpawn { ttl_secs } => {
+                crate::aex_bridge::handle_ghost_spawn(&mut self.aex_bridge, ttl_secs)
+            }
+            Request::AexGhostSign {
+                handle,
+                payload_b64,
+            } => crate::aex_bridge::handle_ghost_sign(&mut self.aex_bridge, &handle, &payload_b64),
+            Request::AexGhostVerify {
+                pubkey_hex,
+                payload_b64,
+                signature_hex,
+            } => crate::aex_bridge::handle_ghost_verify(&pubkey_hex, &payload_b64, &signature_hex),
+            Request::AexGhostDestroy { handle } => {
+                crate::aex_bridge::handle_ghost_destroy(&mut self.aex_bridge, &handle)
+            }
+            Request::AexDtnSend {
+                target_peer,
+                target_node,
+                payload_b64,
+                ttl_secs,
+                max_hops,
+            } => crate::aex_bridge::handle_dtn_send(
+                &mut self.hyphae,
+                &target_peer,
+                target_node.as_deref(),
+                &payload_b64,
+                ttl_secs,
+                max_hops,
+            ),
+            Request::AexDtnPoll { limit } => {
+                crate::aex_bridge::handle_dtn_poll(&mut self.aex_bridge, limit)
+            }
+            Request::AexPqcKemKeygen => {
+                crate::aex_bridge::handle_pqc_keygen(&mut self.aex_bridge)
+            }
+            Request::AexPqcKemEncapsulate { public_key_hex } => {
+                crate::aex_bridge::handle_pqc_encapsulate(&public_key_hex)
+            }
+            Request::AexPqcKemDecapsulate {
+                handle,
+                ciphertext_hex,
+            } => crate::aex_bridge::handle_pqc_decapsulate(
+                &self.aex_bridge,
+                &handle,
+                &ciphertext_hex,
+            ),
+            Request::AexZkHashChronicle {
+                payload_b64,
+                prev_hex,
+            } => crate::aex_bridge::handle_zk_hash_chronicle(&payload_b64, prev_hex.as_deref()),
+            Request::AexZkPedersenCommit {
+                value,
+                blinding_hex,
+            } => crate::aex_bridge::handle_zk_pedersen_commit(&value, blinding_hex.as_deref()),
+            Request::AexZkPedersenVerify {
+                commitment_hex,
+                value,
+                blinding_hex,
+            } => crate::aex_bridge::handle_zk_pedersen_verify(
+                &commitment_hex,
+                &value,
+                &blinding_hex,
+            ),
             Request::Shutdown => Response::Ok {
                 message: "encerrando".into(),
             },
@@ -5381,9 +5765,11 @@ impl Organism {
                                 || bundle.dst_peer == self.gland.node_id().to_string()
                                 || bundle.dst_peer == self.hyphae.peer_id().to_string();
                             if is_local {
-                                if let Ok(env) = Envelope::decode(&bundle.payload) {
-                                    if let Err(e) = self.handle_envelope(env) {
-                                        tracing::warn!("envelope dtn: {e}");
+                                if !crate::aex_bridge::try_ingest_aex_dtn_bundle(&mut self.aex_bridge, &bundle) {
+                                    if let Ok(env) = Envelope::decode(&bundle.payload) {
+                                        if let Err(e) = self.handle_envelope(env) {
+                                            tracing::warn!("envelope dtn: {e}");
+                                        }
                                     }
                                 }
                             } else {

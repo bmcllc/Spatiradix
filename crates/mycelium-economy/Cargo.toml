@@ -10,6 +10,7 @@ description = "Local-first Mycelium job market, revenue ledger and RV validation
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+mycelium-mint = { workspace = true }
 serde_json = "1"
 thiserror = "2"
 blake3 = "1.8"
@@ -32,6 +33,8 @@ tempfile = "3"
 libc = "0.2"
 
 [dev-dependencies]
+mycelium-core = { workspace = true }
+mycelium-nutrients = { workspace = true }
 
 [[bin]]
 name = "mycelium-economy"

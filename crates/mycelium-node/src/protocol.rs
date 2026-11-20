@@ -7,6 +7,7 @@ use giggs::Plot;
 use inertia::{Momentum, SignedAttestation, Vector};
 use isotope::Atom;
 use mycelium_core::{ContentId, NodeId, Nutrient};
+use mycelium_mint::{MintReceipt, SporocarpAttestation, WorkClaim};
 use mycelium_nutrients::Voucher;
 use plasma::Charge;
 use serde::{Deserialize, Serialize};
@@ -102,6 +103,16 @@ pub enum Envelope {
     /// Voucher de liquidação assinado pelo pagador (economia sem câmara
     /// de compensação: o beneficiário credita só com assinatura válida).
     VoucherRedeem { voucher: Voucher },
+    /// Submissão de prova de trabalho útil + hashcash anti-Sybil para emissão na mainnet.
+    MintClaimSubmit { claim: WorkClaim },
+    /// Atestado de quórum assinado por um esporocarpo sobre a raiz do lote da época.
+    MintEpochAttest { attestation: SporocarpAttestation },
+    /// Emissão de época finalizada (recibos com compromisso de Pedersen e hash causal).
+    MintEpochSettled {
+        epoch: u64,
+        batch_root: [u8; 32],
+        receipts: Vec<MintReceipt>,
+    },
     /// Anúncio do Ion que este nó expõe no seu Event Horizon —
     /// alimenta o catálogo global da console ErgotOS.
     IonAnnounce {

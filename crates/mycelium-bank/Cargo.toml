@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 mycelium-pqc = { path = "../mycelium-pqc" }
+mycelium-mint = { workspace = true }
 mycelium-core = { path = "../mycelium-core", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -27,3 +28,5 @@ persistence = []
 
 [dev-dependencies]
 tempfile = "3"
+mycelium-core = { workspace = true }
+mycelium-nutrients = { workspace = true }

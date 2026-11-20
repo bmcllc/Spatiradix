@@ -32,6 +32,7 @@ pub mod hyphae_transport;
 pub mod orders;
 pub mod store;
 pub mod payments;
+pub mod mint_bridge;
 
 pub use crate::error::BankError;
 pub use crate::identity::SovereignWallet;

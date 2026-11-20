@@ -88,6 +88,12 @@ pub enum Request {
     },
     /// Mostra as Shades em custódia.
     EntropyStatus,
+    /// Consulta estado da política monetária e emissão da mainnet (`1 MYC = 8 USDC`).
+    MintStatus,
+    /// Submete um `WorkClaim` assinado para liquidação na época ativa da mainnet.
+    MintClaim {
+        claim: mycelium_mint::WorkClaim,
+    },
     /// Mostra balance local + de peers.
     Balance,
     /// Dispara migração de Ion para outro nó.
@@ -302,7 +308,128 @@ pub enum Request {
     },
     /// Lista os bindings NodeId -> PeerId conhecidos para transporte LIVE. Somente leitura.
     S1LiveBindings,
+    /// Descobre capacidades reais da ponte AEX × Mycelium deste daemon.
+    AexBridgeInfo,
+    /// Fragmenta um chunk já cifrado (<= 64 KiB) via mycelium-qel.
+    AexQelFragment {
+        data_b64: String,
+        content_id: String,
+        threshold: u8,
+        total: u8,
+        ttl_secs: u64,
+        #[serde(default)]
+        recipient_nostr_pubkey_hex: Option<String>,
+    },
+    /// Reconstrói um chunk cifrado a partir de shards QEL.
+    AexQelReconstruct {
+        shards: Vec<mycelium_qel::QelShard>,
+    },
+    /// Escreve bloco cifrado no blockstore local mycelium-ipfs (BLAKE3 ContentId).
+    AexIpfsPutLocal {
+        data_b64: String,
+    },
+    /// Lê bloco cifrado do blockstore local mycelium-ipfs.
+    AexIpfsGetLocal {
+        content_id: String,
+    },
+    /// Persiste shard/manifesto opaco já cifrado fora do Isotope LWW.
+    AexSporePutEncrypted {
+        namespace: String,
+        key: String,
+        ciphertext_b64: String,
+    },
+    /// Recupera shard/manifesto opaco cifrado.
+    AexSporeGetEncrypted {
+        namespace: String,
+        key: String,
+    },
+    /// Calcula ranking adaptativo via mycelium-distancebridge.
+    AexDistancebridgeSelect {
+        online: bool,
+        latency_ms: u32,
+        bandwidth_kbps: u32,
+        packet_loss_pct: f32,
+        anonymity_required: bool,
+        payload_bytes: usize,
+    },
+    /// Gera GhostID efêmero secp256k1 exclusivamente em RAM (zero plaintext em disco).
+    AexGhostSpawn {
+        ttl_secs: u64,
+    },
+    /// Assina payload com GhostID efêmero ativo na RAM do daemon.
+    AexGhostSign {
+        handle: String,
+        payload_b64: String,
+    },
+    /// Verifica assinatura Schnorr NIP-01 GhostID.
+    AexGhostVerify {
+        pubkey_hex: String,
+        payload_b64: String,
+        signature_hex: String,
+    },
+    /// Remove e zeroiza GhostID efêmero da RAM.
+    AexGhostDestroy {
+        handle: String,
+    },
+    /// Envia bundle opaco cifrado via mycelium-hyphae DtnBundleStore unicast.
+    AexDtnSend {
+        target_peer: String,
+        #[serde(default)]
+        target_node: Option<String>,
+        payload_b64: String,
+        ttl_secs: u64,
+        max_hops: u32,
+    },
+    /// Retira bundles DTN destinados a este nó da inbox AEX em RAM.
+    AexDtnPoll {
+        limit: usize,
+    },
+    /// Gera par ML-KEM-1024 efêmero em RAM (`mycelium-pqc`).
+    AexPqcKemKeygen,
+    /// Encapsula segredo usando chave pública ML-KEM-1024 do par.
+    AexPqcKemEncapsulate {
+        public_key_hex: String,
+    },
+    /// Decapsula ciphertext ML-KEM-1024 usando chave mantida na sessão RAM.
+    AexPqcKemDecapsulate {
+        handle: String,
+        ciphertext_hex: String,
+    },
+    /// Calcula HashChronicle BLAKE3 nativo (`mycelium-zkp`).
+    AexZkHashChronicle {
+        payload_b64: String,
+        #[serde(default)]
+        prev_hex: Option<String>,
+    },
+    /// Cria Pedersen commitment Ed25519 nativo (`mycelium-zkp`).
+    AexZkPedersenCommit {
+        value: String,
+        #[serde(default)]
+        blinding_hex: Option<String>,
+    },
+    /// Verifica abertura de Pedersen commitment (`mycelium-zkp`).
+    AexZkPedersenVerify {
+        commitment_hex: String,
+        value: String,
+        blinding_hex: String,
+    },
     Shutdown,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AexTransportScoreDto {
+    pub channel: String,
+    pub potential: f64,
+    pub implemented_in_runtime: bool,
+    pub note: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AexDtnInboxItem {
+    pub bundle_id: String,
+    pub from_peer: String,
+    pub payload_b64: String,
+    pub received_at: u64,
 }
 
 /// Respostas do daemon.
@@ -391,6 +518,95 @@ pub enum Response {
         /// Motivos de falha por entrada/estágio da última inicialização do circuito.
         #[serde(default)]
         motivos_falha: Vec<String>,
+    },
+    AexBridgeCapabilities {
+        protocol_version: String,
+        crates: Vec<String>,
+        features: Vec<String>,
+        pqc_enabled: bool,
+        veil_enabled: bool,
+        nostr_transport_enabled: bool,
+        license_enabled: bool,
+    },
+    AexQelFragmentResult {
+        content_id: String,
+        content_hash_hex: String,
+        shards: Vec<mycelium_qel::QelShard>,
+        encrypted_nostr_events: Vec<String>,
+    },
+    AexQelReconstructResult {
+        data_b64: String,
+        content_id: String,
+        verified: bool,
+    },
+    AexIpfsPutResult {
+        content_id: String,
+        byte_length: usize,
+    },
+    AexIpfsGetResult {
+        found: bool,
+        data_b64: Option<String>,
+    },
+    AexSporePutResult {
+        stored_key: String,
+        digest_hex: String,
+    },
+    AexSporeGetResult {
+        found: bool,
+        ciphertext_b64: Option<String>,
+    },
+    AexDistancebridgeResult {
+        transports: Vec<AexTransportScoreDto>,
+    },
+    AexGhostSpawnResult {
+        handle: String,
+        pubkey_hex: String,
+        expires_at_secs: u64,
+    },
+    AexGhostSignResult {
+        signature_hex: String,
+    },
+    AexVerifyResult {
+        valid: bool,
+    },
+    AexDtnSendResult {
+        bundle_id: String,
+        delivered_directly: bool,
+        queued_dtn: bool,
+    },
+    AexDtnPollResult {
+        bundles: Vec<AexDtnInboxItem>,
+    },
+    AexPqcKeygenResult {
+        handle: String,
+        public_key_hex: String,
+    },
+    AexPqcEncapResult {
+        ciphertext_hex: String,
+        shared_secret_hex: String,
+    },
+    AexPqcDecapResult {
+        shared_secret_hex: String,
+    },
+    AexZkHashChronicleResult {
+        chronicle_hex: String,
+    },
+    AexZkPedersenCommitResult {
+        commitment_hex: String,
+        blinding_hex: String,
+    },
+    /// Relatório do motor de emissão mainnet (`1 MYC = usdc_per_myc USDC`).
+    MintStatus {
+        active: bool,
+        chain_id: String,
+        current_epoch: u64,
+        total_supply: u64,
+        max_supply: u64,
+        epoch_budget: u64,
+        usdc_per_myc: u64,
+        total_supply_usdc: u64,
+        pending_claims: usize,
+        min_quorum: usize,
     },
 }
 

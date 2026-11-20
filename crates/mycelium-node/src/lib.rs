@@ -4,6 +4,7 @@
 //! TheField, Inertia, Vacuum e Plasma — com estado em disco e plano de
 //! controle via Unix socket.
 
+pub mod aex_bridge;
 pub mod assets;
 mod control;
 mod organism;
@@ -94,6 +95,12 @@ pub struct DaemonOptions {
     pub veil_bridge_target: Option<String>,
     /// Modo anônimo: SOCKS5 local (VEIL/Tor) para todo o tráfego do nó.
     pub anonymous_socks5: Option<std::net::SocketAddr>,
+    /// Inicializa automaticamente o motor de emissão mainnet (`mycelium-mint`, 1 MYC = 8 USDC).
+    pub mint_mainnet: bool,
+    /// Chain ID da mainnet para o motor de emissão.
+    pub mint_chain_id: String,
+    /// Quórum mínimo de esporocarpos na inicialização do gênesis local.
+    pub mint_quorum: usize,
 }
 
 impl Default for DaemonOptions {
@@ -136,6 +143,9 @@ impl Default for DaemonOptions {
             veil_bridge_listen: None,
             veil_bridge_target: None,
             anonymous_socks5: None,
+            mint_mainnet: false,
+            mint_chain_id: "mycelium-mainnet".into(),
+            mint_quorum: 1,
         }
     }
 }
@@ -188,13 +198,18 @@ pub async fn run_daemon(home: PathBuf, opts: DaemonOptions) -> Result<(), Organi
         veil_bridge_listen: opts.veil_bridge_listen,
         veil_bridge_target: opts.veil_bridge_target,
         anonymous_socks5: opts.anonymous_socks5,
+        mint_mainnet: opts.mint_mainnet,
+        mint_chain_id: opts.mint_chain_id,
+        mint_quorum: opts.mint_quorum,
     })?;
     let sock = organism.home().join("mycelium.sock");
     let mut token = std::env::var("MYCELIUM_CONTROL_TOKEN")
         .ok()
         .filter(|t| !t.is_empty());
-    // Seed/relay/sporocarp 24/7: exige token (ou gera um persistente em `{home}/control.token`).
-    if enable_relay && token.is_none() {
+    let require_token = enable_relay
+        || std::env::var("MYCELIUM_REQUIRE_TOKEN").ok().as_deref() == Some("1");
+    // Seed/relay/sporocarp 24/7 ou bridge AEX fail-closed: exige token (ou gera um persistente em `{home}/control.token`).
+    if require_token && token.is_none() {
         let path = home.join("control.token");
         token = Some(match std::fs::read_to_string(&path) {
             Ok(t) if !t.trim().is_empty() => t.trim().to_string(),

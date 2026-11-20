@@ -11,6 +11,7 @@ mycelium-core = { workspace = true }
 mycelium-hyphae = { workspace = true }
 mycelium-pheromones = { workspace = true }
 mycelium-nutrients = { workspace = true }
+mycelium-mint = { workspace = true }
 mycelium-ghostid = { workspace = true }
 mycelium-sporebank = { workspace = true }
 mycelium-tropical = { workspace = true }
@@ -30,15 +31,21 @@ tokio = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 hex = { workspace = true }
+blake3 = { workspace = true }
 rand = { workspace = true }
 libp2p = { workspace = true }
 axum = { workspace = true }
 base64 = "0.22"
 mycelium-media = { workspace = true }
 mycelium-sclerotium = { workspace = true }
-mycelium-zkp = { workspace = true, features = ["license", "bolt11"], optional = true }
+mycelium-qel = { workspace = true }
+mycelium-ipfs = { workspace = true }
+mycelium-distancebridge = { workspace = true }
+mycelium-nostr = { workspace = true }
+mycelium-pkarr = { workspace = true }
+mycelium-pqc = { workspace = true }
+mycelium-zkp = { workspace = true, features = ["license", "bolt11"] }
 mycelium-veil = { workspace = true, optional = true }
-mycelium-pqc = { workspace = true, optional = true }
 
 [dev-dependencies]
 mycelium-nostr-transport = { workspace = true, features = ["test-relay"] }
@@ -49,11 +56,11 @@ axum = { workspace = true }
 
 [features]
 default = []
-veil = ["dep:mycelium-veil", "dep:mycelium-pqc"]
+veil = ["dep:mycelium-veil"]
 webrtc = ["mycelium-hyphae/webrtc"]
-license = ["dep:mycelium-zkp", "mycelium-hyphae/license"]
+license = ["mycelium-zkp/license", "mycelium-hyphae/license"]
 # Lightning BOLT11 no runtime (parse/validação de invoice para a economia voucher).
-bolt11 = ["dep:mycelium-zkp", "mycelium-zkp/bolt11", "mycelium-nutrients/bolt11"]
+bolt11 = ["mycelium-zkp/bolt11", "mycelium-nutrients/bolt11"]
 # Mantido para a CLI activar a mesma feature flag; publish Nostr corre no CLI.
 nostr = []
 nostr-transport = ["mycelium-hyphae/nostr-transport"]

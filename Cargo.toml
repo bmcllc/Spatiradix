@@ -37,6 +37,10 @@ members = [
     "crates/mycelium-bank",
     "crates/mycelium-pkarr",
     "crates/mycelium-root",
+    "crates/mycelium-royalty",
+    "crates/mycelium-keyring",
+    "crates/mycelium-pay",
+    "crates/mycelium-mint",
 ]
 
 [workspace.package]
@@ -79,6 +83,9 @@ mycelium-economy = { path = "crates/mycelium-economy" }
 mycelium-bank = { path = "crates/mycelium-bank" }
 mycelium-pkarr = { path = "crates/mycelium-pkarr" }
 mycelium-root = { path = "crates/mycelium-root" }
+mycelium-royalty = { path = "crates/mycelium-royalty" }
+mycelium-pay = { path = "crates/mycelium-pay" }
+mycelium-mint = { path = "crates/mycelium-mint" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -159,6 +159,15 @@ enum Commands {
         /// SOCKS5 local do modo anônimo (Tor: 127.0.0.1:9050 · VEIL: 127.0.0.1:1080).
         #[arg(long = "anon-socks", default_value = "127.0.0.1:9050")]
         anon_socks: std::net::SocketAddr,
+        /// Ativa boot automático do motor de emissão mainnet (`mycelium-mint`, 1 MYC = 8 USDC).
+        #[arg(long = "mint-mainnet")]
+        mint_mainnet: bool,
+        /// Chain ID da mainnet para o motor de emissão.
+        #[arg(long = "mint-chain-id", default_value = "mycelium-mainnet")]
+        mint_chain_id: String,
+        /// Quórum mínimo de esporocarpos para liquidação de época.
+        #[arg(long = "mint-quorum", default_value_t = 1)]
+        mint_quorum: usize,
     },
     Status,
     Sow {
@@ -369,6 +378,11 @@ enum Commands {
     Entropy {
         #[command(subcommand)]
         action: EntropyCmd,
+    },
+    /// Mainnet Mint: consulta política monetária (1 MYC = 8 USDC) e submete provas de trabalho útil.
+    Mint {
+        #[command(subcommand)]
+        action: MintCmd,
     },
     /// CandidateRelay (kind 39401/39406): descoberta + backchannel CGNAT↔CGNAT.
     Candidate {
@@ -667,6 +681,9 @@ enum RootCmd {
     Mount {
         #[command(flatten)]
         sel: RootSel,
+        /// Permite executar programas a partir do Root (jogos, Proton/Wine).
+        #[arg(long)]
+        exec: bool,
         #[arg(last = true, num_args = 1, required = true)]
         mountpoint: Vec<PathBuf>,
     },
@@ -923,6 +940,36 @@ enum EntropyCmd {
 }
 
 #[derive(Subcommand)]
+enum MintCmd {
+    /// Mostra época ativa, suprimento, orçamento e paridade 1 MYC = 8 USDC.
+    Status,
+    /// Constrói, assina e envia um WorkClaim com hashcash anti-Sybil ao daemon.
+    Claim {
+        /// Identificador do trabalho (ContentId hex ou prefixo Qm).
+        #[arg(long)]
+        work_id: String,
+        /// Tipo de trabalho útil: seeding | compute | relay.
+        #[arg(long, default_value = "compute")]
+        kind: String,
+        /// Quantidade de unidades de trabalho verificadas.
+        #[arg(long, default_value_t = 1)]
+        units: u64,
+        /// Época alvo da mainnet.
+        #[arg(long, default_value_t = 0)]
+        epoch: u64,
+        /// Chain ID da mainnet.
+        #[arg(long, default_value = "mycelium-mainnet")]
+        chain_id: String,
+        /// Seed ed25519 (64 chars hex) da contraparte que co-assina a entrega.
+        #[arg(long)]
+        counterparty_seed: String,
+        /// Dificuldade do hashcash em zero bits.
+        #[arg(long, default_value_t = mycelium_mint::DEFAULT_MIN_HASHCASH_BITS)]
+        hashcash_bits: u8,
+    },
+}
+
+#[derive(Subcommand)]
 enum SeedsCmd {
     /// Lista seeds em `{home}/seeds.txt`.
     List,
@@ -1049,6 +1096,9 @@ fn main() {
             veil_bridge_target,
             anonymous,
             anon_socks,
+            mint_mainnet,
+            mint_chain_id,
+            mint_quorum,
         } => {
             #[cfg(not(feature = "license"))]
             let _ = licensed_peers;
@@ -1103,6 +1153,9 @@ fn main() {
                 veil_bridge_listen,
                 veil_bridge_target,
                 anonymous_socks5: anonymous.then_some(anon_socks),
+                mint_mainnet,
+                mint_chain_id,
+                mint_quorum,
             },
             upnp,
             ))
@@ -1255,6 +1308,7 @@ fn main() {
             }
         }
         Commands::Entropy { action } => rt.block_on(entropy_cmd(&home, action)),
+        Commands::Mint { action } => rt.block_on(mint_cmd(&home, action)),
         Commands::Candidate {
             cmd,
             r#loop,
@@ -1768,6 +1822,55 @@ async fn entropy_cmd(home: &PathBuf, action: EntropyCmd) -> Result<(), String> {
         }
         EntropyCmd::Status => {
             let resp = call(&sock, Request::EntropyStatus).await?;
+            print_response(resp)
+        }
+    }
+}
+
+async fn mint_cmd(home: &PathBuf, action: MintCmd) -> Result<(), String> {
+    let sock = mycelium_node::NodeStore::open(home)
+        .map_err(|e| e.to_string())?
+        .socket_path();
+    match action {
+        MintCmd::Status => {
+            let resp = call(&sock, Request::MintStatus).await?;
+            print_response(resp)
+        }
+        MintCmd::Claim {
+            work_id,
+            kind,
+            units,
+            epoch,
+            chain_id,
+            counterparty_seed,
+            hashcash_bits,
+        } => {
+            let store = mycelium_node::NodeStore::open(home).map_err(|e| e.to_string())?;
+            let gland = store.load_or_create_gland().map_err(|e| e.to_string())?;
+            let ledger = store.load_ledger();
+            let work_cid: mycelium_core::ContentId = work_id.parse()?;
+            let tx_kind: mycelium_nutrients::TxKind = kind.parse()?;
+
+            let seed_bytes = hex::decode(counterparty_seed.trim())
+                .map_err(|e| format!("counterparty_seed hex inválido: {e}"))?;
+            let seed_arr: [u8; 32] = seed_bytes
+                .try_into()
+                .map_err(|_| "counterparty_seed precisa de exatamente 32 bytes (64 hex)".to_string())?;
+            let counterparty_sk = ed25519_dalek::SigningKey::from_bytes(&seed_arr);
+
+            let claim = mycelium_mint::WorkClaim::build_signed(
+                &chain_id,
+                epoch,
+                gland.node_id(),
+                &counterparty_sk,
+                work_cid,
+                tx_kind,
+                units,
+                ledger.balance(mycelium_core::Nutrient::Spores),
+                ledger.balance(mycelium_core::Nutrient::Resilience),
+                hashcash_bits,
+            );
+            let resp = call(&sock, Request::MintClaim { claim }).await?;
             print_response(resp)
         }
     }
@@ -2690,6 +2793,38 @@ fn print_response(resp: Response) -> Result<(), String> {
             println!("[🍄] {message}");
             Ok(())
         }
+        Response::MintStatus {
+            active,
+            chain_id,
+            current_epoch,
+            total_supply,
+            max_supply,
+            epoch_budget,
+            usdc_per_myc,
+            total_supply_usdc,
+            pending_claims,
+            min_quorum,
+        } => {
+            let coin = mycelium_mint::COIN as f64;
+            println!(
+                "[🍄] Mainnet Mint ({})",
+                if active { "ativo" } else { "inativo" }
+            );
+            println!("    chain_id     : {chain_id}");
+            println!("    época atual  : {current_epoch}");
+            println!(
+                "    suprimento   : {:.8} / {:.8} MYC",
+                total_supply as f64 / coin,
+                max_supply as f64 / coin
+            );
+            println!(
+                "    paridade     : 1 MYC = {usdc_per_myc} USDC (total ≈ {:.2} USDC)",
+                total_supply_usdc as f64 / coin
+            );
+            println!("    orçamento    : {:.8} MYC/época", epoch_budget as f64 / coin);
+            println!("    claims pend. : {pending_claims} (quórum mín.: {min_quorum})");
+            Ok(())
+        }
         Response::Status(s) => {
             println!("[🍄] Organismo vivo");
             println!("    home       : {}", s.home);
@@ -2943,6 +3078,27 @@ fn print_response(resp: Response) -> Result<(), String> {
             for binding in bindings {
                 println!("{binding}");
             }
+            Ok(())
+        }
+        other @ (Response::AexBridgeCapabilities { .. }
+        | Response::AexQelFragmentResult { .. }
+        | Response::AexQelReconstructResult { .. }
+        | Response::AexIpfsPutResult { .. }
+        | Response::AexIpfsGetResult { .. }
+        | Response::AexSporePutResult { .. }
+        | Response::AexSporeGetResult { .. }
+        | Response::AexDistancebridgeResult { .. }
+        | Response::AexGhostSpawnResult { .. }
+        | Response::AexGhostSignResult { .. }
+        | Response::AexVerifyResult { .. }
+        | Response::AexDtnSendResult { .. }
+        | Response::AexDtnPollResult { .. }
+        | Response::AexPqcKeygenResult { .. }
+        | Response::AexPqcEncapResult { .. }
+        | Response::AexPqcDecapResult { .. }
+        | Response::AexZkHashChronicleResult { .. }
+        | Response::AexZkPedersenCommitResult { .. }) => {
+            println!("{}", serde_json::to_string_pretty(&other).unwrap_or_default());
             Ok(())
         }
         Response::Err { message } => Err(message),
@@ -4702,6 +4858,8 @@ fn root_cmd(action: RootCmd) -> Result<(), String> {
         RootCmd::Put { sel, files } => {
             let mut v = Vault::open(&root_paths(sel)?).map_err(err)?;
             let mut count = 0usize;
+            let mut total = 0u64;
+            let started = std::time::Instant::now();
             for f in files {
                 let base = f.parent().map(|p| p.to_path_buf()).unwrap_or_default();
                 let mut stack = vec![f.clone()];
@@ -4712,16 +4870,24 @@ fn root_cmd(action: RootCmd) -> Result<(), String> {
                         for e in std::fs::read_dir(&p).map_err(|e| e.to_string())?.flatten() {
                             stack.push(e.path());
                         }
-                    } else {
-                        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-                        v.write_file(&rel, &data).map_err(err)?;
-                        println!("[🌱] + {rel} ({} bytes)", data.len());
+                    } else if p.is_file() {
+                        let mut f = std::fs::File::open(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+                        let size = v.write_stream(&rel, &mut f).map_err(err)?;
+                        total += size;
                         count += 1;
+                        if count % 200 == 0 || size > 64 << 20 {
+                            println!("[🌱] + {rel} ({size} bytes) · {count} arquivos, {} MB", total >> 20);
+                        }
                     }
                 }
             }
             let missing = v.n() as usize - v.present().len();
-            println!("[🌱] {count} arquivo(s) gravado(s).");
+            let secs = started.elapsed().as_secs_f64().max(0.001);
+            println!(
+                "[🌱] {count} arquivo(s), {} MB gravado(s) em {secs:.0} s ({:.1} MB/s).",
+                total >> 20,
+                (total as f64 / 1048576.0) / secs
+            );
             if missing > 0 {
                 println!("[🌱] {missing} raiz(es) ausente(s) recebem os fragmentos por contato (`root sync`).");
             }
@@ -4742,7 +4908,7 @@ fn root_cmd(action: RootCmd) -> Result<(), String> {
             }
             Ok(())
         }
-        RootCmd::Mount { sel, mountpoint } => {
+        RootCmd::Mount { sel, exec, mountpoint } => {
             let v = Vault::open(&root_paths(sel)?).map_err(err)?;
             let mp = &mountpoint[0];
             std::fs::create_dir_all(mp).map_err(|e| e.to_string())?;
@@ -4752,7 +4918,7 @@ fn root_cmd(action: RootCmd) -> Result<(), String> {
                 v.present(),
                 mp.display()
             );
-            mycelium_root::mount::mount(v, mp).map_err(err)
+            mycelium_root::mount::mount(v, mp, exec).map_err(err)
         }
         RootCmd::Sync { sel } => {
             let r = mycelium_root::sync(&root_paths(sel)?).map_err(err)?;

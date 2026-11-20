@@ -98,6 +98,10 @@ impl NodeStore {
         self.root.join("vault.json")
     }
 
+    pub fn mint_state_path(&self) -> PathBuf {
+        self.root.join("mint_state.json")
+    }
+
     fn seed_path(&self) -> PathBuf {
         self.root.join("gland.seed")
     }
@@ -221,6 +225,22 @@ impl NodeStore {
 
     pub fn save_vault(&self, vault: &Vault) -> Result<(), StoreError> {
         std::fs::write(self.vault_path(), serde_json::to_vec_pretty(vault)?)?;
+        Ok(())
+    }
+
+    /// Carrega o estado persistido do motor `mycelium-mint` (`mint_state.json`).
+    pub fn load_mint_engine(&self) -> Option<mycelium_mint::MainnetMintEngine> {
+        std::fs::read(self.mint_state_path())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+    }
+
+    /// Persiste o estado do motor `mycelium-mint` em `mint_state.json`.
+    pub fn save_mint_engine(
+        &self,
+        engine: &mycelium_mint::MainnetMintEngine,
+    ) -> Result<(), StoreError> {
+        std::fs::write(self.mint_state_path(), serde_json::to_vec_pretty(engine)?)?;
         Ok(())
     }
 }

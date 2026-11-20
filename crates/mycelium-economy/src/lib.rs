@@ -62,6 +62,9 @@ pub mod nev_tier;
 /// Durable, hash-chained record of verified economic events — the source of
 /// truth NEV replay protection is rebuilt from, so a restart cannot reopen it.
 pub mod nev_durable;
+/// Ponte contábil com `mycelium-mint` (1 MYC = 8 USDC), preservando estritamente
+/// o invariante de que recompensas internas em MYC nunca aumentam `PaidDemand` externo.
+pub mod mint_bridge;
 
 pub use verified_view::TrustMode;
 
