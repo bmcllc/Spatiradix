@@ -631,8 +631,10 @@ impl Organism {
             gland.verifying_key().as_bytes(),
         );
         meta_gateway.pix = Some(mycelium_meta_gateway::adapters::PixAdapter {
-            psp_endpoint: "https://pix.mycelium.local/v2/cob".into(),
+            psp_endpoint: "https://pix.mycelium.local/v2".into(),
             icp_brasil_cert_thumbprint: format!("icp:{}", gland.node_id().short()),
+            dict_directory: HashMap::new(),
+            strict_dict_lookup: false,
         });
         meta_gateway.swift = Some(mycelium_meta_gateway::adapters::SwiftAdapter {
             architecture: mycelium_meta_gateway::SwiftCspType::A4,

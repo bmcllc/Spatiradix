@@ -1,6 +1,6 @@
-//! Livro VI (Josué): O Roteador Supremo (`MetaGatewayEngine`) com selo pós-quântico
-//! (ML-KEM-1024), assinatura Ed25519, âncora causal (`hash_chronicle`), compromisso
-//! de Pedersen e liquidação unificada MYC ↔ USDC (`1 MYC = 8 USDC`).
+//! Livro VI (Josué): O Roteador Supremo (`MetaGatewayEngine`) com resolução PKARR
+//! descentralizada, selo pós-quântico (ML-KEM-1024), assinatura Ed25519, âncora causal
+//! (`hash_chronicle`), compromisso de Pedersen e liquidação unificada MYC ↔ USDC (`1 MYC = 8 USDC`).
 
 #[cfg(feature = "brics")]
 use crate::adapters::BricsPayAdapter;
@@ -12,6 +12,7 @@ use crate::adapters::{MetaGatewayAdapter, MycSettlementAdapter};
 use crate::compliance::CompliancePolicy;
 use crate::core::{DispatchReceipt, GatewayType, PaymentIntent, TransactionState};
 use crate::error::GatewayError;
+use crate::pkarr_resolver::PkarrIdentityResolver;
 use ed25519_dalek::{Signer, SigningKey};
 use mycelium_mint::MonetaryPolicy;
 use mycelium_pqc::{mlkem_encapsulate, mlkem_keygen, KemKeyPair};
@@ -35,13 +36,15 @@ pub struct MetaGatewayEngine {
     pub myc_rail: MycSettlementAdapter,
     pub compliance: CompliancePolicy,
     pub monetary_policy: MonetaryPolicy,
+    /// Resolvedor PKARR (DHT/SignedPacket) para descentralizar `sender_did` e `receiver_id`.
+    pub pkarr: PkarrIdentityResolver,
     node_signing_key: SigningKey,
     pqc_keypair: KemKeyPair,
     chronicle_head: [u8; 32],
 }
 
 impl MetaGatewayEngine {
-    /// Inicializa o motor com identidade Ed25519, par pós-quântico ML-KEM-1024 e política `1 MYC = 8 USDC`.
+    /// Inicializa o motor com identidade Ed25519, ML-KEM-1024, PKARR e política `1 MYC = 8 USDC`.
     pub fn new(node_signing_key: SigningKey, genesis_tag: &[u8]) -> Self {
         let chronicle_head = hash_chronicle(genesis_tag, &[]);
         Self {
@@ -54,27 +57,71 @@ impl MetaGatewayEngine {
             myc_rail: MycSettlementAdapter::default(),
             compliance: CompliancePolicy::default(),
             monetary_policy: MonetaryPolicy::mainnet(),
+            pkarr: PkarrIdentityResolver::new(),
             node_signing_key,
             pqc_keypair: mlkem_keygen(),
             chronicle_head,
         }
     }
 
-    /// Cabeça causal atual (BLAKE3 `hash_chronicle`) de todas as intenções seladas neste nó.
     pub fn chronicle_head(&self) -> [u8; 32] {
         self.chronicle_head
     }
 
+    /// Resolve `receiver_id` (e valida `sender_did`) via PKARR antes de rotear e executar.
+    ///
+    /// Se `receiver_id` começar com `pkarr:` ou `did:pkarr:`, busca o `SignedPacket`
+    /// verificado, extrai o destino real (`pix:`, `swift:`, `brics:`, `myc:`) e dispara.
+    pub fn resolve_and_execute(
+        &mut self,
+        amount_micros: u64,
+        currency: impl Into<String>,
+        sender_did: impl Into<String>,
+        receiver_id: impl Into<String>,
+        compliance_metadata: serde_json::Value,
+    ) -> Result<ExecutionOutcome, GatewayError> {
+        let sender = sender_did.into();
+        if PkarrIdentityResolver::extract_zbase32(&sender).is_some() {
+            // Valida que o remetente PKARR possui pacote assinado válido antes do despacho.
+            let _ = self.pkarr.resolve_route(&sender)?;
+        }
+
+        let raw_receiver = receiver_id.into();
+        let resolved_receiver = if PkarrIdentityResolver::extract_zbase32(&raw_receiver).is_some() {
+            self.pkarr.resolve_route(&raw_receiver)?
+        } else {
+            raw_receiver
+        };
+
+        let intent = PaymentIntent::auto_route(
+            amount_micros,
+            currency,
+            sender,
+            resolved_receiver,
+            compliance_metadata,
+        )?;
+        self.execute(intent)
+    }
+
     /// Executa o fluxo completo:
-    /// 1. Compliance-as-Code
-    /// 2. Selo Criptográfico (Ed25519 + ML-KEM-1024 + Pedersen + `hash_chronicle`)
-    /// 3. Despacho pelo adaptador isolado
-    /// 4. Transição FSM para `AwaitingGatewayResponse` ou `Settled` (quando instantâneo).
+    /// 1. Resolução PKARR (caso `receiver_id` seja `pkarr:` / `did:pkarr:`)
+    /// 2. Compliance-as-Code
+    /// 3. Selo Criptográfico (Ed25519 + ML-KEM-1024 + Pedersen + `hash_chronicle`)
+    /// 4. Despacho pelo adaptador isolado (incluindo Trust Boundary SWIFT / DICT+EMV Pix)
+    /// 5. Transição FSM para `AwaitingGatewayResponse` ou `Settled`.
     pub fn execute(&mut self, mut intent: PaymentIntent) -> Result<ExecutionOutcome, GatewayError> {
+        if PkarrIdentityResolver::extract_zbase32(&intent.receiver_id).is_some() {
+            let resolved = self.pkarr.resolve_route(&intent.receiver_id)?;
+            let gw = GatewayType::infer_from_receiver(&resolved)
+                .ok_or_else(|| GatewayError::InvalidTarget(resolved.clone()))?;
+            intent.receiver_id = resolved;
+            intent.gateway = gw;
+        }
+
         // 1. Compliance-as-Code
         self.compliance.enforce(&intent)?;
 
-        // 2. Selo Pós-Quântico + Prova de Intenção no Lattice antes do disparo legado
+        // 2. Selo Pós-Quântico + Prova de Intenção no Lattice
         let canonical = intent.canonical_bytes();
         let sig = self.node_signing_key.sign(&canonical);
         let pqc_encap = mlkem_encapsulate(&self.pqc_keypair.public_key)
@@ -156,7 +203,6 @@ impl MetaGatewayEngine {
         Ok(ExecutionOutcome { intent, receipt })
     }
 
-    /// Confirma liquidação assíncrona (webhook/callback SWIFT ou liquidação externa).
     pub fn confirm_settlement(
         &self,
         intent: &mut PaymentIntent,

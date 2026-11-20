@@ -44,15 +44,19 @@ impl GatewayType {
     }
 }
 
-/// Pegada arquitetural SWIFT CSP (Customer Security Programme).
+/// Pegada arquitetural completa da árvore de decisão SWIFT CSP (A1, A2, A3, A4, B).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SwiftCspType {
-    /// Dono da infraestrutura de mensageria e comunicação (MI/CI).
+    /// A1: Dono da infraestrutura de mensageria (MI) e comunicação (CI).
     A1,
-    /// Conector SWIFT gerenciado via API Gateway.
+    /// A2: Dono da Messaging Interface (MI), com Communication Interface (CI) via Service Bureau.
+    A2,
+    /// A3: SWIFT Connector / API Gateway direto.
     A3,
-    /// Customer Connector falando via Middleware local (MQ/FileAct).
+    /// A4: Customer Connector falando via Middleware Server local (MQ / FileAct).
     A4,
+    /// B: Zero footprint local (acesso apenas via Service Bureau / portal com MFA).
+    B,
 }
 
 /// Máquina de Estados Finitos (FSM) auditável de uma intenção de pagamento.

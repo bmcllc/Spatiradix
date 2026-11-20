@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-meta-gateway"
-description = "Supreme Meta-Gateway: orquestrador financeiro descentralizado (Pix, SWIFT, BRICS Pay e trilho MYC estilo USDC 1 MYC = 8 USDC) sobre PQC + Lattice"
+description = "Supreme Meta-Gateway: orquestrador financeiro descentralizado (Pix EMV/DICT cob/cobv, SWIFT CSP A1-A4/B, BRICS Pay, PKARR e trilho MYC estilo USDC 1 MYC = 8 USDC)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,7 @@ mycelium-core = { workspace = true }
 mycelium-mint = { workspace = true }
 mycelium-zkp = { workspace = true }
 mycelium-pqc = { workspace = true }
+mycelium-pkarr = { workspace = true }
 mycelium-bank = { workspace = true }
 blake3 = { workspace = true }
 ed25519-dalek = { workspace = true }
