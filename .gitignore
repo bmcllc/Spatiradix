@@ -1,90 +1,70 @@
+# ==============================================================================
+# Mycelium Network — .gitignore
+# ==============================================================================
+
+# --- Build & Toolchains (Rust / Cargo / Android Soberano) ---------------------
 /target/
-**/*.rs.bk
-.mycelium/
-*.swp
-.DS_Store
-/tmp/
-
-# cache local do cargo (sandbox)
-.cargo-home/
-.release-cargo/
-.release-rustup/
-
-# builds do B.A.S.E. e deps do opencode
 **/target/
-.opencode/node_modules/
-.git-base-backup/
+/dist/
+/.android-sovereign/
+/.cargo-home/
+/.release-cargo/
+/.release-rustup/
+**/*.rs.bk
+*.apk
+*.aab
+*.odex
+*.vdex
 
-# Projeto S1 independente, com repositório próprio
+# --- Runtime Local, Estado de Nó & Configurações Pessoais ---------------------
+.mycelium/
+/config/
+/tmp/
+opencode.json
+xs
+.env
+.env.*
+!.env.example
+
+# --- Chaves, Certificados & Credenciais (NUNCA versionar!) --------------------
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# --- Editores, IDEs, SO & Logs Temporários ------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+**/.obsidian/
+hs_err_pid*.log
+*.log
+
+# --- Python, Node & Caches de Ferramentas -------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.whl
+node_modules/
+.opencode/node_modules/
+/graphify-out/
+*.cdx.json
+
+# --- Repositórios Embutidos, Backups & Snapshots Legados ----------------------
+/S1/
 /S1-BPF-source-update/
 /S1-BPF-source-update old/
-
-# -----------------------------------------------------------------------
-# Artefatos de build, caches de tooling e snapshots superados.
-#
-# ATENÇÃO: .gitignore NÃO deixa de rastrear arquivos que JÁ estão
-# rastreados. Para os itens abaixo que já foram commitados, é preciso
-# rodar `git rm --cached` uma única vez. Isso é exatamente o que
-# ./scripts/housekeeping.sh faz na seção B — e o que NÃO apaga nada
-# do disco: os arquivos continuam lá, só saem do índice.
-# -----------------------------------------------------------------------
-
-# Saída de build empacotada: contém binários compilados por arquitetura
-# (ex.: dist/mycelium-android-arm64, ELF ARM64 de ~24 MB adicionado em
-# a6cc5c7). Artefato de release, nunca versionado.
-/dist/
-
-# Dependências vendorizadas e caches de ferramentas de análise
-# (graphify-out/ carrega cache/ast/, cache/semantic/, graph.json e
-# snapshots datados — tudo reproduzível rodando a ferramenta).
+/apps/mycelium-s1-portal/
 /vendor/
-/graphify-out/
-
-# Workspaces legados e cópias arquivadas de fonte.
 /ET-COSMIC-OLD/
-
-# S1/ é o projeto BPF independente, espelhado de S1-BPF-source-update/.
-/S1/
-
-# Configuração local da máquina (ex.: config/economy). Parâmetros de
-# execução, não configuração versionada do repositório.
-/config/
-
-# __pycache__/ é gerado pelo interpretador a partir dos *.py em scripts/.
-__pycache__/
-
-# Snapshots compactados e diffs de migração:
-#   crates_old.tar.gz e mycelium-evolucao-crates.tar.gz — cópias da
-#     árvore mycelium-evolucao-crates/, descompactada e removida em
-#     1b262b9; o tarball ficou órfão (4 dos 6 crates são idênticos à
-#     fonte viva).
-#   mycelium-evolucao.patch — patch da mesma migração.
-#   docs.zip — cópia de docs/.
+.git-base-backup/
 *.tar.gz
 *.zip
 *.patch
-
-# *.bin cobre blobs binários soltos. Caso concreto: x.bin NÃO é um
-# binário — são 8,7 KB de texto Markdown com extensão .bin (provável
-# renomeação acidental). Versioná-lo com o nome certo (x.md) ou
-# removê-lo do índice; de todo modo binários avulsos não entram aqui.
 *.bin
-
-# Config local do OpenCode (credencial de provedor) — nunca versionar.
-xs
-
-# Config local do OpenCode (contém API key de provedor) — nunca versionar.
-opencode.json
-
-# Repo git embutido (próprio .git) — não versionar como gitlink aqui.
-/apps/mycelium-s1-portal/
-
-# SBOM gerado por scripts/supply_chain.sh
-*.cdx.json
-
-# Toolchain soberana Android ARM64 e chave de assinatura local (NUNCA versionar!)
-/.android-sovereign/
-
-# Rodas Python avulsas e dumps de erro de JVM
-*.whl
-hs_err_pid*.log
