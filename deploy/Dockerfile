@@ -10,7 +10,7 @@ WORKDIR /src
 
 # O workspace precisa estar completo para que o Cargo consiga resolver todos os
 # membros declarados no manifesto raiz.
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock LICENSE ./
 COPY crates ./crates
 COPY cli ./cli
 COPY platforms ./platforms
@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /home/mycelium
 COPY --from=builder /src/target/release/mycelium /usr/local/bin/mycelium
+COPY --from=builder /src/LICENSE /usr/share/doc/mycelium/LICENSE
 EXPOSE 4001 7474
 VOLUME ["/home/mycelium"]
 ENTRYPOINT ["/usr/local/bin/mycelium"]

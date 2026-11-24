@@ -43,6 +43,14 @@ pub enum MintError {
     #[error("suprimento máximo da mainnet atingido")]
     SupplyExhausted,
 
+    #[error("modo ARQ exige atestados de quórum específicos e fixação em genesis")]
+    ArqModeMismatch,
+
+    #[error(
+        "ARQ suspendeu a emissão desta época por ausência de trabalho verificável ou orçamento"
+    )]
+    ArqEpochHalted,
+
     #[error("compromisso de Pedersen não abre para o valor e blinding informados")]
     CommitmentMismatch,
 }

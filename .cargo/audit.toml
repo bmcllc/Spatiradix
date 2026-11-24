@@ -1,0 +1,18 @@
+# Vulnerabilidades conhecidas SEM correção disponível sem upgrade major do upstream.
+# Cada ignore precisa de motivo e de condição de saída; revisar a cada release.
+[advisories]
+ignore = [
+  # h2 0.3.27: só via reqwest 0.11 -> platforms/cosmoplanck (cliente HTTP de plataforma, fora do caminho de valor).
+  # Saída: migrar cosmoplanck para reqwest 0.12+.
+  "RUSTSEC-2026-0258",
+  # hickory-proto 0.24/0.25: DNS do libp2p/hyphae. Sem correção em 0.25; 0.26 exige upgrade do libp2p.
+  # Saída: atualizar libp2p. Mitigação: hyphae não resolve nomes de pares não confiáveis em loop.
+  "RUSTSEC-2026-0119",
+  "RUSTSEC-2026-0118",
+  # crypto-bigint 0.5.5: tempo variável; não está no grafo ativo do workspace (cargo tree -i falha).
+  # Saída: confirmar com `cargo tree -e all -i crypto-bigint` ao adotar o cdk (G1).
+  "RUSTSEC-2026-0387",
+  # fuser 0.15.1 (unsound, leitura de memória não inicializada): dep direta de mycelium-root (montagem FUSE). Fora do caminho de valor.
+  # Saída: atualizar fuser quando houver versão corrigida.
+  "RUSTSEC-2021-0154",
+]

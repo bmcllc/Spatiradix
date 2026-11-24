@@ -169,6 +169,11 @@ enum Commands {
         #[arg(long = "mint-quorum", default_value_t = 1)]
         mint_quorum: usize,
     },
+    /// Habitat soberano: declara e gerencia políticas de serviços locais.
+    Habitat {
+        #[command(subcommand)]
+        action: HabitatCmd,
+    },
     Status,
     Sow {
         #[arg(long, default_value = "init")]
@@ -422,9 +427,9 @@ enum Commands {
         #[command(subcommand)]
         action: RepoCmd,
     },
-    /// Code Hub: central soberana de repositórios e forja de código Git P2P.
-    Hub {
-        /// Porta do Event Horizon onde o hub está servido (default: 7474).
+    /// TheField: forja soberana de repositórios Git P2P e campo de Signals/quórum.
+    Field {
+        /// Porta do Event Horizon onde o TheField está servido (default: 7474).
         #[arg(long, default_value_t = 7474)]
         port: u16,
     },
@@ -470,6 +475,183 @@ enum Commands {
     Root {
         #[command(subcommand)]
         action: RootCmd,
+    },
+    /// Mycelium Rhizome: Super-app social soberano (YouTube/Reels, Instagram/Stories,
+    /// Facebook/Comunidades, X/Microblog e WhatsApp PQ E2EE) sobre toda a malha Mycelium.
+    Rhizome {
+        #[command(subcommand)]
+        action: RhizomeCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum RhizomeCmd {
+    /// Exibe URLs da interface web e endpoints abertos (RSS 2.0 / ActivityPub) do Rhizome.
+    Ui {
+        #[arg(long, default_value_t = 7474)]
+        port: u16,
+    },
+    /// Mostra o cartão completo da identidade soberana (NodeId, PKARR myc1..., GhostID Nostr, ML-KEM-1024).
+    Identity,
+    /// Atualiza handle, nome de exibição e bio do perfil/canal soberano.
+    Profile {
+        #[arg(long)]
+        handle: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        bio: Option<String>,
+    },
+    /// Publica um post (microblog X, artigo Facebook ou foto) assinado por Ed25519.
+    Post {
+        /// Texto da publicação (#hashtags e @menções são extraídas automaticamente).
+        text: String,
+        /// Tipo: microblog | article | photo_gallery
+        #[arg(long, default_value = "microblog")]
+        kind: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        community: Option<String>,
+        #[arg(long)]
+        reply_to: Option<String>,
+        #[arg(long)]
+        repost_of: Option<String>,
+    },
+    /// Publica um Story efêmero propagado via Isotope com TTL automático.
+    Story {
+        caption: String,
+        /// Tempo de vida em horas (padrão: 24).
+        #[arg(long, default_value_t = 24)]
+        ttl_hours: u64,
+    },
+    /// Publica um vídeo (Longform, Short/Reel ou Doc) fatiado em chunks BLAKE3 via mycelium-media.
+    Video {
+        file: PathBuf,
+        #[arg(long)]
+        title: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        short: bool,
+        #[arg(long)]
+        doc: bool,
+        #[arg(long)]
+        commons: Option<String>,
+        #[arg(long)]
+        thumbnail: Option<PathBuf>,
+        #[arg(long, default_value_t = 3)]
+        replicas: u32,
+        #[arg(long, default_value = "CC-BY-4.0")]
+        license: String,
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    /// Consulta o feed unificado usando uma Lente de Descoberta soberana.
+    Feed {
+        /// Lente: symbiosis | chronological | trust_web
+        #[arg(long, default_value = "symbiosis")]
+        lens: String,
+        /// Filtro: all | video | short | tube | photo | article | microblog
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Envia mensagem E2EE pós-quântica (ML-KEM-1024 + XChaCha20-Poly1305) estilo WhatsApp.
+    ChatSend {
+        /// NodeId, @handle ou endereço myc1... do destinatário.
+        #[arg(long)]
+        to: String,
+        /// Mensagem de texto.
+        text: String,
+        /// Chave pública ML-KEM-1024 hex opcional caso o perfil remoto ainda não tenha chegado.
+        #[arg(long)]
+        mlkem: Option<String>,
+        /// Também gera envelope Nostr NIP-44 (fallback CGNAT).
+        #[arg(long)]
+        nostr_fallback: bool,
+    },
+    /// Lista conversas ou mensagens de uma conversa específica do Zap PQ.
+    ChatInbox {
+        #[arg(long)]
+        conversation: Option<String>,
+    },
+    /// Importa tweets e reconstrói threads de um archive do X (`tweets.js` ou JSON).
+    ImportX {
+        file: PathBuf,
+    },
+    /// Importa histórico exportado (`.txt`) do WhatsApp para uma conversa local.
+    ImportWhatsapp {
+        file: PathBuf,
+        #[arg(long, default_value = "WhatsApp Importado")]
+        title: String,
+    },
+    /// Exporta o feed ou post em formato de bridge aberta: rss | activitypub | nostr:<post_id>.
+    Bridge {
+        /// Formato: rss | ap-actor | ap-outbox | nostr
+        format: String,
+        /// Post ID (obrigatório apenas para `nostr`).
+        #[arg(long)]
+        post_id: Option<String>,
+    },
+    /// Força sincronização do snapshot Rhizome com os peers conectados ao daemon.
+    Sync,
+    /// Cria e assina um projeto coletivo MCP (Mycelium Commons Protocol).
+    CommonsCreate {
+        #[arg(long)]
+        slug: String,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        summary: String,
+        #[arg(long, default_value_t = 1000.0)]
+        goal: f64,
+        #[arg(long, default_value_t = 0)]
+        spores_pool: u64,
+        #[arg(long, default_value = "")]
+        release_date: String,
+    },
+    /// Lista projetos MCP locais e replicados na malha.
+    CommonsList,
+    /// Registra uma contribuição assinada a um projeto MCP.
+    CommonsContribute {
+        project: String,
+        #[arg(long, default_value_t = 0.0)]
+        amount: f64,
+        #[arg(long, default_value_t = 0)]
+        spores: u64,
+        #[arg(long, default_value = "")]
+        message: String,
+    },
+    /// Lista todas as Lentes de Descoberta (nativas + customizadas).
+    LensList,
+    /// Cria e assina uma nova Lente de Descoberta (MEP).
+    LensCreate {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, default_value_t = 0.4)]
+        reciprocity: f64,
+        #[arg(long, default_value_t = 0.3)]
+        replication: f64,
+        #[arg(long, default_value_t = 0.2)]
+        freshness: f64,
+        #[arg(long, default_value_t = 0.1)]
+        commons: f64,
+    },
+    /// Consulta telemetria viva do enxame libp2p / Physarum via Horizon HTTP.
+    Swarm {
+        #[arg(long, default_value_t = 7474)]
+        port: u16,
+    },
+    /// Consulta a carteira P2P viva (saldos e transferências Schnorr).
+    Wallet {
+        #[arg(long, default_value_t = 7474)]
+        port: u16,
     },
 }
 
@@ -976,6 +1158,12 @@ enum MintCmd {
 
 #[derive(Subcommand)]
 enum GatewayCmd {
+    /// Testa um SOCKS5 CONNECT via VEIL para o host:443, SEM enviar dados financeiros.
+    VeilProbe {
+        /// Nome DNS público (porta 443). Sem DNS local.
+        #[arg(long)]
+        host: String,
+    },
     /// Roteia e executa um pagamento pelo Meta-Gateway (prefixos: pix:, swift:, brics:, myc:).
     Pay {
         /// Destinatário qualificado (ex.: pix:chave@email.com, swift:CHASUS33XXX, brics:node-09, myc:<node_id>).
@@ -996,6 +1184,13 @@ enum GatewayCmd {
         /// Hora local (0..23) para checagem de limite noturno do Pix.
         #[arg(long = "local-hour")]
         local_hour: Option<u64>,
+        /// Consentimento expresso para preparar payload de destino externo
+        /// (Pix/SWIFT/BRICS; não significa pagamento efetivamente enviado).
+        #[arg(long = "allow-external-disclosure")]
+        allow_external_disclosure: bool,
+        /// Mostra payload completo, inclusive dados sensíveis (oculto por padrão).
+        #[arg(long = "show-native-payload")]
+        show_native_payload: bool,
     },
 }
 
@@ -1062,6 +1257,38 @@ enum SeedCatalogCmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+}
+
+/// Nenhum destes comandos implanta serviços ou replica conteúdo por conta própria.
+#[derive(Subcommand)]
+enum HabitatCmd {
+    /// Mostra respostas 2xx efetivamente retornadas pelo proxy Event Horizon.
+    Usage {
+        /// Nome de serviço Habitat registrado no mesmo nó.
+        name: String,
+        /// Estimativa MANUAL de MYC micros por resposta (não cria cobrança).
+        #[arg(long)]
+        estimate_myc_micros_per_response: Option<u64>,
+    },
+    /// Cria manifesto assinado pelo nó; --visibility public NÃO publica nada.
+    Register {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "data", value_parser = ["data", "compute", "site"])]
+        kind: String,
+        #[arg(long, default_value = "local", value_parser = ["local", "private", "public"])]
+        visibility: String,
+        /// Quantidade desejada; só há provisionamento local nesta fase.
+        #[arg(long, default_value_t = 1)]
+        replicas: u8,
+        /// NodeId autorizado a visualizar metadados privados (repetível).
+        #[arg(long = "peer")]
+        peers: Vec<String>,
+    },
+    /// Lista manifestos do registro local validando assinaturas.
+    List,
+    /// Inspeciona o manifesto e a assinatura de um serviço.
+    Inspect { name: String },
 }
 
 fn main() {
@@ -1190,6 +1417,7 @@ fn main() {
             upnp,
             ))
         }
+        Commands::Habitat { action } => rt.block_on(habitat_cmd(&home, action)),
         Commands::Status => rt.block_on(status(&home)),
         Commands::Sow {
             message,
@@ -1351,12 +1579,13 @@ fn main() {
         }
         Commands::Store { action } => store_cmd(&home, action),
         Commands::Repo { action } => rt.block_on(repo_cmd(&home, action)),
-        Commands::Hub { port } => {
-            println!("[🍄 Code Hub] O Hub Soberano de Repositórios está disponível em:");
-            println!("    👉 Web UI : http://127.0.0.1:{port}/hub/");
-            println!("    👉 API    : http://127.0.0.1:{port}/hub/api/repos");
+        Commands::Field { port } => {
+            println!("[🌌 TheField] A Forja Soberana de Repositórios Git P2P & Signals está disponível em:");
+            println!("    👉 Web UI      : http://127.0.0.1:{port}/field/");
+            println!("    👉 API Repos   : http://127.0.0.1:{port}/field/api/repos");
+            println!("    👉 API Signals : http://127.0.0.1:{port}/field/api/signals");
             println!();
-            println!("Comandos rápidos para gerenciar repositórios:");
+            println!("Comandos rápidos para gerenciar repositórios no TheField:");
             println!("    mycelium repo publish --dir ./projeto --repository meu-repo --branch main");
             println!("    mycelium repo clone --cid Qm... --dest ./copia");
             println!("    mycelium repo validate --cid Qm...");
@@ -1370,6 +1599,7 @@ fn main() {
         Commands::Sub { action } => sub_cmd(&home, action),
         Commands::Pkarr { action } => rt.block_on(pkarr_cmd(&home, action)),
         Commands::Root { action } => root_cmd(action),
+        Commands::Rhizome { action } => rt.block_on(rhizome_cmd(&home, action)),
     };
 
     if let Err(e) = result {
@@ -1384,6 +1614,7 @@ fn resolve_home(override_home: Option<PathBuf>) -> PathBuf {
     }
     directories::ProjectDirs::from("network", "Mycelium", "mycelium")
         .map(|d| d.data_local_dir().to_path_buf())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".mycelium")))
         .unwrap_or_else(|| PathBuf::from(".mycelium"))
 }
 
@@ -1912,6 +2143,9 @@ async fn gateway_cmd(home: &PathBuf, action: GatewayCmd) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .socket_path();
     match action {
+        GatewayCmd::VeilProbe { host } => {
+            rpc(home, Request::GatewayVeilProbe { hostname: host }).await
+        }
         GatewayCmd::Pay {
             to,
             amount_micros,
@@ -1919,8 +2153,13 @@ async fn gateway_cmd(home: &PathBuf, action: GatewayCmd) -> Result<(), String> {
             swift_csp_compliant,
             secure_zone_log,
             local_hour,
+            allow_external_disclosure,
+            show_native_payload,
         } => {
             let mut meta = serde_json::Map::new();
+            if allow_external_disclosure {
+                meta.insert("external_disclosure_consent".into(), serde_json::Value::Bool(true));
+            }
             if swift_csp_compliant {
                 meta.insert("swift_csp_compliant".into(), serde_json::Value::Bool(true));
             }
@@ -1931,7 +2170,7 @@ async fn gateway_cmd(home: &PathBuf, action: GatewayCmd) -> Result<(), String> {
                 meta.insert("local_hour".into(), serde_json::Value::Number(h.into()));
             }
             let compliance_json = Some(serde_json::Value::Object(meta).to_string());
-            let resp = call(
+            let mut resp = call(
                 &sock,
                 Request::GatewayPay {
                     receiver_id: to,
@@ -1941,6 +2180,11 @@ async fn gateway_cmd(home: &PathBuf, action: GatewayCmd) -> Result<(), String> {
                 },
             )
             .await?;
+            if !show_native_payload {
+                if let Response::GatewayPayResult { native_payload, .. } = &mut resp {
+                    *native_payload = "[oculto: use --show-native-payload para exibir]".into();
+                }
+            }
             print_response(resp)
         }
     }
@@ -2742,6 +2986,58 @@ async fn recall_code_cmd(home: &PathBuf, plot: String, output: Option<String>) -
     .await
 }
 
+async fn habitat_cmd(home: &PathBuf, action: HabitatCmd) -> Result<(), String> {
+    use mycelium_node::habitat::{Privacy, ServiceKind};
+    match action {
+        HabitatCmd::Usage { name, estimate_myc_micros_per_response } => {
+            let sock = home.join("mycelium.sock");
+            let resp = call(&sock, Request::HabitatUsage { name }).await?;
+            if let Response::HabitatUsageReport { successful_responses, .. } = &resp {
+                if let Some(rate) = estimate_myc_micros_per_response {
+                    if rate == 0 {
+                        return Err("estimativa MYC por resposta deve ser > 0".into());
+                    }
+                    let estimated_myc = (*successful_responses as u128)
+                        .checked_mul(rate as u128)
+                        .ok_or("estimativa MYC ultrapassa capacidade")?;
+                    let estimated_usdc = estimated_myc
+                        .checked_mul(mycelium_mint::DEFAULT_USDC_PER_MYC as u128)
+                        .ok_or("estimativa USDC ultrapassa capacidade")?;
+                    println!(
+                        "[🍄] Estimativa fornecida pelo operador: {}.{:06} MYC ≈ {}.{:06} USDC",
+                        estimated_myc / 1_000_000, estimated_myc % 1_000_000,
+                        estimated_usdc / 1_000_000, estimated_usdc % 1_000_000,
+                    );
+                    println!("    referência interna: 1 MYC = 8 USDC; SEM cobrança, receita ou resgate");
+                }
+            }
+            print_response(resp)
+        }
+        HabitatCmd::Register { name, kind, visibility, replicas, peers } => {
+            let kind = match kind.as_str() {
+                "data" => ServiceKind::Data,
+                "compute" => ServiceKind::Compute,
+                "site" => ServiceKind::Site,
+                _ => return Err("tipo Habitat inválido".into()),
+            };
+            let privacy = match visibility.as_str() {
+                "local" => Privacy::Local,
+                "private" => Privacy::Private,
+                "public" => Privacy::Public,
+                _ => return Err("visibilidade Habitat inválida".into()),
+            };
+            let permitted_nodes = peers.into_iter()
+                .map(|p| p.parse::<mycelium_core::NodeId>())
+                .collect::<Result<Vec<_>, _>>()?;
+            rpc(home, Request::HabitatRegister {
+                name, kind, privacy, replicas, permitted_nodes,
+            }).await
+        }
+        HabitatCmd::List => rpc(home, Request::HabitatList).await,
+        HabitatCmd::Inspect { name } => rpc(home, Request::HabitatInspect { name }).await,
+    }
+}
+
 async fn rpc(home: &PathBuf, request: Request) -> Result<(), String> {
     let sock = home.join("mycelium.sock");
     print_response(call(&sock, request).await?)
@@ -2859,6 +3155,20 @@ async fn deploy(home: &PathBuf, opts: DeployOpts) -> Result<(), String> {
 
 fn print_response(resp: Response) -> Result<(), String> {
     match resp {
+        Response::HabitatItem { item } => {
+            println!("[🍄 Habitat] manifesto assinado e validado (registro local)");
+            println!("{}", serde_json::to_string_pretty(&item).map_err(|e| e.to_string())?);
+            Ok(())
+        }
+        Response::HabitatItems { items } => {
+            println!("[🍄 Habitat] {} serviço(s) neste nó:", items.len());
+            for item in items {
+                println!("    {} | {:?} | {:?} | réplicas desejadas: {} | {}",
+                    item.manifest.name, item.manifest.kind, item.manifest.privacy,
+                    item.manifest.storage.target_replicas, item.manifest.service_id);
+            }
+            Ok(())
+        }
         Response::Ok { message } => {
             println!("[🍄] {message}");
             Ok(())
@@ -2895,6 +3205,37 @@ fn print_response(resp: Response) -> Result<(), String> {
             println!("    claims pend. : {pending_claims} (quórum mín.: {min_quorum})");
             Ok(())
         }
+        Response::HabitatUsageReport {
+            name,
+            service_id,
+            successful_responses,
+            body_bytes,
+            observation,
+            payment_status,
+        } => {
+            println!("[🍄 Habitat] uso observado localmente — serviço {name}");
+            println!("    service_id : {service_id}");
+            println!("    respostas  : {successful_responses}");
+            println!("    bytes      : {body_bytes}");
+            println!("    origem     : {observation}");
+            println!("    pagamento  : {payment_status}");
+            Ok(())
+        }
+        Response::GatewayVeilProbeResult {
+            proxy,
+            hostname,
+            connection_established,
+            tls_verified,
+            payment_submitted,
+        } => {
+            println!("[🍄] VEIL gateway: SOCKS5 CONNECT validado");
+            println!("    proxy loopback : {proxy}");
+            println!("    hostname       : {hostname}:443 (DNS remoto)");
+            println!("    conectado      : {connection_established}");
+            println!("    TLS verificado : {tls_verified}");
+            println!("    pagamento      : {payment_submitted}");
+            Ok(())
+        }
         Response::GatewayPayResult {
             intent_id,
             gateway,
@@ -2907,11 +3248,15 @@ fn print_response(resp: Response) -> Result<(), String> {
             println!("[🍄] Supreme Meta-Gateway ({gateway}) — estado: {state}");
             println!("    intent_id    : {intent_id}");
             println!("    external_ref : {external_ref}");
-            println!(
-                "    liquidação   : {:.6} MYC ≈ {:.6} USDC (1 MYC = 8 USDC)",
-                myc_micros as f64 / 1_000_000.0,
-                usdc_equivalent_micros as f64 / 1_000_000.0
-            );
+            if myc_micros != 0 || usdc_equivalent_micros != 0 {
+                println!(
+                    "    referência   : {:.6} MYC ≈ {:.6} USDC (1 MYC = 8 USDC; não garante resgate)",
+                    myc_micros as f64 / 1_000_000.0,
+                    usdc_equivalent_micros as f64 / 1_000_000.0
+                );
+            } else {
+                println!("    referência   : indisponível sem cotação verificável");
+            }
             println!("    payload      : {native_payload}");
             Ok(())
         }
@@ -3187,7 +3532,8 @@ fn print_response(resp: Response) -> Result<(), String> {
         | Response::AexPqcEncapResult { .. }
         | Response::AexPqcDecapResult { .. }
         | Response::AexZkHashChronicleResult { .. }
-        | Response::AexZkPedersenCommitResult { .. }) => {
+        | Response::AexZkPedersenCommitResult { .. }
+        | Response::RhizomeJson { .. }) => {
             println!("{}", serde_json::to_string_pretty(&other).unwrap_or_default());
             Ok(())
         }
@@ -5046,4 +5392,592 @@ fn root_cmd(action: RootCmd) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+async fn rhizome_cmd(home: &PathBuf, action: RhizomeCmd) -> Result<(), String> {
+    use mycelium_rhizome::{
+        ChatMessageKind, FeedFilter, PostKind, RhizomeStore, VideoUploadMeta,
+    };
+
+    let sock = home.join("mycelium.sock");
+    match action {
+        RhizomeCmd::Ui { port } => {
+            println!("[🌿 Mycelium Rhizome] Super-App Social Soberano ativo no Event Horizon:");
+            println!("    👉 Web App     : http://127.0.0.1:{port}/rhizome/");
+            println!("    👉 RSS 2.0     : http://127.0.0.1:{port}/rhizome/feed.xml");
+            println!("    👉 ActivityPub : http://127.0.0.1:{port}/rhizome/ap/actor");
+            println!("    👉 API Feed    : http://127.0.0.1:{port}/rhizome/api/feed");
+            Ok(())
+        }
+        RhizomeCmd::Identity => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let ov = store.overview();
+            println!("[🌿 Rhizome] Identidade Soberana:");
+            println!("    Handle        : @{} ({})", ov.profile.handle, ov.profile.display_name);
+            println!("    Gland NodeId  : {}", ov.identity.node_id);
+            println!("    PKARR (myc1)  : {}", ov.identity.pkarr_addr);
+            println!("    Nostr GhostID : {}", ov.identity.ghost_pubkey_hex);
+            println!(
+                "    ML-KEM-1024   : {}... ({} bytes)",
+                &ov.identity.mlkem1024_pubkey_hex[..32],
+                ov.identity.mlkem1024_pubkey_hex.len() / 2
+            );
+            Ok(())
+        }
+        RhizomeCmd::Profile { handle, name, bio } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (prof, env, plot) = store
+                .update_profile(handle, name, bio, None, None, None)
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeBroadcast {
+                        event: env,
+                        plots: plot.into_iter().collect(),
+                        media_packets: vec![],
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[🌿 Rhizome] Perfil atualizado: @{} ({}) rev. {}",
+                prof.handle, prof.display_name, prof.revision
+            );
+            Ok(())
+        }
+        RhizomeCmd::Post {
+            text,
+            kind,
+            title,
+            community,
+            reply_to,
+            repost_of,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let post_kind = match kind.as_str() {
+                "article" => PostKind::Article,
+                "photo_gallery" | "photo" => PostKind::PhotoGallery,
+                _ => PostKind::Microblog,
+            };
+            let (post, env, plot) = store
+                .create_post(
+                    post_kind,
+                    title,
+                    text,
+                    vec![],
+                    community,
+                    vec![],
+                    reply_to,
+                    repost_of,
+                    None,
+                    None,
+                )
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeBroadcast {
+                        event: env,
+                        plots: plot.into_iter().collect(),
+                        media_packets: vec![],
+                    },
+                )
+                .await;
+            }
+            println!("[🌿 Rhizome] Post publicado e assinado: {}", post.post_id);
+            Ok(())
+        }
+        RhizomeCmd::Story { caption, ttl_hours } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (story, isotope_key, atom, env) = store
+                .create_story(caption, None, None, Some(ttl_hours.saturating_mul(3600)))
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeStorySync {
+                        isotope_key,
+                        atom,
+                        event: env,
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[🌿 Rhizome] Story efêmero publicado ({}h TTL via Isotope): {}",
+                ttl_hours, story.story_id
+            );
+            Ok(())
+        }
+        RhizomeCmd::Video {
+            file,
+            title,
+            description,
+            short,
+            doc,
+            commons,
+            thumbnail,
+            replicas,
+            license,
+            tags,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let mut extra_packets = Vec::new();
+            let thumbnail_cid = if let Some(ref thumb_path) = thumbnail {
+                let tb = std::fs::read(thumb_path)
+                    .map_err(|e| format!("falha ao ler thumbnail {}: {e}", thumb_path.display()))?;
+                let mime = mycelium_rhizome::detect_mime_from_bytes(&tb);
+                let name = thumb_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("thumb.png");
+                let (att, pkts) = store
+                    .store_media_blob(name, mime, &tb, &title, None)
+                    .map_err(|e| e.to_string())?;
+                extra_packets = pkts;
+                Some(att.cid)
+            } else {
+                None
+            };
+
+            let content_type = if short {
+                "short".to_string()
+            } else if doc {
+                "doc".to_string()
+            } else {
+                "longform".to_string()
+            };
+            let profile = store.local_profile();
+            let channel_id = profile
+                .channel_id
+                .clone()
+                .unwrap_or_else(|| format!("ch_{}", &profile.node_id[..12.min(profile.node_id.len())]));
+            let author_pk = store.keys().ed25519_pubkey_hex();
+            let chunks_dir = store.chunks_dir();
+
+            let prepared = mycelium_rhizome::prepare_video_ingest_from_file(
+                &file,
+                &chunks_dir,
+                &author_pk,
+                &channel_id,
+                VideoUploadMeta {
+                    title,
+                    description,
+                    is_short: short,
+                    content_type,
+                    duration_secs: 0,
+                    resolution: if short { "1080x1920".into() } else { "1080p".into() },
+                    mime_type: "video/mp4".into(),
+                    license,
+                    tags,
+                    community_id: None,
+                    commons_project_id: commons,
+                    thumbnail_cid,
+                    target_replicas: replicas,
+                },
+            )
+            .map_err(|e| e.to_string())?;
+
+            let (post, manifest, envs, plots, mut packets) = store
+                .commit_prepared_video(prepared)
+                .map_err(|e| e.to_string())?;
+            let mcid = post.video_manifest_cid.clone().unwrap_or_default();
+            let device = if cfg!(target_os = "android")
+                || std::env::var("MYCELIUM_ANDROID").ok().as_deref() == Some("1")
+            {
+                "mobile"
+            } else {
+                "desktop"
+            };
+            let (rcpts, rcpt_envs) = store
+                .issue_local_shard_receipts(&mcid, device)
+                .unwrap_or_default();
+            packets.extend(extra_packets);
+
+            if sock.exists() {
+                for (idx, env) in envs.into_iter().chain(rcpt_envs.into_iter().take(32)).enumerate() {
+                    let batch_plots = if idx == 0 { plots.clone() } else { vec![] };
+                    let batch_packets = if idx == 0 { packets.clone() } else { vec![] };
+                    let _ = call(
+                        &sock,
+                        Request::RhizomeBroadcast {
+                            event: env,
+                            plots: batch_plots,
+                            media_packets: batch_packets,
+                        },
+                    )
+                    .await;
+                }
+            }
+            println!(
+                "[🎬 Rhizome Tube MMP] Vídeo publicado: {} ({} chunks BLAKE3, {} bytes, {} recibos PoS)",
+                mcid,
+                manifest.chunks.len(),
+                manifest.total_byte_size,
+                rcpts.len()
+            );
+            Ok(())
+        }
+        RhizomeCmd::Feed {
+            lens,
+            kind,
+            query,
+            limit,
+        } => {
+            let store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let items = store.query_feed(&FeedFilter {
+                kind,
+                lens: Some(lens.clone()),
+                query,
+                limit: Some(limit),
+                ..Default::default()
+            });
+            println!("[🌿 Rhizome Feed] Lente: {lens} · {} item(s)", items.len());
+            for item in items {
+                let p = item.post;
+                println!(
+                    "  • [{:?}] @{} ({}) — {}",
+                    p.kind,
+                    p.author_handle,
+                    &p.post_id[..14.min(p.post_id.len())],
+                    p.title.as_deref().unwrap_or(&p.body)
+                );
+            }
+            Ok(())
+        }
+        RhizomeCmd::ChatSend {
+            to,
+            text,
+            mlkem,
+            nostr_fallback,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (sealed, msg, nostr_ev) = store
+                .send_direct_chat(
+                    &to,
+                    mlkem.as_deref(),
+                    ChatMessageKind::Text,
+                    text,
+                    None,
+                    None,
+                    nostr_fallback,
+                )
+                .map_err(|e| e.to_string())?;
+            let target_node = sealed.recipient_node_id.clone();
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeChatSend {
+                        to_node_id: target_node,
+                        envelope: sealed,
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[💬 Rhizome Zap PQ] Mensagem cifrada (ML-KEM-1024 + XChaCha20) enviada: {}",
+                msg.plaintext.msg_id
+            );
+            if let Some(ev) = nostr_ev {
+                println!(
+                    "    ⚡ Fallback Nostr NIP-44 kind {}: {}",
+                    ev.kind, ev.id
+                );
+            }
+            Ok(())
+        }
+        RhizomeCmd::ChatInbox { conversation } => {
+            let store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            if let Some(conv_id) = conversation {
+                let msgs = store.get_conversation_messages(&conv_id);
+                println!("[💬 Conversa {conv_id}] {} mensagem(ns):", msgs.len());
+                for m in msgs {
+                    println!(
+                        "  [{}] {}: {} ({:?} · {})",
+                        m.direction, m.plaintext.sender_handle, m.plaintext.body, m.status, m.transport
+                    );
+                }
+            } else {
+                let convs = store.list_conversations();
+                println!("[💬 Rhizome Zap PQ] {} conversa(s):", convs.len());
+                for c in convs {
+                    println!(
+                        "  • {} ({}) — {} msgs · última: {}",
+                        c.title, c.conversation_id, c.message_count, c.last_message_preview
+                    );
+                }
+            }
+            Ok(())
+        }
+        RhizomeCmd::ImportX { file } => {
+            let raw = std::fs::read_to_string(&file)
+                .map_err(|e| format!("falha ao ler {}: {e}", file.display()))?;
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (posts, envs, plots) = store.import_x_archive(&raw).map_err(|e| e.to_string())?;
+            if sock.exists() {
+                for (idx, env) in envs.into_iter().enumerate() {
+                    let batch_plots = if idx == 0 { plots.clone() } else { vec![] };
+                    let _ = call(
+                        &sock,
+                        Request::RhizomeBroadcast {
+                            event: env,
+                            plots: batch_plots,
+                            media_packets: vec![],
+                        },
+                    )
+                    .await;
+                }
+            }
+            println!(
+                "[𝕏 Importador] {} tweet(s) importados e assinados por Ed25519 no Rhizome.",
+                posts.len()
+            );
+            Ok(())
+        }
+        RhizomeCmd::ImportWhatsapp { file, title } => {
+            let raw = std::fs::read_to_string(&file)
+                .map_err(|e| format!("falha ao ler {}: {e}", file.display()))?;
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (conv_id, count) = store
+                .import_whatsapp_chat(&title, &raw)
+                .map_err(|e| e.to_string())?;
+            println!(
+                "[📱 Importador WhatsApp] {count} mensagem(ns) importadas para conversa {conv_id}."
+            );
+            Ok(())
+        }
+        RhizomeCmd::Bridge { format, post_id } => {
+            let store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            match format.as_str() {
+                "rss" => println!("{}", store.export_rss("http://127.0.0.1:7474/rhizome")),
+                "ap-actor" => println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &store.export_activitypub_actor("http://127.0.0.1:7474/rhizome")
+                    )
+                    .unwrap_or_default()
+                ),
+                "ap-outbox" => println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &store.export_activitypub_outbox("http://127.0.0.1:7474/rhizome")
+                    )
+                    .unwrap_or_default()
+                ),
+                "nostr" => {
+                    let pid = post_id.ok_or("informe --post-id <Qm...> para exportar em Nostr")?;
+                    let ev = store
+                        .export_post_as_nostr(&pid)
+                        .map_err(|e| e.to_string())?;
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&ev).unwrap_or_default()
+                    );
+                }
+                other => return Err(format!("formato de bridge desconhecido: {other}")),
+            }
+            Ok(())
+        }
+        RhizomeCmd::Sync => {
+            if !sock.exists() {
+                return Err("daemon mycelium não está em execução neste home".into());
+            }
+            match call(&sock, Request::RhizomeSyncNow).await {
+                Ok(Response::Ok { message }) => {
+                    println!("[🌿 Rhizome] {message}");
+                    Ok(())
+                }
+                Ok(other) => Err(format!("resposta inesperada: {other:?}")),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+        RhizomeCmd::CommonsCreate {
+            slug,
+            title,
+            summary,
+            goal,
+            spores_pool,
+            release_date,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let prof = store.local_profile();
+            let default_splits = vec![
+                mycelium_rhizome::SplitContractParty {
+                    role: "Criador & Coordenador".into(),
+                    pubkey: prof.ed25519_pubkey_hex,
+                    name: prof.display_name,
+                    split_percentage: 70,
+                },
+                mycelium_rhizome::SplitContractParty {
+                    role: "Infraestrutura P2P".into(),
+                    pubkey: "swarm_pool".into(),
+                    name: "Enxame & Seeders P2P".into(),
+                    split_percentage: 30,
+                },
+            ];
+            let (proj, env, plot) = store
+                .create_commons_project(
+                    slug,
+                    title,
+                    summary,
+                    String::new(),
+                    goal,
+                    spores_pool,
+                    release_date,
+                    vec![],
+                    default_splits,
+                    vec![],
+                )
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeBroadcast {
+                        event: env,
+                        plots: plot.into_iter().collect(),
+                        media_packets: vec![],
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[🌱 MCP Commons] Projeto publicado: {} ({}) · meta {} P2P",
+                proj.title, proj.project_id, proj.funding_goal
+            );
+            Ok(())
+        }
+        RhizomeCmd::CommonsList => {
+            let store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let list = store.list_commons_projects();
+            println!("[🌱 MCP Commons] {} projeto(s):", list.len());
+            for v in list {
+                println!(
+                    "  • {} [{}] ({}) — {:.1}/{:.1} P2P · {} Spores · {} vídeos",
+                    v.project.title,
+                    v.project.slug,
+                    v.project.project_id,
+                    v.current_raised,
+                    v.project.funding_goal,
+                    v.spores_contributed,
+                    v.linked_video_cids.len()
+                );
+            }
+            Ok(())
+        }
+        RhizomeCmd::CommonsContribute {
+            project,
+            amount,
+            spores,
+            message,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let (contrib, view, env, plot) = store
+                .contribute_to_commons(&project, String::new(), amount, spores, message)
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeBroadcast {
+                        event: env,
+                        plots: plot.into_iter().collect(),
+                        media_packets: vec![],
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[💚 MCP] Contribuição registrada ({}): total agora {:.1}/{:.1} P2P",
+                contrib.contribution_id, view.current_raised, view.project.funding_goal
+            );
+            Ok(())
+        }
+        RhizomeCmd::LensList => {
+            let store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let lenses = store.list_all_lenses();
+            println!("[🔭 Lentes MEP] {} lente(s):", lenses.len());
+            for l in lenses {
+                println!("  • {} ({}) — {}", l.name, l.id, l.description);
+            }
+            Ok(())
+        }
+        RhizomeCmd::LensCreate {
+            name,
+            description,
+            reciprocity,
+            replication,
+            freshness,
+            commons,
+        } => {
+            let mut store = RhizomeStore::open(home).map_err(|e| e.to_string())?;
+            let mut weights = std::collections::BTreeMap::new();
+            weights.insert("reciprocity_score".into(), reciprocity);
+            weights.insert("replication_health".into(), replication);
+            weights.insert("freshness".into(), freshness);
+            weights.insert("commons_weight".into(), commons);
+            let (lens, env, plot) = store
+                .create_custom_lens(name, description, weights)
+                .map_err(|e| e.to_string())?;
+            if sock.exists() {
+                let _ = call(
+                    &sock,
+                    Request::RhizomeBroadcast {
+                        event: env,
+                        plots: plot.into_iter().collect(),
+                        media_packets: vec![],
+                    },
+                )
+                .await;
+            }
+            println!(
+                "[🔭 Lente MEP] Lente criada e assinada: {} ({})",
+                lens.name, lens.lens_id
+            );
+            Ok(())
+        }
+        RhizomeCmd::Swarm { port } => {
+            let v = http_get_local_json(port, "/rhizome/api/swarm").await?;
+            println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+            Ok(())
+        }
+        RhizomeCmd::Wallet { port } => {
+            if let Ok(v) = http_get_local_json(port, "/rhizome/api/wallet").await {
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+                return Ok(());
+            }
+            if sock.exists() {
+                let resp = call(&sock, Request::LedgerInfo)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                println!("{resp:?}");
+                return Ok(());
+            }
+            Err("daemon offline (Horizon HTTP e socket indisponíveis)".into())
+        }
+    }
+}
+
+async fn http_get_local_json(port: u16, path: &str) -> Result<serde_json::Value, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .map_err(|e| format!("falha ao conectar a 127.0.0.1:{port}: {e}"))?;
+    let req = format!(
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .map_err(|e| format!("falha ao enviar HTTP GET: {e}"))?;
+    let mut buf = Vec::new();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("falha ao ler resposta HTTP: {e}"))?;
+    let text = String::from_utf8_lossy(&buf);
+    let body = text
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b)
+        .ok_or_else(|| "resposta HTTP inválida".to_string())?;
+    serde_json::from_str(body).map_err(|e| format!("JSON inválido de {path}: {e}"))
 }

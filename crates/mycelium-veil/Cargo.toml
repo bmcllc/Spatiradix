@@ -3,6 +3,7 @@ name = "mycelium-veil"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 authors.workspace = true
 description = "Mycelium VEIL Ω: infraestrutura P2P pós-quântica de anonimato, circuitos onion (LIVE), mixnet com atrasos (MIX), SOCKS5 e fusão ET-COSMIC-OLD"
 

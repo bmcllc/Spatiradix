@@ -44,6 +44,13 @@ impl Orbit {
     }
 }
 
+/// Dados locais observados: somente respostas 2xx com corpo lido integralmente.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeliveryStats {
+    pub successful_responses: u64,
+    pub body_bytes: u64,
+}
+
 /// Tabela de roteamento compartilhada com o proxy HTTP.
 pub type HorizonTable = Arc<RwLock<EventHorizon>>;
 
@@ -61,6 +68,8 @@ pub struct EventHorizon {
     /// Requisições proxyadas por ion na janela corrente (drenadas pelo
     /// organismo a cada tick de scaling → Plasma `sense`).
     ion_requests: HashMap<String, u64>,
+    /// Contadores das respostas 2xx entregues pelo proxy. NUNCA são recibos de pagamento.
+    ion_deliveries: HashMap<String, DeliveryStats>,
     /// Catálogo JSON de ions: locais + peer_ions via gossip.
     /// O organismo injeta peer_ions a cada tick via `set_peer_ions`.
     peer_ions: HashMap<String, Vec<String>>,
@@ -213,6 +222,24 @@ impl EventHorizon {
     /// req/s e alimenta `Ion::sense` do Plasma.
     pub fn take_request_counts(&mut self) -> HashMap<String, u64> {
         std::mem::take(&mut self.ion_requests)
+    }
+
+    /// Registra apenas um upstream 2xx com corpo integralmente carregado.
+    pub fn note_delivered_response(&mut self, ion: &str, bytes: u64) {
+        let stat = self.ion_deliveries.entry(ion.to_string()).or_default();
+        stat.successful_responses = stat.successful_responses.saturating_add(1);
+        stat.body_bytes = stat.body_bytes.saturating_add(bytes);
+    }
+
+    /// Consulta sem drenar: combina telemetria pendente com a já agregada
+    /// no daemon; nenhum valor é interpretado como cobrança.
+    pub fn delivery_snapshot(&self, ion: &str) -> DeliveryStats {
+        self.ion_deliveries.get(ion).cloned().unwrap_or_default()
+    }
+
+    /// Drena separadamente a métrica de entrega; não interfere no auto-scaling.
+    pub fn take_delivery_counts(&mut self) -> HashMap<String, DeliveryStats> {
+        std::mem::take(&mut self.ion_deliveries)
     }
 
     /// Marca um Plot para busca na malha (limite de 256 pendentes).

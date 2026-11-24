@@ -4,6 +4,7 @@ description = "Mycelium Media Protocol (MMP): substrato soberano de áudio/víde
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-core = { workspace = true }

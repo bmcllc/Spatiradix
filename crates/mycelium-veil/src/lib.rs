@@ -43,7 +43,9 @@ pub use planes::live::{
 pub use planes::mix::{MixMessage, MixPlane};
 pub use socks5::{proxy_socks5_connection, Socks5Server, Socks5Target};
 pub use transport::{link_handshake_client, link_handshake_server, VeilSecureStream};
-pub use tunnel::{KillSwitch, KillSwitchState, PlatformTunnelType, SystemTunnel};
+pub use tunnel::{
+    KillSwitch, KillSwitchState, PlatformTunnelType, SystemTunnel, TunBridgeServer, TunBridgeStats,
+};
 pub use mycelium_pqc;
 
 use std::sync::atomic::{AtomicBool, Ordering};

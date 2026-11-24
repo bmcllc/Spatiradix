@@ -4,6 +4,7 @@ description = "DistanceBridge fase 0: paisagem de transportes (ET-COSMIC Distanc
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-qel = { workspace = true }

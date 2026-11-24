@@ -26,6 +26,7 @@ use hickory_resolver::Resolver;
 use libp2p::Multiaddr;
 use mycelium_core::Membrane;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -196,9 +197,13 @@ impl SeedBook {
     pub fn fetch_url(&mut self, url: &str) -> Result<usize, HyphaeError> {
         let url = url.to_string();
         let text = std::thread::spawn(move || -> Result<String, HyphaeError> {
-            let client = reqwest::blocking::Client::builder()
+            let mut builder = reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
-                .user_agent("mycelium-seedbook/0.1")
+                .user_agent("mycelium-seedbook/0.1");
+            if let Some((host, addr)) = resolve_url_for_android(&url) {
+                builder = builder.resolve(&host, addr);
+            }
+            let client = builder
                 .build()
                 .map_err(|e| HyphaeError::Addr(e.to_string()))?;
             client
@@ -216,14 +221,19 @@ impl SeedBook {
 
     /// Resolve registros TXT e importa multiaddrs (fonte DnsTxt).
     /// Funciona para QUALQUER domínio, não só Spore Bank — qualquer nó pode publicar seeds.
-    /// Hickory `Resolver::new` sobe um runtime Tokio — não pode correr no runtime do daemon.
+    /// Usa Quad9 / Cloudflare diretamente (sem Google DNS e sem depender de `/etc/resolv.conf`).
     pub fn fetch_dns_txt(&mut self, name: &str) -> Result<usize, HyphaeError> {
         let name = name.to_string();
         let blobs = std::thread::spawn(move || -> Result<Vec<String>, HyphaeError> {
-            let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default())
+            let resolver = Resolver::new(ResolverConfig::quad9(), ResolverOpts::default())
+                .or_else(|_| Resolver::new(ResolverConfig::cloudflare(), ResolverOpts::default()))
                 .map_err(|e| HyphaeError::Addr(format!("dns resolver: {e}")))?;
             let response = resolver
                 .txt_lookup(name.as_str())
+                .or_else(|_| {
+                    let cf = Resolver::new(ResolverConfig::cloudflare(), ResolverOpts::default())?;
+                    cf.txt_lookup(name.as_str())
+                })
                 .map_err(|e| HyphaeError::Addr(format!("dns TXT {name}: {e}")))?;
             let mut out = Vec::new();
             for record in response.iter() {
@@ -256,9 +266,13 @@ impl SeedBook {
         let token = token.to_string();
         let multiaddr = multiaddr.to_string();
         std::thread::spawn(move || -> Result<(), HyphaeError> {
-            let client = reqwest::blocking::Client::builder()
+            let mut builder = reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
-                .user_agent("mycelium-sporocarp/0.1")
+                .user_agent("mycelium-sporocarp/0.1");
+            if let Some((host, addr)) = resolve_url_for_android("https://www.duckdns.org/update") {
+                builder = builder.resolve(&host, addr);
+            }
+            let client = builder
                 .build()
                 .map_err(|e| HyphaeError::Addr(e.to_string()))?;
             let domain = domain
@@ -608,6 +622,38 @@ pub fn health_dial(multiaddr: &Multiaddr) -> Result<(), HyphaeError> {
     std::net::TcpStream::connect_timeout(&socket, Duration::from_secs(5))
         .map(|_| ())
         .map_err(|e| HyphaeError::Addr(e.to_string()))
+}
+
+/// Resolve o hostname de uma URL sem depender de `/etc/resolv.conf` (Android musl) e sem Google DNS.
+fn resolve_url_for_android(url: &str) -> Option<(String, SocketAddr)> {
+    if Path::new("/etc/resolv.conf").exists() {
+        return None;
+    }
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let default_port: u16 = if url.starts_with("https://") { 443 } else { 80 };
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.is_empty() {
+        return None;
+    }
+    let (host, port) = if let Some((h, p)) = authority.rsplit_once(':') {
+        if let Ok(port) = p.parse::<u16>() {
+            (h.trim_matches(['[', ']']), port)
+        } else {
+            (authority.trim_matches(['[', ']']), default_port)
+        }
+    } else {
+        (authority.trim_matches(['[', ']']), default_port)
+    };
+    if host.parse::<IpAddr>().is_ok() || host.eq_ignore_ascii_case("localhost") {
+        return None;
+    }
+    let resolver = Resolver::new(ResolverConfig::cloudflare(), ResolverOpts::default())
+        .or_else(|_| Resolver::new(ResolverConfig::quad9(), ResolverOpts::default()))
+        .ok()?;
+    let ip = resolver.lookup_ip(host).ok()?.iter().next()?;
+    Some((host.to_string(), SocketAddr::new(ip, port)))
 }
 
 #[cfg(test)]

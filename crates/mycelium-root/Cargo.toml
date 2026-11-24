@@ -4,6 +4,7 @@ description = "Root: nuvem sem servidor e sem P2P — cofre cifrado, Reed-Solomo
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 authors.workspace = true
 
 [dependencies]
@@ -20,8 +21,8 @@ sha2 = "0.10"
 zeroize = { version = "1.9", features = ["zeroize_derive"] }
 reed-solomon-erasure = "6"
 fuser = { version = "0.15", default-features = false, optional = true }
-libc = { version = "0.2", optional = true }
+libc = "0.2"
 
 [features]
 default = ["mount"]
-mount = ["dep:fuser", "dep:libc"]
+mount = ["dep:fuser"]

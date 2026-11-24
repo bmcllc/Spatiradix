@@ -1,5 +1,8 @@
 # Plano de produção e monetização (open-core)
 
+> Este plano foi escrito sob a AGPL-3.0. A licença da versão atual do Mycelium
+> está no [arquivo LICENSE](../LICENSE).
+
 > **Princípio.** O substrato Mycelium (rede, DHT, spore bank, economia,
 > identidade) fica **AGPL-3.0 e mantido pela comunidade**. A receita vem de
 > **camadas construídas por cima** — disponibilidade, conveniência, interfaces e

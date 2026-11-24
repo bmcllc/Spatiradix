@@ -16,16 +16,18 @@
 //!
 //! # Contract addresses on Base (chain ID 8453)
 //!
-//! - Balancer Vault (flash loan source, 0% fee):
-//!   `0xBA12222222228d8Ba445958a71eAFfee3787EC92`
-//! - Aerodrome Router (DEX 1):
-//!   `0xcF77a3Ba9A5CA389B7c97C74d54e5b1Beb874E43`
-//! - Uniswap V3 Router (DEX 2):
-//!   `0x2626664c2603336E57B271c5C0b26F421741e481`
-//! - BaseSwap Router (DEX 3):
-//!   `0x33D4Fc5A1D7d3e5f0a5d6c7b8E9F0a1b2C3d4E5f` (placeholder, verify on-chain)
-//! - USDC (settlement token):
-//!   `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+//! Every address below was checked with `eth_getCode` on Base mainnet and the
+//! quoters were exercised with real `eth_call`s; Balancer's come from
+//! `balancer-deployments/addresses/base.json`. The flash loan fee is not a
+//! constant: it is governance-set and is read from the ProtocolFeesCollector on
+//! every scan.
+//!
+//! - Balancer V2 Vault (flash loan source): [`BALANCER_VAULT`]
+//! - Balancer ProtocolFeesCollector (flash loan fee): [`BALANCER_FEES_COLLECTOR`]
+//! - Aerodrome Router (quote + execution): [`AERODROME_ROUTER`]
+//! - Uniswap V3 QuoterV2 (quote): [`UNISWAP_V3_QUOTER`]
+//! - Uniswap V3 SwapRouter02 (execution): [`UNISWAP_V3_ROUTER`]
+//! - USDC (settlement token): `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
 use crate::{
     autonomy::OpportunityCandidate,
@@ -41,20 +43,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-/// Balancer Vault address on Base — the 0% fee flash loan source.
-pub const BALANCER_VAULT: &str = "0xba12222222228d8ba445958a71eaffee3787ec92";
+/// Balancer V2 Vault on Base — the flash loan source.
+pub const BALANCER_VAULT: &str = "0xba12222222228d8ba445958a75a0704d566bf2c8";
 
-/// Aerodrome SwapRouter address on Base.
-pub const AERODROME_ROUTER: &str = "0xcf77a3ba9a5ca389b7c97c74d54e5b1beb874e43";
+/// Balancer ProtocolFeesCollector on Base (immutable in the Vault). Its
+/// `getFlashLoanFeePercentage()` is the flash loan fee, 1e18 = 100%.
+pub const BALANCER_FEES_COLLECTOR: &str = "0xce88686553686da562ce7cea497ce749da109f9f";
 
-/// Uniswap V3 Router address on Base.
+/// Aerodrome Router on Base.
+pub const AERODROME_ROUTER: &str = "0xcf77a3ba9a5ca399b7c97c74d54e5b1beb874e43";
+
+/// Aerodrome volatile/stable pool factory, named in every `getAmountsOut` route.
+pub const AERODROME_FACTORY: &str = "0x420dd381b31aef6683db6b902084cb0ffece40da";
+
+/// Uniswap V3 SwapRouter02 on Base (execution venue; it cannot quote).
 pub const UNISWAP_V3_ROUTER: &str = "0x2626664c2603336e57b271c5c0b26f421741e481";
 
-/// BaseSwap Router address on Base.
-pub const BASESWAP_ROUTER: &str = "0x33d4fc5a1d7d3e5f0a5d6c7b8e9f0a1b2c3d4e5f";
+/// Uniswap V3 QuoterV2 on Base — the contract that actually answers quotes.
+pub const UNISWAP_V3_QUOTER: &str = "0x3d4e44eb1374240ce5f1b871ab261cd16335b76a";
 
-/// Flash loan fee on Balancer V3 (0.05% on Base L2).
-pub const BALANCER_FLASH_LOAN_FEE_BPS: u64 = 5;
+/// Uniswap V3 fee tier quoted for WETH/USDC (0.05%, the deepest pool).
+const UNISWAP_FEE_TIER: u64 = 500;
 
 /// Estimated gas cost in USDC for a flash loan arbitrage transaction on Base.
 /// Based on ~$0.001-0.005 per transaction * ~800K gas * ~$0.0000001/gas.
@@ -130,8 +139,6 @@ impl Default for FlashArbConfig {
 pub enum DexPair {
     AerodromeToUniswap,
     UniswapToAerodrome,
-    AerodromeToBaseSwap,
-    BaseSwapToAerodrome,
 }
 
 /// The flash loan arbitrage adapter.
@@ -164,19 +171,16 @@ impl FlashArbAdapter {
                 "ttl_seconds must be > 0".into(),
             ));
         }
-        if config.loan_amount_usdc_micros == 0 {
+        if config.loan_amount_usdc_micros == 0 || config.loan_amount_usdc_micros > i64::MAX as u64 {
             return Err(EconomyError::Invalid(
-                "loan_amount_usdc_micros must be > 0".into(),
+                "loan_amount_usdc_micros must be in 1..=i64::MAX".into(),
             ));
         }
         Ok(Self { config, verifier })
     }
 
-    /// Query a DEX router for the output amount of a swap.
-    ///
-    /// Uses `eth_call` to invoke the router's `getAmountOut` or equivalent
-    /// view function. This is read-only — the transaction is simulated, never
-    /// broadcast.
+    /// Query a DEX for the output amount of a swap, through the contract that
+    /// really quotes (Aerodrome Router, Uniswap QuoterV2). Read-only `eth_call`.
     fn query_dex_price(
         &self,
         router_address: &str,
@@ -184,26 +188,14 @@ impl FlashArbAdapter {
         token_out: &str,
         amount_in: u64,
     ) -> Result<u64> {
-        // Construct the eth_call payload.
-        // For Uniswap V3: calling quoter contract's quoteExactInput
-        // For Aerodrome: calling router's getAmountOut
-        // For BaseSwap: calling router's getAmountOut
-        //
-        // The exact ABI encoding depends on the DEX, but the principle is the same:
-        // call a view function that returns the output amount for a given input.
         let payload = self.build_price_query(router_address, token_in, token_out, amount_in)?;
         let result = self.verifier.rpc_call("eth_call", payload)?;
-
-        // Parse the result as a uint256 return value.
-        let amount_out = self.decode_uint256(&result)
-            .ok_or_else(|| EconomyError::Invalid(
-                "failed to decode DEX price response".into(),
-            ))?;
-
-        Ok(amount_out)
+        Self::decode_amount_out(router_address, &result)
     }
 
     /// Build the eth_call payload for querying a DEX's spot price.
+    // shortcut: "latest" per call, so the two legs of a scan may straddle a block; pin
+    // one block number across the scan when that shows up in the shadow data.
     fn build_price_query(
         &self,
         router_address: &str,
@@ -211,27 +203,19 @@ impl FlashArbAdapter {
         token_out: &str,
         amount_in: u64,
     ) -> Result<Value> {
-        // This is a simplified implementation. In production, we would use the
-        // exact ABI for each DEX's price oracle function.
-        //
-        // The key point: this only does read-only eth_call, which the verifier
-        // already pins through the Unix socket identity check.
         let to = if router_address.eq_ignore_ascii_case(AERODROME_ROUTER) {
             AERODROME_ROUTER
         } else if router_address.eq_ignore_ascii_case(UNISWAP_V3_ROUTER) {
-            UNISWAP_V3_ROUTER
+            UNISWAP_V3_QUOTER // the SwapRouter cannot quote
         } else {
-            BASESWAP_ROUTER
+            return Err(EconomyError::Invalid(format!("no quoter known for {router_address}")));
         };
-
-        Ok(json!([{
-            "to": to,
-            "data": self.build_dex_calldata(router_address, token_in, token_out, amount_in)?,
-            "from": null
-        }, "latest"]))
+        let data = self.build_dex_calldata(router_address, token_in, token_out, amount_in)?;
+        Ok(json!([{ "to": to, "data": data }, "latest"]))
     }
 
-    /// Build the calldata for each DEX's price oracle function.
+    /// Build the calldata for each DEX's quote function. Selectors are
+    /// keccak256 of the signatures below, and were checked against Base.
     fn build_dex_calldata(
         &self,
         router_address: &str,
@@ -239,68 +223,52 @@ impl FlashArbAdapter {
         token_out: &str,
         amount_in: u64,
     ) -> Result<String> {
-        // Placeholder for each DEX's price query function signature.
-        // In production, this would encode the exact ABI call:
-        // - Aerodrome: getAmountOut(uint256 amountIn, address tokenIn, address tokenOut)
-        //   -> function selector: 0x3f1d4c69 (example)
-        // - Uniswap V3: Quoter contract quoteExactInput(address tokenIn, address tokenOut, uint256 amountIn)
-        // - BaseSwap: getAmountOut(uint256 amountIn, address tokenIn, address tokenOut)
-        //
-        // For now, return a minimal calldata that would trigger the appropriate
-        // view function. This is a structural placeholder.
-        let token_in_hex = token_in.strip_prefix("0x").ok_or_else(|| {
-            EconomyError::Invalid("token_in must be 0x-prefixed".into())
-        })?;
-        let token_out_hex = token_out.strip_prefix("0x").ok_or_else(|| {
-            EconomyError::Invalid("token_out must be 0x-prefixed".into())
-        })?;
-        let amount_hex = format!("{:0>64x}", amount_in);
-
+        let (tin, tout) = (addr_word(token_in)?, addr_word(token_out)?);
         if router_address.eq_ignore_ascii_case(AERODROME_ROUTER) {
-            // Aerodrome getAmountOut signature: 0x3f1d4c69
-            // getAmountOut(uint256, address, address)
+            // getAmountsOut(uint256,(address from,address to,bool stable,address factory)[])
+            // with one volatile route: head = amountIn, offset 0x40; array = len 1, tuple.
             Ok(format!(
-                "0x3f1d4c69{}{}{}",
-                amount_hex,
-                format!("{:0>64}", token_in_hex),
-                format!("{:0>64}", token_out_hex)
+                "0x5509a1ac{amount_in:064x}{:064x}{:064x}{tin}{tout}{:064x}{}",
+                64,
+                1,
+                0,
+                addr_word(AERODROME_FACTORY)?
             ))
         } else if router_address.eq_ignore_ascii_case(UNISWAP_V3_ROUTER) {
-            // Uniswap V3 Quoter quoteExactInput: 0xf7729d80
-            // quoteExactInput((address tokenIn, address tokenOut, uint256 amountIn))
+            // QuoterV2.quoteExactInputSingle((tokenIn,tokenOut,amountIn,fee,sqrtPriceLimitX96))
             Ok(format!(
-                "0xf7729d80{}{}{}",
-                format!("{:0>64}", token_in_hex),
-                format!("{:0>64}", token_out_hex),
-                amount_hex
+                "0xc6a5026a{tin}{tout}{amount_in:064x}{:064x}{:064x}",
+                UNISWAP_FEE_TIER, 0
             ))
         } else {
-            // BaseSwap / generic Uniswap V2 style getAmountOut: 0x3f1d4c69
-            Ok(format!(
-                "0x3f1d4c69{}{}{}",
-                amount_hex,
-                format!("{:0>64}", token_in_hex),
-                format!("{:0>64}", token_out_hex)
-            ))
+            Err(EconomyError::Invalid(format!("no quoter known for {router_address}")))
         }
     }
 
-    /// Decode a uint256 result from an eth_call response.
-    fn decode_uint256(&self, result: &Value) -> Option<u64> {
-        let hex = result.as_str()?;
-        let hex = hex.strip_prefix("0x").unwrap_or(hex);
-        if hex.is_empty() {
-            return Some(0);
+    /// QuoterV2 returns `amountOut` as its first word; the Aerodrome Router returns a
+    /// `uint256[]` (offset, length, amounts…) whose last element is `amountOut`.
+    ///
+    /// An empty result is an `eth_call` to an address with no code, not a zero
+    /// quote, so it is an error rather than `0`.
+    fn decode_amount_out(router_address: &str, result: &Value) -> Result<u64> {
+        let hex = result.as_str().and_then(|s| s.strip_prefix("0x")).unwrap_or("");
+        let words: Vec<&str> = (0..hex.len() / 64).map(|i| &hex[i * 64..(i + 1) * 64]).collect();
+        let bad = |why: &str| EconomyError::Invalid(format!("eth_call quote from {router_address}: {why}"));
+        if hex.is_empty() || hex.len() % 64 != 0 || !hex.is_ascii() {
+            return Err(bad("empty or malformed result (no contract at that address?)"));
         }
-        let value = u128::from_str_radix(hex, 16).ok()?;
-        if value > u64::MAX as u128 {
-            return None;
-        }
-        Some(value as u64)
+        let word = if router_address.eq_ignore_ascii_case(AERODROME_ROUTER) {
+            if words.len() < 4 || word_u64(words[1]).ok() != Some(words.len() as u64 - 2) {
+                return Err(bad("not a uint256[] of at least two amounts"));
+            }
+            words[words.len() - 1]
+        } else {
+            words[0]
+        };
+        word_u64(word).map_err(|_| bad("amount is not a u64"))
     }
 
-    /// Query the Balancer Vault to verify flash loan availability and fee structure.
-    /// This confirms the adapter can use the 0% fee flash loan mechanism.
+    /// Check the Balancer Vault exists on Base and that we are on Base.
     fn verify_flash_loan_available(&self) -> Result<()> {
         // Check that the Balancer Vault contract has bytecode on Base.
         let code = self.verifier.rpc_call(
@@ -334,107 +302,86 @@ impl FlashArbAdapter {
         Ok(())
     }
 
-    /// Scan a single DEX pair for arbitrage opportunities.
-    fn scan_pair(&self, pair: DexPair) -> Result<Option<FlashArbOpportunity>> {
-        let (dex_a, dex_b, dex_label) = match pair {
-            DexPair::AerodromeToUniswap => (AERODROME_ROUTER, UNISWAP_V3_ROUTER, "Aerodrome→Uniswap"),
-            DexPair::UniswapToAerodrome => (UNISWAP_V3_ROUTER, AERODROME_ROUTER, "Uniswap→Aerodrome"),
-            DexPair::AerodromeToBaseSwap => (AERODROME_ROUTER, BASESWAP_ROUTER, "Aerodrome→BaseSwap"),
-            DexPair::BaseSwapToAerodrome => (BASESWAP_ROUTER, AERODROME_ROUTER, "BaseSwap→Aerodrome"),
+    /// Balancer's flash loan fee in bps, rounded up, read live because it is
+    /// governance-set. `getFlashLoanFeePercentage()` is 1e18 = 100%, so 1 bp = 1e14.
+    fn flash_loan_fee_bps(&self) -> Result<u64> {
+        let r = self.verifier.rpc_call(
+            "eth_call",
+            json!([{ "to": BALANCER_FEES_COLLECTOR, "data": "0xd877845c" }, "latest"]),
+        )?;
+        let hex = r.as_str().and_then(|s| s.strip_prefix("0x")).unwrap_or("");
+        let pct = (hex.len() == 64)
+            .then(|| u128::from_str_radix(hex, 16).ok())
+            .flatten()
+            .filter(|p| *p <= 10u128.pow(18))
+            .ok_or_else(|| EconomyError::Invalid("unreadable Balancer flash loan fee".into()))?;
+        Ok(pct.div_ceil(10u128.pow(14)) as u64)
+    }
+
+    /// Scan a single DEX pair. Always returns the signed edge actually measured;
+    /// the opportunity is `Some` only when it clears the safety margin.
+    fn scan_pair(
+        &self,
+        pair: DexPair,
+        fee_bps: u64,
+    ) -> Result<(MeasuredEdge, Option<FlashArbOpportunity>)> {
+        let (dex_a, dex_b) = match pair {
+            DexPair::AerodromeToUniswap => (AERODROME_ROUTER, UNISWAP_V3_ROUTER),
+            DexPair::UniswapToAerodrome => (UNISWAP_V3_ROUTER, AERODROME_ROUTER),
         };
 
         let loan_amount = self.config.loan_amount_usdc_micros;
 
-        // Get price from DEX A: USDC -> WETH
-        // For arbitrage, we swap USDC for some intermediate token and back.
-        // The simplest model: USDC → WETH on DEX A, WETH → USDC on DEX B.
-        // We need the WETH address on Base.
+        // USDC -> WETH on DEX A, WETH -> USDC on DEX B.
         let weth: &str = "0x4200000000000000000000000000000000000006";
-
-        // Query DEX A: how much WETH for `loan_amount` USDC
-        let amount_out_a = self.query_dex_price(
-            dex_a,
-            BASE_USDC,
-            weth,
-            loan_amount,
-        )?;
-
+        let amount_out_a = self.query_dex_price(dex_a, BASE_USDC, weth, loan_amount)?;
+        // A zero quote is "no liquidity", not a measurement of zero edge.
         if amount_out_a == 0 {
-            return Ok(None);
+            return Err(EconomyError::Invalid(format!("{} quoted 0 WETH", pair_as_str(pair))));
         }
-
-        // Query DEX B: how much USDC for `amount_out_a` WETH
-        let amount_back_b = self.query_dex_price(
-            dex_b,
-            weth,
-            BASE_USDC,
-            amount_out_a,
-        )?;
-
+        let amount_back_b = self.query_dex_price(dex_b, weth, BASE_USDC, amount_out_a)?;
         if amount_back_b == 0 {
-            return Ok(None);
+            return Err(EconomyError::Invalid(format!("{} quoted 0 USDC back", pair_as_str(pair))));
         }
 
-        // Calculate profit
-        let gross_profit = amount_back_b.saturating_sub(loan_amount);
-        if gross_profit == 0 {
-            return Ok(None);
-        }
+        let gross = i64::try_from(amount_back_b).unwrap_or(i64::MAX) - loan_amount as i64;
+        let loan_fee = (loan_amount as u128 * fee_bps as u128).div_ceil(10_000) as i64;
+        let network_cost = ESTIMATED_GAS_COST_USDC_MICROS.saturating_add(loan_fee);
+        let modeled_profit = gross - network_cost;
 
-        // Network cost: gas + flash loan fee
-        // Flash loan fee = loan_amount * BALANCER_FLASH_LOAN_FEE_BPS / 10000
-        let loan_fee = loan_amount * BALANCER_FLASH_LOAN_FEE_BPS / 10_000;
-        let network_cost = ESTIMATED_GAS_COST_USDC_MICROS.saturating_add(loan_fee as i64);
-
-        let modeled_profit = gross_profit as i64 - network_cost;
-
-        // Only return if profit exceeds safety margin
-        if modeled_profit < SAFETY_MARGIN_USDC_MICROS as i64 {
-            return Ok(None);
-        }
-
-        Ok(Some(FlashArbOpportunity {
-            dex_pair: dex_label.to_string(),
-            route: vec!["USDC".to_string(), "WETH".to_string(), "USDC".to_string()],
-            modeled_profit_usdc_micros: modeled_profit,
-            gross_profit_usdc_micros: gross_profit,
-            network_cost_usdc_micros: network_cost as u64,
-            flash_loan_amount_usdc_micros: loan_amount,
-            safety_margin_usdc_micros: SAFETY_MARGIN_USDC_MICROS,
-        }))
+        let edge = MeasuredEdge {
+            token_edge_micros: Some(gross),
+            robust_net_micros: modeled_profit,
+            source_field: format!("flash_arb::{}", pair_as_str(pair)),
+        };
+        let opportunity = (gross > 0 && modeled_profit >= SAFETY_MARGIN_USDC_MICROS as i64).then(|| {
+            FlashArbOpportunity {
+                dex_pair: pair_as_str(pair).to_string(),
+                route: vec!["USDC".to_string(), "WETH".to_string(), "USDC".to_string()],
+                modeled_profit_usdc_micros: modeled_profit,
+                gross_profit_usdc_micros: gross as u64,
+                network_cost_usdc_micros: network_cost as u64,
+                flash_loan_amount_usdc_micros: loan_amount,
+                safety_margin_usdc_micros: SAFETY_MARGIN_USDC_MICROS,
+            }
+        });
+        Ok((edge, opportunity))
     }
 
-    /// Scan all configured DEX pairs and return profitable opportunities.
+    /// Scan all configured DEX pairs; every pair contributes its measured edge.
     fn scan_all_pairs(&self) -> Result<(Vec<FlashArbOpportunity>, Vec<MeasuredEdge>)> {
         self.verify_flash_loan_available()?;
+        let fee_bps = self.flash_loan_fee_bps()?;
 
         let mut opportunities = Vec::new();
         let mut measured_edges = Vec::new();
-
         for pair in &self.config.dex_pairs {
-            match self.scan_pair(*pair) {
-                Ok(Some(opp)) => {
-                    opportunities.push(opp);
-                }
-                Ok(None) => {
-                    // Measured negative: this DEX pair had no edge.
-                    measured_edges.push(MeasuredEdge {
-                        token_edge_micros: Some(0),
-                        robust_net_micros: -ESTIMATED_GAS_COST_USDC_MICROS,
-                        source_field: format!("flash_arb::{}", pair_as_str(*pair)),
-                    });
-                }
-                Err(e) => {
-                    // On error, record as a measured negative with the error reason
-                    measured_edges.push(MeasuredEdge {
-                        token_edge_micros: None,
-                        robust_net_micros: -ESTIMATED_GAS_COST_USDC_MICROS,
-                        source_field: format!("flash_arb::{}::error:{}", pair_as_str(*pair), e),
-                    });
-                }
-            }
+            // A failed quote is not a measurement: `?` fails the whole scan, which
+            // `observe` reports as unmeasured, instead of booking it as "no edge".
+            let (edge, opp) = self.scan_pair(*pair, fee_bps)?;
+            measured_edges.push(edge);
+            opportunities.extend(opp);
         }
-
         Ok((opportunities, measured_edges))
     }
 
@@ -493,11 +440,10 @@ impl FlashArbAdapter {
         );
         metadata.insert("chain_id".into(), BASE_CHAIN_ID.to_string());
         metadata.insert("dex_a".into(), match opp.dex_pair.split('→').next() {
-            Some("Aerodrome") => "0xcf77a3ba9a5ca389b7c97c74d54e5b1beb874e43",
-            Some("Uniswap") => "0x2626664c2603336e57b271c5c0b26f421741e481",
-            Some("BaseSwap") => BASESWAP_ROUTER,
+            Some("Aerodrome") => AERODROME_ROUTER,
+            Some("Uniswap") => UNISWAP_V3_ROUTER,
             _ => "unknown",
-        }.to_lowercase());
+        }.to_string());
 
         OpportunityCandidate {
             schema_version: SCHEMA_VERSION,
@@ -541,7 +487,7 @@ impl OpportunityAdapter for FlashArbAdapter {
                     .map(|o| self.to_opportunity_candidate(o, now_unix))
                     .collect();
 
-                let best_observed_edge = measured_edges.into_iter().next();
+                let best_observed_edge = measured_edges.into_iter().max_by_key(|e| e.robust_net_micros);
 
                 Ok(SearchObservation {
                     schema_version: SCHEMA_VERSION,
@@ -582,9 +528,26 @@ fn pair_as_str(pair: DexPair) -> &'static str {
     match pair {
         DexPair::AerodromeToUniswap => "Aerodrome→Uniswap",
         DexPair::UniswapToAerodrome => "Uniswap→Aerodrome",
-        DexPair::AerodromeToBaseSwap => "Aerodrome→BaseSwap",
-        DexPair::BaseSwapToAerodrome => "BaseSwap→Aerodrome",
     }
+}
+
+/// A 20-byte `0x` address as a 32-byte ABI word.
+fn addr_word(addr: &str) -> Result<String> {
+    match addr.strip_prefix("0x") {
+        Some(h) if h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            Ok(format!("{:0>64}", h.to_ascii_lowercase()))
+        }
+        _ => Err(EconomyError::Invalid(format!("not a 20-byte 0x address: {addr}"))),
+    }
+}
+
+/// A 32-byte ABI word as u64; errors if it does not fit.
+fn word_u64(w: &str) -> Result<u64> {
+    let t = w.trim_start_matches('0');
+    if t.is_empty() {
+        return Ok(0);
+    }
+    u64::from_str_radix(t, 16).map_err(|_| EconomyError::Invalid(format!("word does not fit u64: {w}")))
 }
 
 /// Create a flash arbitrage adapter from a pinned provider.
@@ -614,165 +577,208 @@ impl FlashArbConfig {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc_test_server::FakeRpcSocket;
 
-    #[test]
-    fn config_rejects_empty_agent_id() {
-        let config = FlashArbConfig {
-            agent_id: "".into(),
-            ..Default::default()
-        };
-        // The adapter requires a verifier which must be constructed from a pin.
-        // We can't easily mock that in a unit test, so we test the config validation
-        // through the constructor guard.
-        assert!(config.agent_id.is_empty());
+    const WETH: &str = "0x4200000000000000000000000000000000000006";
+
+    /// A fake Base: both venues quote WETH at a USD price, Balancer charges `fee_1e18`.
+    #[derive(Clone, Copy)]
+    struct Market {
+        uni_usd: u128,
+        aero_usd: u128,
+        fee_1e18: u128,
+        /// The Uniswap quoter address has no code, so `eth_call` returns "0x".
+        dead_quoter: bool,
+    }
+
+    impl Market {
+        fn flat() -> Self {
+            Self { uni_usd: 3_000, aero_usd: 3_000, fee_1e18: 0, dead_quoter: false }
+        }
+
+        /// What the contract at `to` answers for `data`, shaped like the real return.
+        fn eth_call(&self, to: &str, data: &str) -> String {
+            let word = |s: &str, i: usize| u128::from_str_radix(&s[i * 64 + 32..(i + 1) * 64], 16).unwrap();
+            let is_weth = |s: &str, i: usize| s[i * 64 + 24..(i + 1) * 64].eq_ignore_ascii_case(&WETH[2..]);
+            let quote = |usd: u128, weth_in: bool, amt: u128| {
+                if weth_in { amt * usd / 10u128.pow(12) } else { amt * 10u128.pow(12) / usd }
+            };
+            let body = &data[10..];
+            if to == BALANCER_FEES_COLLECTOR && data == "0xd877845c" {
+                format!("0x{:064x}", self.fee_1e18)
+            } else if to == UNISWAP_V3_QUOTER && data.starts_with("0xc6a5026a") && !self.dead_quoter {
+                let out = quote(self.uni_usd, is_weth(body, 0), word(body, 2));
+                format!("0x{out:064x}{:064x}{:064x}{:064x}", 0, 0, 0)
+            } else if to == AERODROME_ROUTER && data.starts_with("0x5509a1ac") {
+                let amt = word(body, 0);
+                let out = quote(self.aero_usd, is_weth(body, 3), amt);
+                format!("0x{:064x}{:064x}{amt:064x}{out:064x}", 0x20, 2)
+            } else {
+                "0x".into() // an eth_call to an address with no code
+            }
+        }
+    }
+
+    /// An adapter reading `market` through the real pinned-socket path.
+    fn adapter(market: Market) -> (FlashArbAdapter, FakeRpcSocket, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = FakeRpcSocket::with_dispatch(dir.path().join("v.sock"), move |method, params| {
+            Some(match method {
+                "eth_chainId" => json!("0x2105"),
+                "eth_getCode" => json!("0x6080604052"),
+                "eth_call" => {
+                    let c = &params[0];
+                    json!(market.eth_call(c["to"].as_str()?, c["data"].as_str()?))
+                }
+                _ => return None,
+            })
+        });
+        let provider = PinnedChainProvider::unix_socket(socket.path(), Some(socket.uid())).unwrap();
+        let verifier = BaseUsdcVerifier::from_resolved(&resolve(None, Some(&provider)).unwrap(), 2).unwrap();
+        (FlashArbAdapter::new(FlashArbConfig::default(), verifier).unwrap(), socket, dir)
+    }
+
+    fn offline() -> FlashArbAdapter {
+        let verifier = BaseUsdcVerifier::new("http://127.0.0.1:8545", 2).unwrap();
+        FlashArbAdapter::new(FlashArbConfig::default(), verifier).unwrap()
     }
 
     #[test]
-    fn config_rejects_zero_min_profit() {
-        let config = FlashArbConfig {
-            min_profit_musd_micros: 0,
-            ..Default::default()
-        };
-        assert_eq!(config.min_profit_musd_micros, 0);
+    fn constructor_rejects_degenerate_config() {
+        let v = || BaseUsdcVerifier::new("http://127.0.0.1:8545", 2).unwrap();
+        let cfg = FlashArbConfig::default;
+        for bad in [
+            FlashArbConfig { agent_id: " ".into(), ..cfg() },
+            FlashArbConfig { min_profit_musd_micros: 0, ..cfg() },
+            FlashArbConfig { ttl_seconds: 0, ..cfg() },
+            FlashArbConfig { loan_amount_usdc_micros: 0, ..cfg() },
+            FlashArbConfig { loan_amount_usdc_micros: u64::MAX, ..cfg() },
+        ] {
+            assert!(FlashArbAdapter::new(bad, v()).is_err());
+        }
+    }
+
+    #[test]
+    fn aerodrome_calldata_is_get_amounts_out_with_one_volatile_route() {
+        let d = offline()
+            .build_dex_calldata(AERODROME_ROUTER, BASE_USDC, WETH, 100_000_000)
+            .unwrap();
+        assert!(d.starts_with("0x5509a1ac"));
+        assert_eq!(d.len(), 2 + 8 + 64 * 7); // amountIn, offset, len, from, to, stable, factory
+        let w = |i: usize| &d[10 + i * 64..10 + (i + 1) * 64];
+        assert_eq!(u64::from_str_radix(w(0).trim_start_matches('0'), 16).unwrap(), 100_000_000);
+        assert_eq!(w(1), format!("{:064x}", 0x40)); // offset to the route array
+        assert_eq!(w(2), format!("{:064x}", 1)); // one route
+        assert!(w(3).ends_with(&BASE_USDC[2..].to_lowercase()));
+        assert!(w(4).ends_with(&WETH[2..]));
+        assert_eq!(w(5), format!("{:064x}", 0)); // stable = false
+        assert!(w(6).ends_with(&AERODROME_FACTORY[2..]));
+    }
+
+    #[test]
+    fn uniswap_calldata_is_quote_exact_input_single_at_the_500_tier() {
+        let a = offline();
+        let d = a.build_dex_calldata(UNISWAP_V3_ROUTER, BASE_USDC, WETH, 7).unwrap();
+        assert!(d.starts_with("0xc6a5026a"));
+        assert_eq!(d.len(), 2 + 8 + 64 * 5);
+        assert_eq!(&d[10 + 3 * 64..10 + 4 * 64], format!("{:064x}", 500));
+        // The quote goes to the QuoterV2; the SwapRouter02 would revert.
+        let q = a.build_price_query(UNISWAP_V3_ROUTER, BASE_USDC, WETH, 7).unwrap();
+        assert_eq!(q[0]["to"], UNISWAP_V3_QUOTER);
+        assert!(q[0]["from"].is_null());
+    }
+
+    #[test]
+    fn calldata_refuses_unknown_venue_and_malformed_token() {
+        let a = offline();
+        assert!(a.build_dex_calldata("0x33d4fc5a1d7d3e5f0a5d6c7b8e9f0a1b2c3d4e5f", BASE_USDC, WETH, 1).is_err());
+        assert!(a.build_dex_calldata(AERODROME_ROUTER, "0x1234", WETH, 1).is_err());
+        assert!(a.build_dex_calldata(AERODROME_ROUTER, "833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", WETH, 1).is_err());
+    }
+
+    #[test]
+    fn empty_eth_call_result_is_an_error_not_a_zero_quote() {
+        for dex in [AERODROME_ROUTER, UNISWAP_V3_ROUTER] {
+            assert!(FlashArbAdapter::decode_amount_out(dex, &json!("0x")).is_err());
+            assert!(FlashArbAdapter::decode_amount_out(dex, &json!(null)).is_err());
+            assert!(FlashArbAdapter::decode_amount_out(dex, &json!("0xzz")).is_err());
+        }
+    }
+
+    #[test]
+    fn decode_reads_the_right_word_per_venue() {
+        let uni = json!(format!("0x{:064x}{:064x}{:064x}{:064x}", 42, 9, 9, 9));
+        assert_eq!(FlashArbAdapter::decode_amount_out(UNISWAP_V3_ROUTER, &uni).unwrap(), 42);
+        let aero = json!(format!("0x{:064x}{:064x}{:064x}{:064x}", 0x20, 2, 100, 42));
+        assert_eq!(FlashArbAdapter::decode_amount_out(AERODROME_ROUTER, &aero).unwrap(), 42);
+        // Declared length disagrees with the payload: not an amounts array.
+        let lying = json!(format!("0x{:064x}{:064x}{:064x}{:064x}", 0x20, 3, 100, 42));
+        assert!(FlashArbAdapter::decode_amount_out(AERODROME_ROUTER, &lying).is_err());
+        // Does not fit u64.
+        let huge = json!(format!("0x{:064x}", u128::MAX));
+        assert!(FlashArbAdapter::decode_amount_out(UNISWAP_V3_ROUTER, &huge).is_err());
+    }
+
+    #[test]
+    fn a_flat_market_reports_its_real_negative_edge_and_no_opportunity() {
+        let (a, _s, _d) = adapter(Market::flat());
+        let (opps, edges) = a.scan_all_pairs().unwrap();
+        assert!(opps.is_empty());
+        assert_eq!(edges.len(), 2);
+        for e in &edges {
+            // Round-trip through two pools costs both fees: a real negative number,
+            // not the old constant "-gas".
+            let gross = e.token_edge_micros.unwrap();
+            assert!(gross < 0, "{gross}");
+            assert_eq!(e.robust_net_micros, gross - ESTIMATED_GAS_COST_USDC_MICROS);
+        }
+    }
+
+    #[test]
+    fn a_dislocation_is_found_in_the_right_direction_and_costs_the_live_fee() {
+        let (a, _s, _d) = adapter(Market { aero_usd: 3_200, ..Market::flat() });
+        let (opps, edges) = a.scan_all_pairs().unwrap();
+        assert_eq!(opps.len(), 1);
+        assert_eq!(opps[0].dex_pair, "Uniswap→Aerodrome"); // buy WETH cheap on Uniswap
+        assert_eq!(opps[0].modeled_profit_usdc_micros, opps[0].gross_profit_usdc_micros as i64 - 500);
+        assert_eq!(
+            edges.iter().map(|e| e.robust_net_micros).max(),
+            Some(opps[0].modeled_profit_usdc_micros)
+        );
+
+        // 5 bps on a $100 loan is $0.05, read from the chain rather than assumed.
+        let (a, _s, _d) = adapter(Market { aero_usd: 3_200, fee_1e18: 5 * 10u128.pow(14), ..Market::flat() });
+        let (opps, _) = a.scan_all_pairs().unwrap();
+        assert_eq!(opps[0].network_cost_usdc_micros, 500 + 50_000);
+    }
+
+    #[test]
+    fn a_dead_quoter_fails_the_scan_instead_of_booking_no_edge() {
+        let (a, _s, _d) = adapter(Market { dead_quoter: true, ..Market::flat() });
+        assert!(a.scan_all_pairs().is_err());
+    }
+
+    #[test]
+    fn an_implausible_flash_fee_fails_the_scan() {
+        let (a, _s, _d) = adapter(Market { fee_1e18: 2 * 10u128.pow(18), ..Market::flat() });
+        assert!(a.flash_loan_fee_bps().is_err());
     }
 
     #[test]
     fn pair_labels_are_correct() {
         assert_eq!(pair_as_str(DexPair::AerodromeToUniswap), "Aerodrome→Uniswap");
         assert_eq!(pair_as_str(DexPair::UniswapToAerodrome), "Uniswap→Aerodrome");
-        assert_eq!(pair_as_str(DexPair::AerodromeToBaseSwap), "Aerodrome→BaseSwap");
-        assert_eq!(pair_as_str(DexPair::BaseSwapToAerodrome), "BaseSwap→Aerodrome");
-    }
-
-    #[test]
-    fn default_config_has_valid_values() {
-        let config = FlashArbConfig::default();
-        assert!(!config.agent_id.is_empty());
-        assert!(config.min_profit_musd_micros > 0);
-        assert!(config.ttl_seconds > 0);
-        assert!(config.loan_amount_usdc_micros > 0);
-        assert_eq!(config.chain_id(), BASE_CHAIN_ID);
-    }
-
-    #[test]
-    fn safety_margin_is_positive() {
-        assert!(SAFETY_MARGIN_USDC_MICROS > 0);
-    }
-
-    #[test]
-    fn balancer_flash_loan_fee_is_5bps() {
-        assert_eq!(BALANCER_FLASH_LOAN_FEE_BPS, 5);
-    }
-
-    #[test]
-    fn adapter_class_is_arbitrage() {
-        // We can verify the class assignment without constructing the full adapter
-        // by checking the constant.
-        assert_eq!(OpportunityClass::Arbitrage.state(), "arbitrage");
     }
 
     #[test]
     fn opportunity_id_is_stable_for_same_inputs() {
-        let id1 = stable_id(
-            "flasharb",
-            &["agent-1", "Aerodrome→Uniswap", "100000000", "1234567890"],
-        );
-        let id2 = stable_id(
-            "flasharb",
-            &["agent-1", "Aerodrome→Uniswap", "100000000", "1234567890"],
-        );
-        assert_eq!(id1, id2);
-
-        // Different inputs should produce different IDs
-        let id3 = stable_id(
-            "flasharb",
-            &["agent-1", "Aerodrome→Uniswap", "200000000", "1234567890"],
-        );
-        assert_ne!(id1, id3);
-    }
-
-    #[test]
-    fn calldata_encoding_for_aerodrome() {
-        let config = FlashArbConfig::default();
-        let adapter = FlashArbAdapter {
-            config,
-            verifier: BaseUsdcVerifier::new("http://127.0.0.1:8545", 2).unwrap(),
-        };
-        let calldata = adapter.build_dex_calldata(
-            AERODROME_ROUTER,
-            "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-            "0x4200000000000000000000000000000000000006",
-            100_000_000,
-        ).unwrap();
-
-        // Should start with the function selector
-        assert!(calldata.starts_with("0x3f1d4c69"));
-        // Should be 2 ("0x") + 8 (selector "3f1d4c69") + 64*3 (three uint256/addr params) = 2 + 8 + 192 = 202 hex chars + 0x prefix
-        assert_eq!(calldata.len(), 2 + 8 + 64 * 3);
-    }
-
-    #[test]
-    fn calldata_encoding_for_uniswap() {
-        let config = FlashArbConfig::default();
-        let adapter = FlashArbAdapter {
-            config,
-            verifier: BaseUsdcVerifier::new("http://127.0.0.1:8545", 2).unwrap(),
-        };
-        let calldata = adapter.build_dex_calldata(
-            UNISWAP_V3_ROUTER,
-            "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-            "0x4200000000000000000000000000000000000006",
-            100_000_000,
-        ).unwrap();
-
-        assert!(calldata.starts_with("0xf7729d80"));
-    }
-
-    #[test]
-    fn uint256_decoding_works() {
-        let config = FlashArbConfig::default();
-        let adapter = FlashArbAdapter {
-            config,
-            verifier: BaseUsdcVerifier::new("http://127.0.0.1:8545", 2).unwrap(),
-        };
-
-        // 0.001 ETH worth = 1000000000000000 wei
-        let result = json!("0x0de0b6b3a7640000");
-        assert_eq!(adapter.decode_uint256(&result), Some(1_000_000_000_000_000_000u64));
-
-        // Zero
-        let result = json!("0x");
-        assert_eq!(adapter.decode_uint256(&result), Some(0));
-
-        // Small value
-        let result = json!("0x64"); // 100
-        assert_eq!(adapter.decode_uint256(&result), Some(100));
-    }
-
-    #[test]
-    fn profit_calculation_is_correct() {
-        // Modeled scenario:
-        // Loan: $100 USDC (100_000_000 micros)
-        // Out on DEX A: 0.05 WETH
-        // Back on DEX B: $101.50 USDC
-        // Gross profit: $1.50 = 1_500_000 micros
-        // Gas cost: $0.0005 = 500 micros
-        // Flash loan fee: $100 * 0.05% = $0.05 = 50_000 micros
-        // Modeled profit: 1_500_000 - 500 - 50_000 = 1_449_500 micros = $1.4495
-
-        let loan_amount = 100_000_000u64; // $100
-        let amount_back = 101_500_000u64; // $101.50
-        let gross_profit = amount_back - loan_amount; // 1_500_000
-        let loan_fee = loan_amount * BALANCER_FLASH_LOAN_FEE_BPS / 10_000; // 50_000
-        let network_cost = ESTIMATED_GAS_COST_USDC_MICROS + loan_fee as i64; // 50_500
-        let modeled_profit = gross_profit as i64 - network_cost; // 1_449_500
-
-        assert_eq!(gross_profit, 1_500_000);
-        assert_eq!(loan_fee, 50_000);
-        assert_eq!(modeled_profit, 1_449_500);
-        assert!(modeled_profit > SAFETY_MARGIN_USDC_MICROS as i64);
+        let args = ["agent-1", "Aerodrome→Uniswap", "100000000", "1234567890"];
+        assert_eq!(stable_id("flasharb", &args), stable_id("flasharb", &args));
+        let other = ["agent-1", "Aerodrome→Uniswap", "200000000", "1234567890"];
+        assert_ne!(stable_id("flasharb", &args), stable_id("flasharb", &other));
     }
 }

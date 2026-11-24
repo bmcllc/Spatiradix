@@ -39,10 +39,16 @@ pub struct NfcProof {
     pub payer_pubkey: [u8; 32],
     /// Segredo compartilhado encapsulado (ML-KEM) para confidencialidade do recibo em trânsito.
     pub kem_ciphertext: Vec<u8>,
+    /// Chave pública x-only (32 bytes) do GhostID (secp256k1 BIP-340) para interoperabilidade NFC × Pay × Wallet.
+    #[serde(default)]
+    pub ghost_pubkey_xonly: Option<[u8; 32]>,
+    /// Assinatura BIP-340 Schnorr do GhostID sobre a mesma mensagem canônica da intenção.
+    #[serde(default)]
+    pub ghost_schnorr_sig: Option<Vec<u8>>,
 }
 
 impl NfcProof {
-    /// Cria prova NFC assinada pelo pagador. O tap NFC transmite intent + proof.
+    /// Cria prova NFC assinada pelo pagador (Ed25519 + ML-KEM). O tap NFC transmite intent + proof.
     pub fn create(wallet: &SovereignWallet, intent: &PaymentIntent) -> Self {
         let msg = canonical_intent_message(intent);
         let sig = wallet.sign(&msg).to_vec();
@@ -52,7 +58,29 @@ impl NfcProof {
             payer_sig: sig,
             payer_pubkey: wallet.verifying_key().to_bytes(),
             kem_ciphertext: ct,
+            ghost_pubkey_xonly: None,
+            ghost_schnorr_sig: None,
         }
+    }
+
+    /// Cria prova NFC híbrida vinculando **Ed25519 + GhostID (BIP-340 Schnorr) + ML-KEM-1024**.
+    pub fn create_with_ghostid(
+        wallet: &SovereignWallet,
+        ghost: &mycelium_ghostid::GhostId,
+        intent: &PaymentIntent,
+    ) -> Result<Self, BankError> {
+        let msg = canonical_intent_message(intent);
+        let sig = wallet.sign(&msg).to_vec();
+        let kem = wallet.encapsulate_to();
+        let ct = kem.map(|k| k.ciphertext.clone()).unwrap_or_default();
+        let gsig = ghost.sign(&msg);
+        Ok(NfcProof {
+            payer_sig: sig,
+            payer_pubkey: wallet.verifying_key().to_bytes(),
+            kem_ciphertext: ct,
+            ghost_pubkey_xonly: Some(ghost.nostr_pubkey()),
+            ghost_schnorr_sig: Some(gsig.to_vec()),
+        })
     }
 
     pub fn verify(&self, intent: &PaymentIntent) -> bool {
@@ -61,8 +89,23 @@ impl NfcProof {
             Ok(v) => v,
             Err(_) => return false,
         };
-        // reusa verificação via wallet static helper
-        crate::identity::SovereignWallet::verify(&vk, &msg, &self.payer_sig)
+        if !crate::identity::SovereignWallet::verify(&vk, &msg, &self.payer_sig) {
+            return false;
+        }
+        match (&self.ghost_pubkey_xonly, &self.ghost_schnorr_sig) {
+            (Some(gpk), Some(gsig)) => {
+                crate::identity::SovereignWallet::verify_ghost_schnorr(gpk, &msg, gsig)
+            }
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    /// Verifica estritamente que a prova carrega e autentica uma assinatura GhostID válida.
+    pub fn verify_with_ghostid(&self, intent: &PaymentIntent) -> bool {
+        self.ghost_pubkey_xonly.is_some()
+            && self.ghost_schnorr_sig.is_some()
+            && self.verify(intent)
     }
 }
 

@@ -4,6 +4,7 @@ description = "Proxy sem servidor: Event Horizon e roteamento por gravidade"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-core = { workspace = true }

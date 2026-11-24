@@ -58,4 +58,4 @@ faça upgrade coordenado dos seeds.
 
 ## Licença
 
-AGPL-3.0-or-later. Consulte [LICENSE](../LICENSE).
+AGPL-3.0-or-later. Consulte [texto histórico da AGPL-3.0](../licenses/AGPL-3.0.txt).

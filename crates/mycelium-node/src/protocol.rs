@@ -152,6 +152,33 @@ pub enum Envelope {
         to: NodeId,
         inner: Box<Envelope>,
     },
+    /// Evento público assinado do Mycelium Rhizome (perfil, post, vídeo, story, comentário, reação, comunidade).
+    RhizomeEvent {
+        event: mycelium_rhizome::SyncEnvelope,
+    },
+    /// Envelope de chat E2EE pós-quântico (ML-KEM-1024 + XChaCha20-Poly1305) entregue via `Direct`/DTN.
+    RhizomeChat {
+        envelope: mycelium_rhizome::SealedChatEnvelope,
+    },
+    /// Recibo assinado de entrega/leitura (`✓✓`) entregue via `Direct`/DTN.
+    RhizomeReceipt {
+        receipt: mycelium_rhizome::ChatReceipt,
+    },
+    /// Manifesto de grupo E2EE pós-quântico entregue aos membros via `Direct`/DTN.
+    RhizomeGroupInvite {
+        manifest: mycelium_rhizome::GroupManifest,
+    },
+    /// Fatia de mídia (imagem, áudio, documento ou chunk BLAKE3 de vídeo ≤ 32 KiB brutos).
+    RhizomeMediaChunk {
+        packet: mycelium_rhizome::MediaChunkPacket,
+    },
+    /// Pedido sob demanda de mídia/chunks ausentes localmente na malha Rhizome.
+    RhizomeMediaWant {
+        asset_cid: String,
+        is_video: bool,
+        #[serde(default)]
+        missing_indices: Vec<u32>,
+    },
 }
 
 /// Frame versionado no fio.

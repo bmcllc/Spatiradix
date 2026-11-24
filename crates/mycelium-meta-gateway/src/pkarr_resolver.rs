@@ -45,7 +45,10 @@ impl PkarrIdentityResolver {
     }
 
     /// Registra um `SignedPacket` após verificação estrita da assinatura Ed25519 (BEP44).
-    pub fn register_verified_packet(&mut self, packet: SignedPacket) -> Result<String, GatewayError> {
+    pub fn register_verified_packet(
+        &mut self,
+        packet: SignedPacket,
+    ) -> Result<String, GatewayError> {
         packet
             .verify()
             .map_err(|e| GatewayError::Crypto(format!("pkarr verify falhou: {e}")))?;

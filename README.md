@@ -53,6 +53,36 @@ Rede só com seed book (sem mDNS / sem `--bootstrap` manual):
 
 Demos: `./scripts/e2e-demo.sh` · `./scripts/horizon-demo.sh` · `./scripts/seedbook-demo.sh` · `./scripts/isotope-decay-demo.sh`
 
+[Demonstração local da Vitrine, da replicação P2P e do Root](docs/reports/demonstracao-2026-11-21.md)
+
+## Mycelium Habitat (Fase H0)
+
+O daemon mantém um registro **local de manifestos de serviços assinados**, com
+políticas `local`, `private` e `public`. Use `mycelium habitat register`, `list`
+e `inspect`; o cadastro **não** replica, executa nem publica conteúdo.
+Veja [Habitat — escopo, comandos e limites](docs/architecture/HABITAT_MVP.md).
+A fase H2 adiciona um [teste de rota SOCKS5 via VEIL e medição de uso HTTP sem cobranças](docs/architecture/HABITAT_MYC_VEIL_H2.md).
+
+## ARQ-Mint (QVP-2/ARQ adaptado à emissão PoUW)
+
+O perfil ARQ experimental foi integrado ao `mycelium-mint`: modula a emissão
+por diversidade de trabalho e concentração pseudônima, com quórum vinculado
+à política em gênese. **Não converte scores em dinheiro e não foi ativado na
+rede existente.** Consulte [ARQ-Mint privado](docs/architecture/ARQ_MINT_PRIVATE_POUW.md).
+
+## Cameon (laboratório pós-quântico)
+
+O crate experimental `mycelium-pqcripto` cifra mensagens privadas com ML-KEM-1024,
+usa uma assinatura efêmera ML-DSA-87 e exige política de transporte sem fallback
+inseguro. **Não é uma moeda transacionável**: gastos continuam bloqueados até
+existirem consenso, provas PQ de saldo e conservação e nullifiers verificáveis.
+O CUPP permite ao **comprador escolher Cameon para pagar a nota do vendedor**,
+com valor exato, moeda, impostos e tarifas vinculados ao mandato assinado.
+`payer_checkout` e `coverage` validam a admissão financeira em simulação
+(risco ARQ + cobertura informada); **nenhuma liquidação, reserva ou débito
+acontece**. A política antiga de 8 USDC é só um perfil comercial opcional.
+Veja o [projeto Cameon e os critérios de implantação](docs/architecture/CAMEON_PQ_CHAMELEON.md).
+
 ## CLI unificada `lattice` (Forja + Rede)
 
 ```bash
@@ -110,6 +140,7 @@ Giggs sow Plot → Spore Bank (disco + DHT) → gossip hifas
 | `store list/caps/launch/publish` | App Store / Steam P2P de software antigo e emulação (QEMU, MAME, RetroArch, WASM) |
 | `repo publish/clone/list` | Distribuição de código soberana: publica a árvore como Plot multi-leaf (DHT + gossip) e reconstrói em qualquer nó — sem GitHub |
 | `media publish/pin/pins` | Streaming e fixação de vídeos em chunks BLAKE3 de 2MB via enxame P2P (Mycelium Video) |
+| `rhizome ui/identity/post/story/video/chat-send/import-x/import-whatsapp` | Super-app social soberano (`/rhizome/`): YouTube/Reels, Instagram/Stories (Isotope), Facebook/Comunidades, X/Microblog e WhatsApp PQ E2EE (ML-KEM-1024 + DTN + Nostr) |
 | `channel create/publish/show` | Gestão de canais descentralizados assinados por chave criptográfica |
 | `playlist create/add` | Criação e versão de playlists portáteis e soberanas |
 | `sclerotium hardware/lease/status/wake` | Protocolo Sclerotium: dormência profunda, GhostLease, Wake-on-LAN e WakeToken anti-DoS |
@@ -142,6 +173,7 @@ O projeto é modularizado em 30 crates e plataformas especializados:
 | `mycelium-sclerotium` | L0 / L1 | Dormência biológica, GhostLease, Wake-on-LAN e WakeToken anti-vampire attacks |
 | `mycelium-veil` | L2 | Rede cebola pós-quântica (ML-KEM-768), proxy SOCKS5, Anti-SSRF e bridges |
 | `mycelium-media` | L4 | Motor de streaming de áudio/vídeo em chunks de 2MB BLAKE3 e canais |
+| `mycelium-rhizome` | L4 | **Super-app social soberano (`/rhizome/`)**: YouTube/Reels, Stories (Isotope), Comunidades, Microblog/X, Chat PQ E2EE (ML-KEM-1024 + DTN) e bridges (Nostr, RSS, ActivityPub, importadores X/WhatsApp) |
 | `mycelium-bank` | L4 | **Banco/corretora descentralizada**: carteira soberana PQC, ledger hash-encadeado, livro de ordens, pagamentos NFC P2P |
 | `mycelium-store` | L4 | App Store P2P e motores de emulação (RetroArch, MAME, QEMU, WASM) |
 | `mycelium-zkp` | L2 | Licenças pós-quânticas VOID-00 (ML-DSA-87) e validação Lightning BOLT11 |
@@ -241,6 +273,8 @@ ed25519 com `valid_until` é a assinatura do cliente — plano em
 ## Documentação Completa
 
 -  **[Livro Mestre & Documentação Técnica Completa](docs/DOCUMENTACAO_COMPLETA.md)**: Manual definitivo cobrindo a arquitetura, VEIL Ω, COSMIC, Sclerotium e todos os 30 crates.
+-  **[Super-App Social Rhizome (MMP / MCP / MEP)](docs/architecture/RHIZOME_SUPERAPP.md)**: Tube/Reels BLAKE3, Commons MCP 100%, Lentes MEP, Enxame & Zap Pós-Quântico (`/rhizome/`).
+-  **[Build Android Soberano (APK ARM64 sem Google/Termux)](docs/architecture/ANDROID_SOVEREIGN_BUILD.md)**: Binário `aarch64-unknown-linux-musl` + forjador APK puro em Rust (`scripts/build-android-sovereign.sh`).
 -  **[Índice Geral de Documentos](docs/README.md)**: Mapa temático organizado por diretórios.
 -  **[Dicionário Exaustivo de Crates](docs/architecture/CRATES_REFERENCE.md)**: Referência técnica de cada crate do monorepo.
 -  **[Protocolo VEIL Ω Onion Routing](docs/veil/VEIL_ONION_ROUTING.md)**: Roteamento pós-quântico de 3 saltos e proxy SOCKS5.
@@ -257,10 +291,14 @@ cargo test --workspace
 
 ## Licença
 
-**GNU Affero General Public License v3.0** — veja [LICENSE](LICENSE).
+A [Licença Mycelium para Pessoas Físicas 1.0](LICENSE) oferece código-fonte
+disponível e uso gratuito para pessoas físicas que atuam por conta própria,
+inclusive em atividade remunerada. Governos, empresas públicas e privadas
+(incluindo Big Techs), ONGs e fundações ficam excluídos, inclusive quando
+atuam por intermédio de pessoas físicas.
 
-Copyleft forte com cláusula de rede: quem distribuir ou oferecer o Mycelium
-como serviço pela rede é obrigado a publicar o código-fonte das modificações.
-Fork para lucrar sem devolver o código viola a licença.
+As versões distribuídas sob a [AGPL-3.0](docs/licenses/AGPL-3.0.txt) continuam
+sujeitas aos termos que receberam. Consulte os avisos de licença nos
+componentes de terceiros e nos projetos incorporados separadamente.
 
 > *"O futuro da computação não é construir castelos de silício. É plantar florestas de código."*

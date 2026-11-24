@@ -374,6 +374,28 @@ impl PqcTransport {
     }
 }
 
+/// Deriva uma chave de sessão simétrica autenticada vinculando segredo ML-KEM, chave pública e ciphertext do handshake.
+pub fn derive_pqc_transcript_key(
+    shared_secret: &[u8],
+    server_pk: &[u8],
+    ciphertext: &[u8],
+    context: &[u8],
+) -> [u8; 32] {
+    let mut h = blake3::Hasher::new_keyed(&[
+        0x56, 0x45, 0x49, 0x4c, 0x2d, 0x50, 0x51, 0x43, // VEIL-PQC
+        0x53, 0x45, 0x53, 0x53, 0x49, 0x4f, 0x4e, 0x2d, // SESSION-
+        0x4b, 0x45, 0x59, 0x2d, 0x44, 0x45, 0x52, 0x49, // KEY-DERI
+        0x56, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x2d, 0x31, // VATION-1
+    ]);
+    h.update(shared_secret);
+    h.update(&(server_pk.len() as u32).to_be_bytes());
+    h.update(server_pk);
+    h.update(&(ciphertext.len() as u32).to_be_bytes());
+    h.update(ciphertext);
+    h.update(context);
+    *h.finalize().as_bytes()
+}
+
 /// Deriva uma chave de sessão simétrica autenticada a partir do segredo ML-KEM compartilhado e contexto.
 pub fn derive_pqc_session_key(shared_secret: &[u8], context: &[u8]) -> [u8; 32] {
     let mut h = blake3::Hasher::new_keyed(&[
@@ -408,16 +430,33 @@ impl Transport for PqcTransport {
                 _ => None,
             })
             .ok_or_else(|| TransportError::MultiaddrNotSupported(addr.clone()))?;
-        let bind = format!("0.0.0.0:{port}")
+        let host = addr
+            .iter()
+            .find_map(|proto| match proto {
+                Protocol::Ip4(ip) => Some(ip.to_string()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+        let bind = format!("{host}:{port}")
             .parse::<std::net::SocketAddr>()
             .map_err(|e| TransportError::Other(PqcTransportError::Msg(e.to_string())))?;
 
+        let std_listener = std::net::TcpListener::bind(bind)
+            .map_err(|e| TransportError::Other(PqcTransportError::Msg(e.to_string())))?;
+        std_listener
+            .set_nonblocking(true)
+            .map_err(|e| TransportError::Other(PqcTransportError::Msg(e.to_string())))?;
+        let bound_port = std_listener
+            .local_addr()
+            .map_err(|e| TransportError::Other(PqcTransportError::Msg(e.to_string())))?
+            .port();
+
         let kp = Arc::clone(&self.local_kp);
-        let listen_addr = self.encode_multiaddr(port);
+        let listen_addr = self.encode_multiaddr(bound_port);
         let (tx, rx): (IncomingTx, _) = mpsc::unbounded();
 
         tokio::spawn(async move {
-            let listener = match TcpListener::bind(bind).await {
+            let listener = match TcpListener::from_std(std_listener) {
                 Ok(l) => l,
                 Err(e) => {
                     tracing::warn!(error = %e, "pqc listen");
@@ -435,8 +474,13 @@ impl Transport for PqcTransport {
                             Ok(s) => s,
                             Err(_) => continue,
                         };
-                        // Vincula o segredo pós-quântico compartilhado à transcrição simétrica da sessão
-                        let session_key = derive_pqc_session_key(&ss, b"mycelium-pqc-v1-hybrid-transcript");
+                        // Vincula segredo PQ, chave pública do servidor e ciphertext à transcrição
+                        let session_key = derive_pqc_transcript_key(
+                            &ss,
+                            &kp.public_key,
+                            &ct,
+                            b"mycelium-pqc-v1-hybrid-transcript",
+                        );
                         let mut client_auth = [0u8; 32];
                         if stream.read_exact(&mut client_auth).await.is_err() {
                             continue;
@@ -503,8 +547,13 @@ impl Transport for PqcTransport {
                 .map_err(|e| PqcTransportError::Msg(e.to_string()))?;
             let enc = mlkem_encapsulate(&peer_pk)
                 .map_err(|e| PqcTransportError::Msg(e.to_string()))?;
-            // Vincula o segredo pós-quântico compartilhado à transcrição simétrica da discagem
-            let session_key = derive_pqc_session_key(&enc.shared_secret, b"mycelium-pqc-v1-hybrid-transcript");
+            // Vincula segredo PQ, chave pública do servidor e ciphertext à transcrição da discagem
+            let session_key = derive_pqc_transcript_key(
+                &enc.shared_secret,
+                &peer_pk,
+                &enc.ciphertext,
+                b"mycelium-pqc-v1-hybrid-transcript",
+            );
             let client_auth = blake3::keyed_hash(&session_key, b"mycelium-pqc-client-auth");
 
             stream.write_all(&enc.ciphertext).await?;
@@ -774,6 +823,94 @@ mod tests {
         assert_eq!(&resp[..n], b"resposta-servidor-pqc");
 
         srv_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pqc_two_node_transport_roundtrip_and_replay_rejection() {
+        use futures::io::{AsyncReadExt as FuturesReadExt, AsyncWriteExt as FuturesWriteExt};
+        use tokio::io::AsyncWriteExt as TokioWriteExt;
+
+        let mut server_transport = PqcTransport::new().unwrap();
+        let server_pk_hex = server_transport.public_key_hex().to_string();
+        let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/0/unix/mycelium-pqc-{server_pk_hex}")
+            .parse()
+            .unwrap();
+        Transport::listen_on(&mut server_transport, ListenerId::next(), listen_addr).unwrap();
+
+        // NewAddress deve conter a porta efêmera real vinculada pelo SO (> 0)
+        let bound_addr = match futures::future::poll_fn(|cx| Transport::poll(Pin::new(&mut server_transport), cx)).await {
+            TransportEvent::NewAddress { listen_addr, .. } => listen_addr,
+            other => panic!("esperado NewAddress, recebeu {other:?}"),
+        };
+        let bound_port = bound_addr
+            .iter()
+            .find_map(|p| match p {
+                Protocol::Tcp(port) if port > 0 => Some(port),
+                _ => None,
+            })
+            .expect("porta TCP efêmera real deve ser diferente de zero");
+
+        let dial_addr: Multiaddr = format!(
+            "/ip4/127.0.0.1/tcp/{bound_port}/unix/mycelium-pqc-{server_pk_hex}"
+        )
+        .parse()
+        .unwrap();
+
+        let srv_task = tokio::spawn(async move {
+            loop {
+                match futures::future::poll_fn(|cx| Transport::poll(Pin::new(&mut server_transport), cx)).await {
+                    TransportEvent::Incoming { upgrade, .. } => {
+                        let mut stream = upgrade.await.unwrap();
+                        let mut buf = vec![0u8; 128];
+                        let n = FuturesReadExt::read(&mut stream, &mut buf).await.unwrap();
+                        assert_eq!(&buf[..n], b"aex-hybrid-pqc-ping");
+                        FuturesWriteExt::write_all(&mut stream, b"mycelium-pqc-pong").await.unwrap();
+                        FuturesWriteExt::flush(&mut stream).await.unwrap();
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let mut client_transport = PqcTransport::new().unwrap();
+        let dial_opts = DialOpts {
+            role: libp2p::core::Endpoint::Dialer,
+            port_use: libp2p::core::transport::PortUse::Reuse,
+        };
+        let mut client_stream = Transport::dial(&mut client_transport, dial_addr, dial_opts)
+            .unwrap()
+            .await
+            .unwrap();
+        FuturesWriteExt::write_all(&mut client_stream, b"aex-hybrid-pqc-ping").await.unwrap();
+        FuturesWriteExt::flush(&mut client_stream).await.unwrap();
+
+        let mut reply = vec![0u8; 64];
+        let n = FuturesReadExt::read(&mut client_stream, &mut reply).await.unwrap();
+        assert_eq!(&reply[..n], b"mycelium-pqc-pong");
+        srv_task.await.unwrap();
+
+        // Transcript binding + anti-replay: chave errada ou sequência repetida falha fechado
+        let kp_a = generate_pqc_keypair();
+        let kp_b = generate_pqc_keypair();
+        let enc = mlkem_encapsulate(&kp_a.public_key).unwrap();
+        let k_a = derive_pqc_transcript_key(&enc.shared_secret, &kp_a.public_key, &enc.ciphertext, b"ctx");
+        let k_b = derive_pqc_transcript_key(&enc.shared_secret, &kp_b.public_key, &enc.ciphertext, b"ctx");
+        assert_ne!(k_a, k_b, "transcript key deve vincular a chave pública exata do par");
+
+        let (duplex_client, mut duplex_raw) = tokio::io::duplex(256);
+        let mut rx_stream = PqcSecureStream::new(duplex_client, k_a, k_a);
+        // Forja frame com seq=5 quando rx_seq esperado é 0 (fora de ordem / replay)
+        let mut bad_frame = Vec::new();
+        bad_frame.extend_from_slice(&16u16.to_be_bytes());
+        let mut bad_nonce = [0u8; 12];
+        bad_nonce[4..12].copy_from_slice(&5u64.to_be_bytes());
+        bad_frame.extend_from_slice(&bad_nonce);
+        bad_frame.extend_from_slice(&[0u8; 16]);
+        TokioWriteExt::write_all(&mut duplex_raw, &bad_frame).await.unwrap();
+        let mut out = [0u8; 32];
+        let err = rx_stream.read(&mut out).await.unwrap_err();
+        assert!(err.to_string().contains("Sequência PQC inesperada"));
     }
 }
 

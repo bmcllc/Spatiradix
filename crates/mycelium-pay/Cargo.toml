@@ -1,0 +1,23 @@
+[package]
+name = "mycelium-pay"
+description = "Envelope v1 (CBOR determinístico) e cifra híbrida §7 da spec Sovereign Finance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+license-file.workspace = true
+
+[features]
+# Verificação de assinaturas ML-DSA-87 (alg 2); sem ela, alg 2 é recusado (falha fechada).
+mldsa = ["dep:mycelium-zkp"]
+
+[dependencies]
+mycelium-pqc = { workspace = true }
+mycelium-zkp = { workspace = true, features = ["license"], optional = true }
+blake3 = { workspace = true }
+secp256k1 = { version = "0.31", features = ["global-context"] }
+chacha20poly1305 = "0.10"
+nip44 = "0.3.2"
+base64 = "0.22"
+rand = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }

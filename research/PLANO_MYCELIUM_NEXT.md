@@ -33,7 +33,7 @@ Um repositório, uma configuração e um comando de inicialização. Painel com 
 | Leitura BOLT11 | Validação de invoices | Não é nó Lightning nem canal financiado |
 | `chain_sim_4x_v3` e créditos internos | Testes claramente identificados | MYC, mUSD e ATP internos não são receita recebida |
 
-Preservar licença AGPL-3.0 e avisos do código reutilizado. Manter a base antiga durante a migração, sem sobrescrever alterações preexistentes.
+Preservar os avisos e as licenças aplicáveis ao código reutilizado. Consultar a [licença atual do Mycelium](../LICENSE). Manter a base antiga durante a migração, sem sobrescrever alterações preexistentes.
 
 ## Etapas e critérios de conclusão
 

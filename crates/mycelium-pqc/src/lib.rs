@@ -47,6 +47,17 @@ pub fn mlkem_keygen() -> KemKeyPair {
     }
 }
 
+/// Keygen determinístico (FIPS 203 `KeyGen_internal`): `seed = d ‖ z`, 64 B (keyring `mycelium/v1/pq/mlkem1024`).
+pub fn mlkem_keygen_from_seed(seed: &[u8; 64]) -> KemKeyPair {
+    let d: [u8; 32] = seed[..32].try_into().unwrap();
+    let z: [u8; 32] = seed[32..].try_into().unwrap();
+    let (dk, ek) = MlKem1024::generate_deterministic(&d.into(), &z.into());
+    KemKeyPair {
+        public_key: ek.as_bytes().to_vec(),
+        dk_bytes: dk.as_bytes().to_vec(),
+    }
+}
+
 pub fn mlkem_encapsulate(public_key: &[u8]) -> Result<KemEncap, PqcError> {
     type Ek = <MlKem1024 as KemCore>::EncapsulationKey;
     let ek_arr = public_key
@@ -115,5 +126,17 @@ mod tests {
         let enc = mlkem_encapsulate(&restored.public_key).expect("encap com par restaurado");
         let ss = mlkem_decapsulate(restored.private_bytes(), &enc.ciphertext).expect("decap com par restaurado");
         assert_eq!(ss, enc.shared_secret);
+    }
+
+    #[test]
+    fn mlkem_seed_is_deterministic_and_works() {
+        let seed = [7u8; 64];
+        let (a, b) = (mlkem_keygen_from_seed(&seed), mlkem_keygen_from_seed(&seed));
+        assert_eq!(a.public_key, b.public_key);
+        assert_eq!(a.private_bytes(), b.private_bytes());
+        assert_ne!(a.public_key, mlkem_keygen_from_seed(&[8u8; 64]).public_key);
+        let enc = mlkem_encapsulate(&a.public_key).unwrap();
+        assert_eq!(mlkem_decapsulate(a.private_bytes(), &enc.ciphertext).unwrap(), enc.shared_secret);
+        assert_eq!(a.public_key[..4], [0x73, 0xe5, 0x81, 0x3f]); // regressão; KAT FIPS oficial pendente
     }
 }

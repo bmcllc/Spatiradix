@@ -3,6 +3,12 @@
 //! Garante que nenhuma conexão ou pacote DNS vaze para a interface física
 //! se o circuito sofrer instabilidade ou queda abrupta.
 
+pub mod tun2socks;
+pub use tun2socks::{
+    build_ipv4_tcp_packet, build_ipv4_udp_packet, ones_complement_checksum, TunBridgeServer,
+    TunBridgeStats,
+};
+
 use crate::VeilError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

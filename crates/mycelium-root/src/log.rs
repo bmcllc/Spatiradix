@@ -129,49 +129,66 @@ impl Tree {
     pub fn replay(entries: &[Entry]) -> Self {
         let mut t = Tree::default();
         for e in entries {
-            match &e.op {
-                Op::Put {
-                    path,
-                    size,
-                    mtime,
-                    chunks,
-                } => {
-                    let conflict = match t.nodes.get(path) {
-                        None => false,
-                        Some(Node::Dir { .. }) => true,
-                        Some(Node::File { entry, .. }) => e.base.as_deref() != Some(entry.as_str()),
-                    };
-                    let dest = if conflict { conflict_name(path, &e.writer) } else { path.clone() };
-                    t.ensure_parents(&dest);
-                    t.nodes.insert(
-                        dest,
-                        Node::File {
-                            size: *size,
-                            mtime: *mtime,
-                            chunks: chunks.clone(),
-                            entry: e.id.clone(),
-                        },
-                    );
+            t.apply(e);
+        }
+        t
+    }
+
+    /// Aplica uma entrada ao fim do log (ordem de Lamport já respeitada).
+    pub fn apply(&mut self, e: &Entry) {
+        let t = self;
+        match &e.op {
+            Op::Put {
+                path,
+                size,
+                mtime,
+                chunks,
+            } => {
+                let conflict = match t.nodes.get(path) {
+                    None => false,
+                    Some(Node::Dir { .. }) => true,
+                    Some(Node::File { entry, .. }) => e.base.as_deref() != Some(entry.as_str()),
+                };
+                let dest = if conflict { conflict_name(path, &e.writer) } else { path.clone() };
+                t.ensure_parents(&dest);
+                t.nodes.insert(
+                    dest,
+                    Node::File {
+                        size: *size,
+                        mtime: *mtime,
+                        chunks: chunks.clone(),
+                        entry: e.id.clone(),
+                    },
+                );
+            }
+            Op::Mkdir { path } => {
+                if !matches!(t.nodes.get(path), Some(Node::File { .. })) {
+                    t.ensure_parents(path);
+                    t.nodes.insert(path.clone(), Node::Dir { entry: Some(e.id.clone()) });
                 }
-                Op::Mkdir { path } => {
-                    if !matches!(t.nodes.get(path), Some(Node::File { .. })) {
-                        t.ensure_parents(path);
-                        t.nodes.insert(path.clone(), Node::Dir { entry: Some(e.id.clone()) });
+            }
+            Op::Remove { path } => {
+                // remoção baseada numa versão antiga não apaga edição mais nova
+                if let Some(Node::File { entry, .. }) = t.nodes.get(path) {
+                    if e.base.as_deref() != Some(entry.as_str()) {
+                        return;
                     }
                 }
-                Op::Remove { path } => {
-                    // remoção baseada numa versão antiga não apaga edição mais nova
-                    if let Some(Node::File { entry, .. }) = t.nodes.get(path) {
-                        if e.base.as_deref() != Some(entry.as_str()) {
-                            continue;
-                        }
-                    }
-                    let prefix = format!("{path}/");
-                    t.nodes.retain(|p, _| p != path && !p.starts_with(&prefix));
+                // "a b" ordena entre "a" e "a/": os descendentes são contíguos
+                // a partir de "a/", não de "a".
+                t.nodes.remove(path);
+                let prefix = format!("{path}/");
+                let doomed: Vec<String> = t
+                    .nodes
+                    .range(prefix.clone()..)
+                    .take_while(|(p, _)| p.starts_with(&prefix))
+                    .map(|(p, _)| p.clone())
+                    .collect();
+                for p in doomed {
+                    t.nodes.remove(&p);
                 }
             }
         }
-        t
     }
 
     fn ensure_parents(&mut self, path: &str) {
@@ -209,8 +226,9 @@ impl Tree {
     pub fn children(&self, dir: &str) -> Vec<(String, &Node)> {
         let prefix = if dir.is_empty() { String::new() } else { format!("{dir}/") };
         self.nodes
-            .iter()
-            .filter(|(p, _)| p.starts_with(&prefix) && !p[prefix.len()..].contains('/') && p.len() > prefix.len())
+            .range(prefix.clone()..)
+            .take_while(|(p, _)| p.starts_with(&prefix))
+            .filter(|(p, _)| p.len() > prefix.len() && !p[prefix.len()..].contains('/'))
             .map(|(p, n)| (p[prefix.len()..].to_string(), n))
             .collect()
     }
@@ -283,6 +301,26 @@ mod tests {
             op: Op::Remove { path: "x".into() },
         });
         assert!(Tree::replay(&e).get("x").is_some());
+    }
+
+    #[test]
+    fn remove_dir_with_sibling_sorting_between() {
+        let mut e = vec![
+            put("1", 1, "aa", None, "a/x.txt"),
+            put("2", 2, "aa", None, "a b.txt"),
+            put("3", 3, "aa", None, "a-c/y"),
+        ];
+        e.push(Entry {
+            id: "4".into(),
+            lamport: 4,
+            writer: "aa".into(),
+            base: None,
+            op: Op::Remove { path: "a".into() },
+        });
+        let t = Tree::replay(&e);
+        assert!(t.get("a").is_none() && t.get("a/x.txt").is_none());
+        assert!(t.get("a b.txt").is_some() && t.get("a-c/y").is_some());
+        assert_eq!(t.children("").len(), 2);
     }
 
     #[test]

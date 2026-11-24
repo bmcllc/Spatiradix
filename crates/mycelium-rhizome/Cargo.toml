@@ -1,0 +1,34 @@
+[package]
+name = "mycelium-rhizome"
+description = "Mycelium Rhizome — Super-app social soberano P2P (Vídeo/YouTube, Feed/Stories/Instagram, Comunidades/Facebook, Microblog/X, Chat E2EE PQ/WhatsApp) sobre a infraestrutura do Mycelium Network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+license-file.workspace = true
+authors.workspace = true
+
+[dependencies]
+mycelium-core = { workspace = true }
+mycelium-pheromones = { workspace = true }
+mycelium-ghostid = { workspace = true }
+mycelium-pqc = { workspace = true }
+mycelium-pkarr = { workspace = true }
+mycelium-media = { workspace = true }
+mycelium-nostr = { workspace = true }
+mycelium-sporebank = { workspace = true }
+isotope = { workspace = true }
+giggs = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+ed25519-dalek = { workspace = true }
+chacha20poly1305 = "0.10"
+base64 = "0.22"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"

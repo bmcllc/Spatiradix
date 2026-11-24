@@ -199,6 +199,10 @@ impl Field {
             .filter(|s| s.state == SignalState::Resonating)
     }
 
+    pub fn all(&self) -> impl Iterator<Item = &Signal> {
+        self.signals.values()
+    }
+
     pub fn len(&self) -> usize {
         self.signals.len()
     }

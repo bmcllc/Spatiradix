@@ -2,7 +2,8 @@
 name = "mycelium-economy"
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0"
+license.workspace = true
+license-file.workspace = true
 description = "Local-first Mycelium job market, revenue ledger and RV validation"
 
 # The empty [workspace] table that kept this crate isolated until its RV0 data

@@ -4,11 +4,11 @@
 //! A lista [`PUBLIC_STUN_SERVERS`] documenta infra pública partilhável (como DNS) e
 //! alimenta o script de diagnóstico; não torna o CPE um esporocarp.
 
-/// STUN públicos partilhados (substituíveis). Não são esporocarp Mycelium.
+/// STUN públicos partilhados (substituíveis, sem servidores Google). Não são esporocarp Mycelium.
 pub const PUBLIC_STUN_SERVERS: &[&str] = &[
-    "stun.l.google.com:19302",
     "stun.cloudflare.com:3478",
     "stun.nextcloud.com:443",
+    "stun.sipgate.net:3478",
 ];
 
 #[derive(Clone, Debug)]

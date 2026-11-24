@@ -15,8 +15,10 @@ pub enum Asset {
     Btc,
     /// ETH.
     Eth,
-    /// Token nativo Mycelium (MYC).
+    /// Token nativo de reserva Mycelium (MYC — emitido via `mycelium-mint`).
     Myc,
+    /// Moeda unificada da plataforma Mycelium / Cameon PX (CPX — lastreada pela reserva `mycelium-mint`).
+    Cpx,
     /// Token genérico emitido por terceiros.
     Token(u32),
 }
@@ -30,6 +32,7 @@ impl Asset {
             "BTC" => Ok(Asset::Btc),
             "ETH" => Ok(Asset::Eth),
             "MYC" => Ok(Asset::Myc),
+            "CPX" => Ok(Asset::Cpx),
             _ => Err(crate::error::BankError::Invalid(format!("ativo desconhecido: {s}"))),
         }
     }
@@ -42,6 +45,7 @@ impl Asset {
             Asset::Btc => "BTC".into(),
             Asset::Eth => "ETH".into(),
             Asset::Myc => "MYC".into(),
+            Asset::Cpx => "CPX".into(),
             Asset::Token(i) => format!("TKN{i}"),
         }
     }

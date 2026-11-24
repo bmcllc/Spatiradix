@@ -406,10 +406,16 @@ fn substrate_behaviour(
     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     let mdns = if enable_mdns {
-        Toggle::from(Some(mdns::tokio::Behaviour::new(
-            mdns::Config::default(),
-            peer_id,
-        )?))
+        match mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id) {
+            Ok(b) => Toggle::from(Some(b)),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "mDNS local indisponível neste sandbox (ex.: Android untrusted_app) — prosseguindo sem mDNS"
+                );
+                Toggle::from(None)
+            }
+        }
     } else {
         tracing::info!("mDNS desligado — discovery só via seeds/bootstrap");
         Toggle::from(None)

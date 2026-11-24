@@ -1,9 +1,12 @@
 //! `mount`: o Root aparece como uma pasta comum (um "pendrive").
 //!
-//! Leitura reconstrói o arquivo inteiro na abertura; escrita fica num buffer
-//! em memória e vira uma entrada `put` quando o arquivo é fechado. Nada é
-//! gravado no computador: só nas raízes.
+//! Leitura carrega só os pedaços tocados (com cache). Escrita mantém em
+//! memória apenas os pedaços em edição; cada pedaço que fica completo é
+//! cifrado e gravado na hora, então copiar um arquivo de vários GB usa
+//! memória constante. Ao fechar o arquivo, uma entrada `put` vai para o log.
+//! Nada é gravado no computador: só nas raízes.
 
+use crate::chunk::CHUNK_SIZE;
 use crate::log::Node;
 use crate::Vault;
 use fuser::{
@@ -11,17 +14,166 @@ use fuser::{
     ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, Request, TimeOrNow,
 };
 use libc::{EEXIST, EINVAL, EIO, EISDIR, ENOENT, ENOTDIR, ENOTEMPTY};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const TTL: Duration = Duration::from_secs(1);
+const CS: u64 = CHUNK_SIZE as u64;
 
+/// Arquivo aberto: pedaços já gravados + buffers dos pedaços em edição.
 struct Handle {
     path: String,
-    data: Vec<u8>,
-    dirty: bool,
+    size: u64,
+    /// (id, tamanho) do pedaço gravado em cada índice; `None` = zeros.
+    chunks: Vec<Option<(String, usize)>>,
+    dirty: BTreeMap<usize, Vec<u8>>,
+    modified: bool,
+}
+
+impl Handle {
+    fn from_tree(path: String, node: Option<&Node>) -> Self {
+        let (size, chunks) = match node {
+            Some(Node::File { size, chunks, .. }) => {
+                let list = chunks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, id)| Some((id.clone(), (size - i as u64 * CS).min(CS) as usize)))
+                    .collect();
+                (*size, list)
+            }
+            _ => (0, Vec::new()),
+        };
+        Self {
+            path,
+            size,
+            chunks,
+            dirty: BTreeMap::new(),
+            modified: false,
+        }
+    }
+
+    /// Conteúdo atual do pedaço `idx` (sem o padding além do tamanho).
+    fn chunk_data(&self, vault: &Vault, idx: usize) -> Result<Vec<u8>, i32> {
+        if let Some(buf) = self.dirty.get(&idx) {
+            return Ok(buf.clone());
+        }
+        match self.chunks.get(idx) {
+            Some(Some((id, _))) => vault.load_chunk(id).map(|d| (*d).clone()).map_err(|_| EIO),
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    fn read(&self, vault: &Vault, offset: u64, len: usize) -> Result<Vec<u8>, i32> {
+        if offset >= self.size {
+            return Ok(Vec::new());
+        }
+        let end = self.size.min(offset + len as u64);
+        let mut out = Vec::with_capacity((end - offset) as usize);
+        let mut pos = offset;
+        while pos < end {
+            let idx = (pos / CS) as usize;
+            let chunk_end = ((idx as u64 + 1) * CS).min(end);
+            let start = (pos % CS) as usize;
+            let want = (chunk_end - pos) as usize;
+            let data: std::borrow::Cow<'_, [u8]> = match (self.dirty.get(&idx), self.chunks.get(idx)) {
+                (Some(buf), _) => std::borrow::Cow::Borrowed(buf.as_slice()),
+                (None, Some(Some((id, _)))) => {
+                    std::borrow::Cow::Owned((*vault.load_chunk(id).map_err(|_| EIO)?).clone())
+                }
+                _ => std::borrow::Cow::Owned(Vec::new()),
+            };
+            // bytes além do que existe no pedaço são zeros (buraco/expansão)
+            for i in 0..want {
+                out.push(*data.get(start + i).unwrap_or(&0));
+            }
+            pos = chunk_end;
+        }
+        Ok(out)
+    }
+
+    fn write(&mut self, vault: &Vault, offset: u64, data: &[u8]) -> Result<(), i32> {
+        let mut pos = offset;
+        let mut src = data;
+        while !src.is_empty() {
+            let idx = (pos / CS) as usize;
+            let start = (pos % CS) as usize;
+            let take = src.len().min(CHUNK_SIZE - start);
+            if !self.dirty.contains_key(&idx) {
+                let base = self.chunk_data(vault, idx)?;
+                self.dirty.insert(idx, base);
+            }
+            let buf = self.dirty.get_mut(&idx).expect("inserido acima");
+            if buf.len() < start + take {
+                buf.resize(start + take, 0);
+            }
+            buf[start..start + take].copy_from_slice(&src[..take]);
+            if buf.len() == CHUNK_SIZE {
+                // pedaço completo: grava já e libera a memória
+                let full = self.dirty.remove(&idx).expect("existe");
+                let id = vault.store_chunk(&full).map_err(|_| EIO)?;
+                if self.chunks.len() <= idx {
+                    self.chunks.resize(idx + 1, None);
+                }
+                self.chunks[idx] = Some((id, CHUNK_SIZE));
+            }
+            pos += take as u64;
+            src = &src[take..];
+        }
+        self.size = self.size.max(offset + data.len() as u64);
+        self.modified = true;
+        Ok(())
+    }
+
+    fn truncate(&mut self, size: u64) {
+        let n = size.div_ceil(CS) as usize;
+        self.chunks.truncate(n);
+        self.dirty.retain(|&i, _| i < n);
+        if size % CS != 0 {
+            let last = n - 1;
+            let keep = (size % CS) as usize;
+            if let Some(buf) = self.dirty.get_mut(&last) {
+                buf.truncate(keep);
+            }
+        }
+        self.size = size;
+        self.modified = true;
+    }
+
+    /// Grava os pedaços pendentes e registra o arquivo no log.
+    fn commit(&mut self, vault: &mut Vault) -> Result<(), i32> {
+        if !self.modified {
+            return Ok(());
+        }
+        let n = self.size.div_ceil(CS) as usize;
+        let mut ids = Vec::with_capacity(n);
+        for idx in 0..n {
+            let len = (self.size - idx as u64 * CS).min(CS) as usize;
+            let reuse = match (self.dirty.contains_key(&idx), self.chunks.get(idx)) {
+                (false, Some(Some((id, l)))) if *l == len => Some(id.clone()),
+                _ => None,
+            };
+            let id = match reuse {
+                Some(id) => id,
+                None => {
+                    let mut data = self.chunk_data(vault, idx)?;
+                    data.resize(len, 0);
+                    vault.store_chunk(&data).map_err(|_| EIO)?
+                }
+            };
+            ids.push(id);
+        }
+        vault.commit_file(&self.path, self.size, ids.clone()).map_err(|_| EIO)?;
+        self.chunks = ids
+            .into_iter()
+            .enumerate()
+            .map(|(i, id)| Some((id, (self.size - i as u64 * CS).min(CS) as usize)))
+            .collect();
+        self.dirty.clear();
+        self.modified = false;
+        Ok(())
+    }
 }
 
 pub struct RootFs {
@@ -34,10 +186,11 @@ pub struct RootFs {
     uid: u32,
     gid: u32,
     mounted_at: u64,
+    exec: bool,
 }
 
 impl RootFs {
-    pub fn new(vault: Vault) -> Self {
+    pub fn new(vault: Vault, exec: bool) -> Self {
         let mut s = Self {
             vault,
             inodes: HashMap::new(),
@@ -51,6 +204,7 @@ impl RootFs {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
+            exec,
         };
         s.inodes.insert(1, String::new());
         s.paths.insert(String::new(), 1);
@@ -77,21 +231,25 @@ impl RootFs {
         Some(if dir.is_empty() { name.to_string() } else { format!("{dir}/{name}") })
     }
 
-    /// Tamanho visto pelo kernel: buffer sujo aberto vence a árvore.
     fn attr(&mut self, path: &str) -> Option<FileAttr> {
         let open_size = self
             .handles
             .values()
-            .filter(|h| h.path == path && h.dirty)
-            .map(|h| h.data.len() as u64)
+            .filter(|h| h.path == path && h.modified)
+            .map(|h| h.size)
             .max();
         let (kind, size, mtime) = match self.vault.tree().get(path) {
             Some(Node::File { size, mtime, .. }) => (FileType::RegularFile, open_size.unwrap_or(*size), *mtime),
             Some(Node::Dir { .. }) => (FileType::Directory, 0, self.mounted_at),
-            None => (FileType::RegularFile, open_size?, 0),
+            None => (FileType::RegularFile, open_size?, self.mounted_at),
         };
         let ino = self.ino_for(path);
         let t = UNIX_EPOCH + Duration::from_secs(mtime);
+        let perm = match (kind, self.exec) {
+            (FileType::Directory, _) => 0o700,
+            (_, true) => 0o700,
+            _ => 0o600,
+        };
         Some(FileAttr {
             ino,
             size,
@@ -101,7 +259,7 @@ impl RootFs {
             ctime: t,
             crtime: t,
             kind,
-            perm: if kind == FileType::Directory { 0o700 } else { 0o600 },
+            perm,
             nlink: if kind == FileType::Directory { 2 } else { 1 },
             uid: self.uid,
             gid: self.gid,
@@ -111,29 +269,20 @@ impl RootFs {
         })
     }
 
-    fn open_handle(&mut self, path: String, load: bool) -> Result<u64, i32> {
-        let data = if load {
-            match self.vault.read_file(&path) {
-                Ok(d) => d,
-                Err(_) => return Err(EIO),
-            }
-        } else {
-            Vec::new()
-        };
+    fn new_handle(&mut self, path: String, truncate: bool) -> u64 {
+        let mut h = Handle::from_tree(path.clone(), self.vault.tree().get(&path));
+        if truncate {
+            h.truncate(0);
+        }
         let fh = self.next_fh;
         self.next_fh += 1;
-        self.handles.insert(fh, Handle { path, data, dirty: !load });
-        Ok(fh)
+        self.handles.insert(fh, h);
+        fh
     }
 
     fn commit(&mut self, fh: u64) -> Result<(), i32> {
         let Some(h) = self.handles.get_mut(&fh) else { return Ok(()) };
-        if !h.dirty {
-            return Ok(());
-        }
-        let (path, data) = (h.path.clone(), h.data.clone());
-        h.dirty = false;
-        self.vault.write_file(&path, &data).map_err(|_| EIO)
+        h.commit(&mut self.vault)
     }
 }
 
@@ -177,14 +326,10 @@ impl Filesystem for RootFs {
             // handle (truncate(2) direto): abre, aplica, grava e fecha já.
             let (fh, temporary) = match fh.filter(|f| self.handles.contains_key(f)) {
                 Some(f) => (f, false),
-                None => match self.open_handle(path.clone(), self.vault.tree().get(&path).is_some()) {
-                    Ok(f) => (f, true),
-                    Err(e) => return reply.error(e),
-                },
+                None => (self.new_handle(path.clone(), false), true),
             };
             if let Some(h) = self.handles.get_mut(&fh) {
-                h.data.resize(size as usize, 0);
-                h.dirty = true;
+                h.truncate(size);
             }
             if temporary {
                 let r = self.commit(fh);
@@ -283,11 +428,8 @@ impl Filesystem for RootFs {
 
     fn open(&mut self, _req: &Request<'_>, ino: u64, flags: i32, reply: ReplyOpen) {
         let Some(path) = self.inodes.get(&ino).cloned() else { return reply.error(ENOENT) };
-        let truncate = flags & libc::O_TRUNC != 0;
-        match self.open_handle(path, !truncate) {
-            Ok(fh) => reply.opened(fh, 0),
-            Err(e) => reply.error(e),
-        }
+        let fh = self.new_handle(path, flags & libc::O_TRUNC != 0);
+        reply.opened(fh, 0);
     }
 
     fn create(
@@ -301,10 +443,7 @@ impl Filesystem for RootFs {
         reply: ReplyCreate,
     ) {
         let Some(path) = self.child(parent, name) else { return reply.error(EINVAL) };
-        let fh = match self.open_handle(path.clone(), false) {
-            Ok(f) => f,
-            Err(e) => return reply.error(e),
-        };
+        let fh = self.new_handle(path.clone(), true);
         match self.attr(&path) {
             Some(a) => reply.created(&TTL, &a, 0, fh, 0),
             None => reply.error(EIO),
@@ -323,9 +462,10 @@ impl Filesystem for RootFs {
         reply: ReplyData,
     ) {
         let Some(h) = self.handles.get(&fh) else { return reply.error(EIO) };
-        let start = (offset.max(0) as usize).min(h.data.len());
-        let end = (start + size as usize).min(h.data.len());
-        reply.data(&h.data[start..end]);
+        match h.read(&self.vault, offset.max(0) as u64, size as usize) {
+            Ok(d) => reply.data(&d),
+            Err(e) => reply.error(e),
+        }
     }
 
     fn write(
@@ -341,13 +481,10 @@ impl Filesystem for RootFs {
         reply: ReplyWrite,
     ) {
         let Some(h) = self.handles.get_mut(&fh) else { return reply.error(EIO) };
-        let off = offset.max(0) as usize;
-        if h.data.len() < off + data.len() {
-            h.data.resize(off + data.len(), 0);
+        match h.write(&self.vault, offset.max(0) as u64, data) {
+            Ok(()) => reply.written(data.len() as u32),
+            Err(e) => reply.error(e),
         }
-        h.data[off..off + data.len()].copy_from_slice(data);
-        h.dirty = true;
-        reply.written(data.len() as u32);
     }
 
     fn flush(&mut self, _req: &Request<'_>, _ino: u64, fh: u64, _lock: u64, reply: ReplyEmpty) {
@@ -377,7 +514,8 @@ impl Filesystem for RootFs {
 
     fn readdir(&mut self, _req: &Request<'_>, ino: u64, _fh: u64, offset: i64, mut reply: ReplyDirectory) {
         let Some(dir) = self.inodes.get(&ino).cloned() else { return reply.error(ENOENT) };
-        let mut entries: Vec<(u64, FileType, String)> = vec![(ino, FileType::Directory, ".".into()), (1, FileType::Directory, "..".into())];
+        let mut entries: Vec<(u64, FileType, String)> =
+            vec![(ino, FileType::Directory, ".".into()), (1, FileType::Directory, "..".into())];
         let children: Vec<(String, bool)> = self
             .vault
             .tree()
@@ -399,19 +537,22 @@ impl Filesystem for RootFs {
     }
 
     fn statfs(&mut self, _req: &Request<'_>, _ino: u64, reply: ReplyStatfs) {
-        reply.statfs(1 << 20, 1 << 19, 1 << 19, 1 << 20, 1 << 19, 4096, 255, 4096);
+        reply.statfs(1 << 24, 1 << 23, 1 << 23, 1 << 20, 1 << 19, 4096, 255, 4096);
     }
 }
 
 /// Monta e bloqueia até desmontar (`fusermount3 -u <ponto>` ou Ctrl-C).
-pub fn mount(vault: Vault, mountpoint: &Path) -> Result<(), crate::RootError> {
-    let opts = vec![
+/// `exec`: permite executar binários a partir do Root (jogos, Proton).
+pub fn mount(vault: Vault, mountpoint: &Path, exec: bool) -> Result<(), crate::RootError> {
+    let mut opts = vec![
         MountOption::FSName("mycelium-root".into()),
         MountOption::Subtype("root".into()),
         MountOption::NoDev,
         MountOption::NoSuid,
-        MountOption::NoExec,
         MountOption::DefaultPermissions,
     ];
-    fuser::mount2(RootFs::new(vault), mountpoint, &opts).map_err(|e| crate::RootError::Msg(format!("mount: {e}")))
+    if !exec {
+        opts.push(MountOption::NoExec);
+    }
+    fuser::mount2(RootFs::new(vault, exec), mountpoint, &opts).map_err(|e| crate::RootError::Msg(format!("mount: {e}")))
 }

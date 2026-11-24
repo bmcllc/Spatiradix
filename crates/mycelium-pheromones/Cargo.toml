@@ -4,6 +4,7 @@ description = "Reconhecimento Químico: identidade e confiança via feromônios 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-core = { workspace = true }

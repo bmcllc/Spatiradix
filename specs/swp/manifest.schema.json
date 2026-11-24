@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SWP-Ω 1.0 public static world envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest", "signature"],
+  "properties": {
+    "manifest": { "$ref": "#/$defs/manifest" },
+    "signature": { "type": "string", "pattern": "^[0-9a-f]{128}(?![\\s\\S])" }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?![\\s\\S])"
+    },
+    "cid": { "type": "string", "pattern": "^Qm[0-9a-f]{64}(?![\\s\\S])" },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+(?![\\s\\S])"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plot", "path", "digest"],
+      "properties": {
+        "plot": { "$ref": "#/$defs/cid" },
+        "path": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(?:[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*/)*[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.glb(?![\\s\\S])"
+        },
+        "digest": { "$ref": "#/$defs/cid" }
+      }
+    },
+    "portal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "target"],
+      "properties": {
+        "label": { "$ref": "#/$defs/label" },
+        "target": {
+          "type": "string",
+          "pattern": "^swp://[0-9a-f]{64}/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?![\\s\\S])"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version", "owner_public_key", "service", "title", "revision",
+        "previous", "visibility", "spatial", "scene", "lod", "portals"
+      ],
+      "properties": {
+        "version": { "const": 1 },
+        "owner_public_key": { "type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])" },
+        "service": { "$ref": "#/$defs/slug" },
+        "title": { "$ref": "#/$defs/label" },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "previous": { "type": ["string", "null"] },
+        "visibility": { "const": "public" },
+        "spatial": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class", "seed", "galaxies"],
+          "properties": {
+            "class": { "enum": ["planet", "ringed_planet", "moon", "station"] },
+            "seed": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+            "galaxies": {
+              "type": "array",
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/slug" }
+            }
+          }
+        },
+        "scene": { "$ref": "#/$defs/asset" },
+        "lod": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/asset" } },
+        "portals": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/portal" } }
+      },
+      "if": { "properties": { "revision": { "const": 1 } } },
+      "then": { "properties": { "previous": { "type": "null" } } },
+      "else": { "properties": { "previous": { "$ref": "#/$defs/cid" } } }
+    }
+  }
+}

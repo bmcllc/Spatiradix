@@ -1,14 +1,15 @@
 //! Inbound Listener (Webhooks Axum) para liquidação assíncrona de Pix (`cob`/`cobv`),
 //! SWIFT (`pacs.002`) e BRICS Pay (DCMS), atualizando o `TransactionState` no `SporeBank`.
 
-use crate::core::PaymentIntent;
+use crate::core::TransactionState;
 use crate::engine::MetaGatewayEngine;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use subtle::ConstantTimeEq;
 
 /// Estado compartilhado do servidor de webhooks inbound.
 pub struct WebhookServiceState {
@@ -24,8 +25,11 @@ impl WebhookServiceState {
     }
 
     fn verify_callback(&self, canonical: &str, provided_hex: &str) -> bool {
-        let expected = Self::sign_callback(&self.webhook_secret, canonical);
-        expected == provided_hex.trim()
+        let Ok(provided) = hex::decode(provided_hex.trim()) else {
+            return false;
+        };
+        let expected = blake3::keyed_hash(&self.webhook_secret, canonical.as_bytes());
+        bool::from(provided.as_slice().ct_eq(expected.as_bytes()))
     }
 }
 
@@ -68,7 +72,6 @@ pub fn build_webhook_router(state: Arc<Mutex<WebhookServiceState>>) -> Router {
         .route("/webhooks/pix", post(handle_pix_webhook))
         .route("/webhooks/swift", post(handle_swift_webhook))
         .route("/webhooks/brics", post(handle_brics_webhook))
-        .route("/intents/{id}", get(handle_get_intent))
         .with_state(state)
 }
 
@@ -81,28 +84,60 @@ async fn handle_pix_webhook(
         .lock()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned".into()))?;
     if !guard.verify_callback(&canonical, &ev.signature_hex) {
-        return Err((StatusCode::UNAUTHORIZED, "assinatura de webhook Pix inválida".into()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "assinatura de webhook Pix inválida".into(),
+        ));
     }
 
     let mut intent = guard
         .engine
         .recall_by_external_ref(&ev.txid)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("txid `{}` não encontrado", ev.txid)))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("txid `{}` não encontrado", ev.txid),
+            )
+        })?;
 
+    if let TransactionState::Settled { external_tx_id, .. } = &intent.state {
+        if ev.status.eq_ignore_ascii_case("CONCLUIDA") && external_tx_id == &ev.end_to_end_id {
+            return Ok(Json(WebhookAck {
+                intent_id: intent.id.clone(),
+                state: intent.state.label().into(),
+                sporebank_cid: guard
+                    .engine
+                    .latest_sporebank_cid(&intent.id)
+                    .map(|c| c.to_string()),
+            }));
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            "Pix settlement already finalized with different evidence".into(),
+        ));
+    }
     if ev.status.eq_ignore_ascii_case("CONCLUIDA") {
         guard
             .engine
             .confirm_settlement(&mut intent, ev.end_to_end_id)
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
-    } else {
+    } else if ev.status.eq_ignore_ascii_case("REJEITADA") {
         guard
             .engine
             .fail_intent(&mut intent, 422, format!("pix status: {}", ev.status))
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
+    } else {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Pix status {} requires a distinct transition", ev.status),
+        ));
     }
 
-    let cid = guard.engine.latest_sporebank_cid(&intent.id).map(|c| c.to_string());
+    let cid = guard
+        .engine
+        .latest_sporebank_cid(&intent.id)
+        .map(|c| c.to_string());
     Ok(Json(WebhookAck {
         intent_id: intent.id,
         state: intent.state.label().to_string(),
@@ -114,37 +149,75 @@ async fn handle_swift_webhook(
     State(state): State<Arc<Mutex<WebhookServiceState>>>,
     Json(ev): Json<SwiftWebhookEvent>,
 ) -> Result<Json<WebhookAck>, (StatusCode, String)> {
-    let canonical = format!("swift:{}:{}", ev.uetr, ev.status_code);
+    let canonical = format!(
+        "swift:{}:{}:{}",
+        ev.uetr,
+        ev.status_code,
+        ev.reason.as_deref().unwrap_or("")
+    );
     let mut guard = state
         .lock()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned".into()))?;
     if !guard.verify_callback(&canonical, &ev.signature_hex) {
-        return Err((StatusCode::UNAUTHORIZED, "assinatura de webhook SWIFT inválida".into()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "assinatura de webhook SWIFT inválida".into(),
+        ));
     }
 
     let mut intent = guard
         .engine
         .recall_by_external_ref(&ev.uetr)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("UETR `{}` não encontrado", ev.uetr)))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("UETR `{}` não encontrado", ev.uetr),
+            )
+        })?;
 
+    if let TransactionState::Settled { external_tx_id, .. } = &intent.state {
+        if ev.status_code.eq_ignore_ascii_case("ACSC") && external_tx_id == &ev.uetr {
+            return Ok(Json(WebhookAck {
+                intent_id: intent.id.clone(),
+                state: intent.state.label().into(),
+                sporebank_cid: guard
+                    .engine
+                    .latest_sporebank_cid(&intent.id)
+                    .map(|c| c.to_string()),
+            }));
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            "SWIFT settlement already finalized".into(),
+        ));
+    }
     if ev.status_code.eq_ignore_ascii_case("ACSC") {
         guard
             .engine
             .confirm_settlement(&mut intent, ev.uetr)
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
-    } else {
+    } else if ev.status_code.eq_ignore_ascii_case("RJCT") {
         guard
             .engine
             .fail_intent(
                 &mut intent,
                 502,
-                ev.reason.unwrap_or_else(|| format!("SWIFT pacs.002 {}", ev.status_code)),
+                ev.reason
+                    .unwrap_or_else(|| format!("SWIFT pacs.002 {}", ev.status_code)),
             )
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
+    } else {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("SWIFT status {} is not final", ev.status_code),
+        ));
     }
 
-    let cid = guard.engine.latest_sporebank_cid(&intent.id).map(|c| c.to_string());
+    let cid = guard
+        .engine
+        .latest_sporebank_cid(&intent.id)
+        .map(|c| c.to_string());
     Ok(Json(WebhookAck {
         intent_id: intent.id,
         state: intent.state.label().to_string(),
@@ -161,7 +234,10 @@ async fn handle_brics_webhook(
         .lock()
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned".into()))?;
     if !guard.verify_callback(&canonical, &ev.signature_hex) {
-        return Err((StatusCode::UNAUTHORIZED, "assinatura de webhook BRICS inválida".into()));
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "assinatura de webhook BRICS inválida".into(),
+        ));
     }
 
     let mut intent = guard
@@ -175,37 +251,47 @@ async fn handle_brics_webhook(
             )
         })?;
 
+    if let TransactionState::Settled { external_tx_id, .. } = &intent.state {
+        if ev.status.eq_ignore_ascii_case("SETTLED") && external_tx_id == &ev.dcms_tx_id {
+            return Ok(Json(WebhookAck {
+                intent_id: intent.id.clone(),
+                state: intent.state.label().into(),
+                sporebank_cid: guard
+                    .engine
+                    .latest_sporebank_cid(&intent.id)
+                    .map(|c| c.to_string()),
+            }));
+        }
+        return Err((
+            StatusCode::CONFLICT,
+            "DCMS settlement already finalized".into(),
+        ));
+    }
     if ev.status.eq_ignore_ascii_case("SETTLED") {
         guard
             .engine
             .confirm_settlement(&mut intent, ev.dcms_tx_id)
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
-    } else {
+    } else if ev.status.eq_ignore_ascii_case("FAILED") || ev.status.eq_ignore_ascii_case("REJECTED")
+    {
         guard
             .engine
             .fail_intent(&mut intent, 502, format!("DCMS status: {}", ev.status))
             .map_err(|e| (StatusCode::CONFLICT, e.to_string()))?;
+    } else {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("DCMS status {} is not final", ev.status),
+        ));
     }
 
-    let cid = guard.engine.latest_sporebank_cid(&intent.id).map(|c| c.to_string());
+    let cid = guard
+        .engine
+        .latest_sporebank_cid(&intent.id)
+        .map(|c| c.to_string());
     Ok(Json(WebhookAck {
         intent_id: intent.id,
         state: intent.state.label().to_string(),
         sporebank_cid: cid,
     }))
-}
-
-async fn handle_get_intent(
-    State(state): State<Arc<Mutex<WebhookServiceState>>>,
-    Path(id): Path<String>,
-) -> Result<Json<PaymentIntent>, (StatusCode, String)> {
-    let guard = state
-        .lock()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "lock poisoned".into()))?;
-    let intent = guard
-        .engine
-        .recall_by_id(&id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("intent `{id}` não encontrado")))?;
-    Ok(Json(intent))
 }

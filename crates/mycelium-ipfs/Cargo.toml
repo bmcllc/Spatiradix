@@ -4,6 +4,7 @@ description = "Blockstore local Fase 4 (Blake3 ContentId) — sem bitswap WAN"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-core = { workspace = true }

@@ -75,6 +75,14 @@ impl MetaGatewayEngine {
         self
     }
 
+    fn require_encrypted_store(&self) -> Result<(), GatewayError> {
+        if self.sporebank.as_ref().is_some_and(SporebankIntentStore::is_encrypted) {
+            Ok(())
+        } else {
+            Err(GatewayError::AdapterUnavailable("sovereign-encrypted-store"))
+        }
+    }
+
     pub fn chronicle_head(&self) -> [u8; 32] {
         self.chronicle_head
     }
@@ -111,6 +119,8 @@ impl MetaGatewayEngine {
         receiver_id: impl Into<String>,
         compliance_metadata: serde_json::Value,
     ) -> Result<ExecutionOutcome, GatewayError> {
+        // Refuse even identity discovery when the private audit store is absent.
+        self.require_encrypted_store()?;
         let sender = sender_did.into();
         if PkarrIdentityResolver::extract_zbase32(&sender).is_some() {
             let _ = self.pkarr.resolve_route(&sender)?;
@@ -144,8 +154,34 @@ impl MetaGatewayEngine {
             intent.gateway = gw;
         }
 
+        // Sovereign-by-default: refuse payments if their audit state would
+        // be lost or persisted as plaintext. No implicit fallback.
+        self.require_encrypted_store()?;
+
         // 1. Compliance-as-Code
         self.compliance.enforce(&intent)?;
+        // Third-party rails reveal a recipient and amount outside Mycelium.
+        // Require explicit per-intent opt-in before even preparing their payload.
+        if !matches!(intent.gateway, GatewayType::MycRail)
+            && intent.compliance_metadata.get("external_disclosure_consent")
+                .and_then(|v| v.as_bool()) != Some(true)
+        {
+            return Err(GatewayError::ComplianceViolation {
+                rule: "external_disclosure_consent",
+                detail: "consentimento explícito para expor dados ao trilho externo é obrigatório".into(),
+            });
+        }
+        // Refuse fake settlement while ledger posting is not connected.
+        if matches!(intent.gateway, GatewayType::MycRail) {
+            return Err(GatewayError::AdapterUnavailable("myc-ledger-settlement"));
+        }
+        // Reject repeated intent identifiers until persisted replay receipts exist.
+        if self.recall_by_id(&intent.id)?.is_some() {
+            return Err(GatewayError::InvalidTarget(format!(
+                "duplicate intent {}",
+                intent.id
+            )));
+        }
 
         // 2. Selo Pós-Quântico + Prova de Intenção no Lattice
         let canonical = intent.canonical_bytes();
@@ -164,12 +200,12 @@ impl MetaGatewayEngine {
             signature_hex: hex::encode(sig.to_bytes()),
             pedersen_commit_hex: hex::encode(commit),
         })?;
-        self.chronicle_head = next_chronicle;
-
         // 2b. Persistência imediata no SporeBank antes do despacho externo
         if let Some(store) = self.sporebank.as_mut() {
             store.persist_intent(&intent, None)?;
         }
+        // Advance the head only after durable pre-dispatch persistence succeeds.
+        self.chronicle_head = next_chronicle;
 
         // 3. Despacho para o adaptador correspondente
         let receipt = match intent.gateway {
@@ -215,6 +251,8 @@ impl MetaGatewayEngine {
                     return Err(GatewayError::AdapterUnavailable("brics"));
                 }
             }
+            // This dispatch remains unreachable with preflight rejecting MYC;
+            // retain it for compilability when optional adapters are disabled.
             GatewayType::MycRail => self.myc_rail.dispatch(&intent)?,
         };
 
@@ -244,16 +282,19 @@ impl MetaGatewayEngine {
         intent: &mut PaymentIntent,
         external_tx_id: impl Into<String>,
     ) -> Result<(), GatewayError> {
+        self.require_encrypted_store()?;
         let tx_id = external_tx_id.into();
         let (myc_micros, usdc_micros) = intent.myc_usdc_parity(&self.monetary_policy);
-        intent.transition_to(TransactionState::Settled {
+        let mut committed = intent.clone();
+        committed.transition_to(TransactionState::Settled {
             external_tx_id: tx_id.clone(),
             myc_micros,
             usdc_equivalent_micros: usdc_micros,
         })?;
         if let Some(store) = self.sporebank.as_mut() {
-            store.persist_intent(intent, Some(&tx_id))?;
+            store.persist_intent(&committed, Some(&tx_id))?;
         }
+        *intent = committed;
         Ok(())
     }
 
@@ -264,13 +305,16 @@ impl MetaGatewayEngine {
         code: u32,
         reason: impl Into<String>,
     ) -> Result<(), GatewayError> {
-        intent.transition_to(TransactionState::Failed {
+        self.require_encrypted_store()?;
+        let mut committed = intent.clone();
+        committed.transition_to(TransactionState::Failed {
             code,
             reason: reason.into(),
         })?;
         if let Some(store) = self.sporebank.as_mut() {
-            store.persist_intent(intent, None)?;
+            store.persist_intent(&committed, None)?;
         }
+        *intent = committed;
         Ok(())
     }
 }

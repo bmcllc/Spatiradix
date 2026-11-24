@@ -40,14 +40,18 @@ members = [
     "crates/mycelium-royalty",
     "crates/mycelium-keyring",
     "crates/mycelium-pay",
+    "crates/mycelium-pqcripto",
     "crates/mycelium-mint",
     "crates/mycelium-meta-gateway",
+    "crates/mycelium-rhizome",
+    "crates/mycelium-android-forge",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0"
+license = "LicenseRef-Mycelium-Individual-1.0"
+license-file = "LICENSE"
 repository = "https://github.com/bmcc-DEV/mycelium-network"
 authors = ["The Lattice"]
 
@@ -88,6 +92,7 @@ mycelium-royalty = { path = "crates/mycelium-royalty" }
 mycelium-pay = { path = "crates/mycelium-pay" }
 mycelium-mint = { path = "crates/mycelium-mint" }
 mycelium-meta-gateway = { path = "crates/mycelium-meta-gateway" }
+mycelium-rhizome = { path = "crates/mycelium-rhizome" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

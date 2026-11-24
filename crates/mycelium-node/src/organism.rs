@@ -207,6 +207,10 @@ pub struct Organism {
     pending_mint_claims: Vec<mycelium_mint::WorkClaim>,
     /// Atestados de esporocarpos agrupados por `batch_root` da época ativa.
     pending_mint_attestations: HashMap<[u8; 32], Vec<mycelium_mint::SporocarpAttestation>>,
+    /// Recibos liquidados via quórum P2P pendentes de espelhamento na reserva CPX do `mycelium-bank`.
+    settled_mint_receipts: Vec<mycelium_mint::MintReceipt>,
+    /// Métricas efêmeras de respostas 2xx do Event Horizon (sem identidade do pagador).
+    habitat_deliveries: HashMap<String, singularity::DeliveryStats>,
     /// Supreme Meta-Gateway (Pix, SWIFT CSP, BRICS Pay e trilho MYC estilo USDC).
     meta_gateway: mycelium_meta_gateway::MetaGatewayEngine,
     #[cfg(feature = "veil")]
@@ -215,6 +219,12 @@ pub struct Organism {
     veil_socks5_handle: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "veil")]
     veil_socks5_addr: Option<std::net::SocketAddr>,
+    #[cfg(feature = "veil")]
+    veil_tun_handle: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(feature = "veil")]
+    veil_tun_addr: Option<std::net::SocketAddr>,
+    #[cfg(feature = "veil")]
+    veil_tun_stats: Option<std::sync::Arc<mycelium_veil::TunBridgeStats>>,
     #[cfg(feature = "veil")]
     veil_mode: Option<String>,
     #[cfg(feature = "veil")]
@@ -328,6 +338,21 @@ pub struct Organism {
     s1_live_inbox: VecDeque<(u64, String)>,
     /// Estado em RAM da ponte AEX × Mycelium (chaves efêmeras zeroized on drop + inbox DTN AEX).
     aex_bridge: crate::aex_bridge::AexBridgeState,
+    /// Motor soberano do Mycelium Rhizome compartilhado com o ion HTTP `/rhizome/`.
+    rhizome: std::sync::Arc<std::sync::Mutex<mycelium_rhizome::RhizomeStore>>,
+    rhizome_outbound_tx: mpsc::UnboundedSender<crate::rhizome_ion::RhizomeOutbound>,
+    rhizome_outbound_rx: Option<mpsc::UnboundedReceiver<crate::rhizome_ion::RhizomeOutbound>>,
+    /// Fila cadenciada de fatias de mídia/vídeo (≤ 32 KiB) para replicação suave sem travar gossipsub.
+    rhizome_media_queue: VecDeque<mycelium_rhizome::MediaChunkPacket>,
+    /// Cooldown por `asset_cid` para respostas a `RhizomeMediaWant` (evita rajadas duplicadas).
+    rhizome_want_served: HashMap<String, Instant>,
+    /// Telemetria real de retransmissão P2P de chunks Rhizome/MMP.
+    rhizome_chunks_relayed: u64,
+    rhizome_bytes_relayed: u64,
+    rhizome_reward_bytes_acc: u64,
+    rhizome_relay_log: VecDeque<crate::rhizome_ion::RelayLogEntry>,
+    rhizome_volunteer_donor: bool,
+    rhizome_device_type: String,
 }
 
 /// Relay Nostr padrão do modo anônimo: aceita WebSocket vindo de saídas Tor
@@ -630,10 +655,25 @@ impl Organism {
             ed25519_dalek::SigningKey::from_bytes(&gland.seed()),
             gland.verifying_key().as_bytes(),
         );
-        if let Ok(intent_store) =
-            mycelium_meta_gateway::SporebankIntentStore::open(&config.home, gland.node_id())
-        {
+        // The node may prepare a financial intent only when the operator
+        // supplied an independent encryption key (not derived from public NodeId).
+        // No silent fallback to plaintext SporeBank.
+        if let Ok(key_hex) = std::env::var("MYCELIUM_GATEWAY_VAULT_KEY") {
+            // Zeroize the environment-string copy, which is sensitive plaintext.
+            let key_hex = zeroize::Zeroizing::new(key_hex);
+            let mut key = [0u8; 32];
+            hex::decode_to_slice(key_hex.trim(), &mut key)
+                .map_err(|_| OrganismError::Msg(
+                    "MYCELIUM_GATEWAY_VAULT_KEY must be exactly 64 hex characters".into()))?;
+            let intent_store = mycelium_meta_gateway::SporebankIntentStore::open_encrypted(
+                &config.home, gland.node_id(), key,
+            ).map_err(|e| OrganismError::Msg(
+                format!("encrypted Meta-Gateway store unavailable: {e}")))?;
             meta_gateway = meta_gateway.with_sporebank(intent_store);
+        } else {
+            tracing::warn!(
+                "Meta-Gateway financeiro bloqueado: configure                  MYCELIUM_GATEWAY_VAULT_KEY com segredo independente;                  não existe fallback para texto claro"
+            );
         }
         meta_gateway.pix = Some(mycelium_meta_gateway::adapters::PixAdapter {
             psp_endpoint: "https://pix.mycelium.local/v2".into(),
@@ -694,11 +734,24 @@ impl Organism {
             None
         };
         let (nostr_found_tx, nostr_found_rx) = mpsc::unbounded_channel();
+        let (rhizome_outbound_tx, rhizome_outbound_rx) = mpsc::unbounded_channel();
+        let mut rhizome_store = mycelium_rhizome::RhizomeStore::open(&config.home)
+            .map_err(|e| OrganismError::Msg(format!("rhizome init: {e}")))?;
         let catalog = mycelium_store::StoreCatalog::open(&config.home)
             .map_err(|e| OrganismError::Msg(e.to_string()))?;
         let assets = crate::assets::AssetRegistry::open(&config.home)
             .map_err(|e| OrganismError::Msg(e.to_string()))?;
         let ghost = ghost_for_node(gland.seed());
+        let _ = rhizome_store.set_wallet_pubkey_hex(ghost.nostr_pubkey_hex());
+        let wallet_pk = ghost.nostr_pubkey();
+        let initial_transfer_nonce = ledger
+            .recent_transfers()
+            .iter()
+            .filter(|t| t.payload.from == wallet_pk)
+            .map(|t| t.payload.nonce)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let mut org = Self {
             store,
             gland,
@@ -745,6 +798,8 @@ impl Organism {
             mint_engine,
             pending_mint_claims: Vec::new(),
             pending_mint_attestations: HashMap::new(),
+            settled_mint_receipts: Vec::new(),
+            habitat_deliveries: HashMap::new(),
             meta_gateway,
             #[cfg(feature = "veil")]
             veil_engine: None,
@@ -752,6 +807,12 @@ impl Organism {
             veil_socks5_handle: None,
             #[cfg(feature = "veil")]
             veil_socks5_addr: config.veil_socks5_addr,
+            #[cfg(feature = "veil")]
+            veil_tun_handle: None,
+            #[cfg(feature = "veil")]
+            veil_tun_addr: None,
+            #[cfg(feature = "veil")]
+            veil_tun_stats: None,
             #[cfg(feature = "veil")]
             veil_mode: config.veil_mode,
             #[cfg(feature = "veil")]
@@ -803,7 +864,7 @@ impl Organism {
             home: config.home.clone(),
             ghost,
             assets,
-            transfer_nonce: 0,
+            transfer_nonce: initial_transfer_nonce,
             ion_replica_peers: HashMap::new(),
             ion_replica_heartbeat: HashMap::new(),
             peer_ions: HashMap::new(),
@@ -816,6 +877,17 @@ impl Organism {
             pending_accepted_migrations: HashSet::new(),
             s1_live_inbox: VecDeque::new(),
             aex_bridge: crate::aex_bridge::AexBridgeState::default(),
+            rhizome: std::sync::Arc::new(std::sync::Mutex::new(rhizome_store)),
+            rhizome_outbound_tx,
+            rhizome_outbound_rx: Some(rhizome_outbound_rx),
+            rhizome_media_queue: VecDeque::new(),
+            rhizome_want_served: HashMap::new(),
+            rhizome_chunks_relayed: 0,
+            rhizome_bytes_relayed: 0,
+            rhizome_reward_bytes_acc: 0,
+            rhizome_relay_log: VecDeque::new(),
+            rhizome_volunteer_donor: true,
+            rhizome_device_type: crate::rhizome_ion::local_device_type().to_string(),
         };
 
         // Restaura catálogo de peers do estado persistido.
@@ -1195,8 +1267,7 @@ impl Organism {
         let sig: [u8; 64] = sig
             .try_into()
             .map_err(|_| "assinatura precisa de 64 bytes".to_string())?;
-        let hash = mycelium_core::ContentId::of(&tx.canonical_bytes()).0;
-        mycelium_ghostid::GhostId::verify_nostr_event(&p.from, &hash, &sig)
+        mycelium_ghostid::GhostId::verify(&p.from, &tx.canonical_bytes(), &sig)
             .map_err(|_| "assinatura Schnorr inválida".to_string())?;
 
         let my = self.wallet_pubkey();
@@ -2246,6 +2317,13 @@ impl Organism {
                 let id = self.bank.absorb_public(&bytes)?;
                 let _ = self.hyphae.dht_store_local(dht_key(&id), bytes.clone());
                 let _ = self.hyphae.dht_put(dht_key(&id), bytes);
+                if plot.message.starts_with("rhizome:") {
+                    if let Ok(mut r) = self.rhizome.lock() {
+                        if let Err(e) = r.absorb_plot(&plot) {
+                            tracing::warn!(plot = %id.short(), "rhizome absorb plot: {e}");
+                        }
+                    }
+                }
                 tracing::info!(plot = %id.short(), "spore print absorvido");
             }
             Envelope::SporeManifest { holder, ids } => {
@@ -2333,6 +2411,13 @@ impl Organism {
                 }
             }
             Envelope::AtomSync { key, atom } => {
+                if key.starts_with("rhizome/story/") {
+                    if let Ok(mut r) = self.rhizome.lock() {
+                        if let Err(e) = r.absorb_isotope_story(&atom) {
+                            tracing::warn!(%key, "rhizome story isotope rejeitado: {e}");
+                        }
+                    }
+                }
                 if self.nucleus.owns(&key) {
                     self.nucleus.absorb(&key, atom);
                     tracing::info!(%key, "atom sync absorvido (dono do shard)");
@@ -2687,9 +2772,1073 @@ impl Organism {
             } => {
                 self.handle_mint_settled(epoch, receipts);
             }
+            Envelope::RhizomeEvent { event } => {
+                let missing = if let Ok(mut r) = self.rhizome.lock() {
+                    if let Err(e) = r.absorb_sync_envelope(event.clone()) {
+                        tracing::warn!("rhizome sync envelope rejeitado: {e}");
+                        Vec::new()
+                    } else {
+                        r.missing_media_for_envelope(&event)
+                    }
+                } else {
+                    Vec::new()
+                };
+                for (asset_cid, is_video, missing_indices) in missing {
+                    if let Ok(encoded) = (Envelope::RhizomeMediaWant {
+                        asset_cid,
+                        is_video,
+                        missing_indices,
+                    })
+                    .encode()
+                    {
+                        let _ = self.hyphae.broadcast_lattice(encoded);
+                    }
+                }
+            }
+            Envelope::RhizomeChat { envelope } => {
+                let maybe_receipt = if let Ok(mut r) = self.rhizome.lock() {
+                    match r.absorb_sealed_chat(envelope) {
+                        Ok((_msg, receipt)) => receipt,
+                        Err(e) => {
+                            tracing::warn!("rhizome chat PQ rejeitado: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                if let Some(receipt) = maybe_receipt {
+                    if let Ok(to) = receipt.original_sender_node_id.parse::<NodeId>() {
+                        self.send_direct(to, Envelope::RhizomeReceipt { receipt });
+                    }
+                }
+            }
+            Envelope::RhizomeReceipt { receipt } => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    if let Err(e) = r.absorb_receipt(receipt) {
+                        tracing::warn!("rhizome receipt rejeitado: {e}");
+                    }
+                }
+            }
+            Envelope::RhizomeGroupInvite { manifest } => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    if let Err(e) = r.absorb_group_manifest(manifest) {
+                        tracing::warn!("rhizome group manifest rejeitado: {e}");
+                    }
+                }
+            }
+            Envelope::RhizomeMediaChunk { packet } => {
+                let is_video_chunk = packet.is_video_chunk;
+                let asset_cid = packet.asset_cid.clone();
+                let device_type = self.rhizome_device_type.clone();
+                let receipt_envs = if let Ok(mut r) = self.rhizome.lock() {
+                    match r.absorb_media_chunk(packet) {
+                        Ok(true) if is_video_chunk => r
+                            .issue_local_shard_receipts(&asset_cid, &device_type)
+                            .map(|(_, envs)| envs)
+                            .unwrap_or_default(),
+                        Ok(_) => Vec::new(),
+                        Err(e) => {
+                            tracing::warn!("rhizome media chunk rejeitado: {e}");
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+                for event in receipt_envs.into_iter().take(8) {
+                    if let Ok(encoded) = (Envelope::RhizomeEvent { event }).encode() {
+                        let _ = self.hyphae.broadcast_lattice(encoded);
+                    }
+                }
+                // Retorno antecipado: não regrava organism.json a cada fatia binária de 32 KiB!
+                return Ok(());
+            }
+            Envelope::RhizomeMediaWant {
+                asset_cid,
+                is_video,
+                missing_indices,
+            } => {
+                let recently_served = self
+                    .rhizome_want_served
+                    .get(&asset_cid)
+                    .map(|t| t.elapsed() < Duration::from_secs(2))
+                    .unwrap_or(false);
+                if self.rhizome_volunteer_donor && !recently_served {
+                    let packets = if let Ok(r) = self.rhizome.lock() {
+                        if is_video {
+                            r.video_to_packets(&asset_cid, &missing_indices)
+                        } else {
+                            r.blob_to_packets(&asset_cid)
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    if !packets.is_empty() {
+                        self.rhizome_want_served.insert(asset_cid, Instant::now());
+                        self.enqueue_rhizome_media_packets(packets);
+                    }
+                }
+                return Ok(());
+            }
         }
         self.persist()?;
         Ok(())
+    }
+
+    fn enqueue_rhizome_media_packets(&mut self, packets: Vec<mycelium_rhizome::MediaChunkPacket>) {
+        const MAX_MEDIA_QUEUE: usize = 2048;
+        for pkt in packets {
+            if self.rhizome_media_queue.len() >= MAX_MEDIA_QUEUE {
+                break;
+            }
+            self.rhizome_media_queue.push_back(pkt);
+        }
+    }
+
+    fn drain_rhizome_media_queue(&mut self, max_per_tick: usize) {
+        for _ in 0..max_per_tick {
+            let Some(packet) = self.rhizome_media_queue.pop_front() else {
+                break;
+            };
+            let approx_bytes = (packet.data_b64.len() * 3) / 4;
+            let asset_cid = packet.asset_cid.clone();
+            let chunk_index = packet.chunk_index;
+            let total_chunks = packet.total_chunks;
+            if let Ok(encoded) = (Envelope::RhizomeMediaChunk { packet }).encode() {
+                if matches!(self.hyphae.broadcast_lattice(encoded), Ok(true)) {
+                    self.rhizome_chunks_relayed = self.rhizome_chunks_relayed.saturating_add(1);
+                    self.rhizome_bytes_relayed =
+                        self.rhizome_bytes_relayed.saturating_add(approx_bytes as u64);
+                    self.rhizome_reward_bytes_acc =
+                        self.rhizome_reward_bytes_acc.saturating_add(approx_bytes as u64);
+                    while self.rhizome_reward_bytes_acc >= 262_144 {
+                        self.rhizome_reward_bytes_acc -= 262_144;
+                        self.ledger.relay_reward(1);
+                    }
+                    if self.rhizome_relay_log.len() >= 40 {
+                        self.rhizome_relay_log.pop_front();
+                    }
+                    self.rhizome_relay_log
+                        .push_back(crate::rhizome_ion::RelayLogEntry {
+                            ts: mycelium_rhizome::unix_now(),
+                            asset_cid,
+                            chunk_index,
+                            total_chunks,
+                            bytes: approx_bytes,
+                        });
+                }
+            }
+        }
+    }
+
+    fn build_swarm_snapshot(&self) -> crate::rhizome_ion::SwarmSnapshot {
+        let pkarr_addr = self
+            .rhizome
+            .lock()
+            .map(|r| r.local_profile().pkarr_addr)
+            .unwrap_or_default();
+        let links = self
+            .hyphae
+            .links()
+            .iter()
+            .map(|(peer_id, l)| {
+                let peer_str = peer_id.to_string();
+                crate::rhizome_ion::SwarmPeerInfo {
+                    node_id: peer_str.clone(),
+                    peer_id: peer_str,
+                    connected: l.connected,
+                    strength: l.strength,
+                    messages: l.messages,
+                    atrophy_count: l.atrophy_count,
+                    last_seen_secs: l.last_seen_secs,
+                }
+            })
+            .collect();
+        crate::rhizome_ion::SwarmSnapshot {
+            node_id: self.gland.node_id().to_string(),
+            peer_id: self.hyphae.peer_id().to_string(),
+            ghost_pubkey_hex: self.wallet_pubkey_hex(),
+            pkarr_addr,
+            listen_addrs: self
+                .hyphae
+                .dialable_addrs()
+                .iter()
+                .map(|a| a.to_string())
+                .collect(),
+            neighbors: self.hyphae.connected_neighbors(),
+            membrane: self.membrane.as_str().to_string(),
+            physarum_phase: match self.physarum_phase {
+                MyceliumPhase::Exploratory => "exploratory".into(),
+                MyceliumPhase::Transport => "transport".into(),
+                MyceliumPhase::Dormant => "dormant".into(),
+            },
+            is_relay: self.assume_reachable
+                && (self.sporocarp || matches!(self.membrane, Membrane::Esporocarp)),
+            active_relay: self.hyphae.active_relay_peer().map(|p| p.to_string()),
+            relay_health: self.hyphae.relay_mesh_health_label(),
+            device_type: self.rhizome_device_type.clone(),
+            volunteer_donor: self.rhizome_volunteer_donor,
+            chunks_relayed: self.rhizome_chunks_relayed,
+            bytes_relayed: self.rhizome_bytes_relayed,
+            queue_depth: self.rhizome_media_queue.len(),
+            links,
+            relay_log: self.rhizome_relay_log.iter().rev().cloned().collect(),
+        }
+    }
+
+    fn build_wallet_report(&self) -> crate::rhizome_ion::WalletReport {
+        let balances = self
+            .ledger
+            .balances
+            .iter()
+            .map(|(k, v)| (k.to_string(), *v))
+            .collect();
+        let history = self
+            .ledger
+            .history
+            .iter()
+            .rev()
+            .take(40)
+            .filter_map(|ex| serde_json::to_value(ex).ok())
+            .collect();
+        let transfers = self
+            .ledger
+            .recent_transfers()
+            .iter()
+            .rev()
+            .take(40)
+            .map(|tx| crate::rhizome_ion::WalletTransferView {
+                tx_id: tx.short(),
+                kind: tx.payload.kind.as_str().to_string(),
+                from_hex: hex::encode(tx.payload.from),
+                to_hex: hex::encode(tx.payload.to),
+                nutrient: tx.payload.nutrient.to_string(),
+                amount: tx.payload.amount,
+                memo: tx.payload.memo.clone(),
+                asset: tx.payload.asset.clone(),
+                ts: tx.payload.ts,
+            })
+            .collect();
+        crate::rhizome_ion::WalletReport {
+            pubkey_hex: self.wallet_pubkey_hex(),
+            node_id: self.gland.node_id().to_string(),
+            balances,
+            history,
+            transfers,
+        }
+    }
+
+    fn publish_rhizome_plots(&mut self, plots: Vec<Plot>) {
+        for plot in plots {
+            if !plot.is_public() {
+                continue;
+            }
+            if let Ok(id) = self.bank.deposit(plot.clone()) {
+                if let Some(bytes) = self.bank.public_spore_print(&id) {
+                    let _ = self.hyphae.dht_store_local(dht_key(&id), bytes.clone());
+                    let _ = self.hyphae.dht_put(dht_key(&id), bytes);
+                }
+            }
+            if let Ok(encoded) = (Envelope::SporePrint { plot }).encode() {
+                let _ = self.hyphae.broadcast_lattice(encoded);
+            }
+        }
+    }
+
+    fn broadcast_rhizome_snapshot(&mut self) {
+        let envelopes = if let Ok(mut r) = self.rhizome.lock() {
+            r.local_snapshot_envelopes(32)
+        } else {
+            return;
+        };
+        for event in envelopes {
+            if let Ok(encoded) = (Envelope::RhizomeEvent { event }).encode() {
+                let _ = self.hyphae.broadcast_lattice(encoded);
+            }
+        }
+    }
+
+    fn signal_to_field_view(s: &thefield::Signal) -> crate::field_ion::FieldSignalView {
+        crate::field_ion::FieldSignalView {
+            id: s.id.to_string(),
+            origin: s.origin.to_string(),
+            proposal: serde_json::to_value(&s.proposal).unwrap_or_else(|_| serde_json::json!({})),
+            quorum: s.quorum,
+            resonance: s.resonance(),
+            state: format!("{:?}", s.state),
+            resonators: s.resonators().iter().map(|n| n.to_string()).collect(),
+        }
+    }
+
+    fn dispatch_field_outbound(&mut self, out: crate::field_ion::FieldOutbound) {
+        use crate::field_ion::FieldOutbound;
+        match out {
+            FieldOutbound::ListSignals { reply } => {
+                let list: Vec<_> = self
+                    .state
+                    .field
+                    .all()
+                    .map(Self::signal_to_field_view)
+                    .collect();
+                let _ = reply.send(list);
+            }
+            FieldOutbound::EmitSignal {
+                kind,
+                plot_cid,
+                version,
+                name,
+                target_ion,
+                quorum,
+                reply,
+            } => {
+                let res = (|| -> Result<crate::field_ion::FieldSignalView, String> {
+                    let kind_norm = kind.trim().to_ascii_lowercase();
+                    let id = if kind_norm == "pipeline" {
+                        let cid_str = plot_cid
+                            .as_deref()
+                            .filter(|s| !s.trim().is_empty())
+                            .ok_or_else(|| "plot_cid obrigatório para Pipeline".to_string())?;
+                        let plot: ContentId = cid_str
+                            .parse()
+                            .map_err(|_| format!("plot_cid inválido: {cid_str}"))?;
+                        self.emit_signal(
+                            plot,
+                            quorum.max(1),
+                            target_ion.unwrap_or_else(|| "webapp".into()),
+                            name.unwrap_or_else(|| "ci".into()),
+                        )
+                        .map_err(|e| e.to_string())?
+                    } else {
+                        let proposal = match kind_norm.as_str() {
+                            "release" => Proposal::Release {
+                                version: version
+                                    .filter(|s| !s.trim().is_empty())
+                                    .unwrap_or_else(|| "v0.1.0".into()),
+                            },
+                            _ => {
+                                let cid_str = plot_cid
+                                    .as_deref()
+                                    .filter(|s| !s.trim().is_empty())
+                                    .ok_or_else(|| "plot_cid obrigatório para MergePlot".to_string())?;
+                                let plot: ContentId = cid_str
+                                    .parse()
+                                    .map_err(|_| format!("plot_cid inválido: {cid_str}"))?;
+                                Proposal::MergePlot { plot }
+                            }
+                        };
+                        let id = self
+                            .state
+                            .field
+                            .emit(self.gland.node_id(), proposal, quorum.max(1))
+                            .map_err(|e| e.to_string())?;
+                        let _ = self.state.field.resonate(&id, self.gland.node_id());
+                        if let Some(sig) = self.state.field.get(&id).cloned() {
+                            if let Ok(bytes) = (Envelope::SignalBroadcast { signal: sig }).encode() {
+                                let _ = self.hyphae.broadcast_lattice(bytes);
+                            }
+                        }
+                        let _ = self.persist();
+                        id
+                    };
+                    let sig = self
+                        .state
+                        .field
+                        .get(&id)
+                        .ok_or_else(|| "signal recém-criado não encontrado".to_string())?;
+                    Ok(Self::signal_to_field_view(sig))
+                })();
+                let _ = reply.send(res);
+            }
+            FieldOutbound::ResonateSignal { signal_id, reply } => {
+                let res = (|| -> Result<crate::field_ion::FieldSignalView, String> {
+                    let cid: ContentId = signal_id
+                        .trim()
+                        .parse()
+                        .map_err(|_| format!("signal_id inválido: {signal_id}"))?;
+                    self.resonate(cid).map_err(|e| e.to_string())?;
+                    let sig = self
+                        .state
+                        .field
+                        .get(&cid)
+                        .ok_or_else(|| "signal não encontrado".to_string())?;
+                    Ok(Self::signal_to_field_view(sig))
+                })();
+                let _ = reply.send(res);
+            }
+        }
+    }
+
+    fn dispatch_rhizome_outbound(&mut self, out: crate::rhizome_ion::RhizomeOutbound) {
+        use crate::rhizome_ion::RhizomeOutbound;
+        match out {
+            RhizomeOutbound::BroadcastEvent { event, plots } => {
+                self.publish_rhizome_plots(plots);
+                if let Ok(encoded) = (Envelope::RhizomeEvent { event }).encode() {
+                    let _ = self.hyphae.broadcast_lattice(encoded);
+                }
+            }
+            RhizomeOutbound::PublishPlots { plots } => {
+                self.publish_rhizome_plots(plots);
+            }
+            RhizomeOutbound::QueueMediaPackets { packets } => {
+                self.enqueue_rhizome_media_packets(packets);
+                // Envia os 4 primeiros imediatamente para resposta instantânea em imagens pequenas
+                self.drain_rhizome_media_queue(4);
+            }
+            RhizomeOutbound::WantMedia {
+                asset_cid,
+                is_video,
+                missing_indices,
+            } => {
+                if let Ok(encoded) = (Envelope::RhizomeMediaWant {
+                    asset_cid,
+                    is_video,
+                    missing_indices,
+                })
+                .encode()
+                {
+                    let _ = self.hyphae.broadcast_lattice(encoded);
+                }
+            }
+            RhizomeOutbound::SyncStory {
+                isotope_key,
+                atom,
+                event,
+            } => {
+                self.nucleus.absorb(&isotope_key, atom.clone());
+                if let Ok(encoded) = (Envelope::AtomSync {
+                    key: isotope_key,
+                    atom,
+                })
+                .encode()
+                {
+                    let _ = self.hyphae.broadcast_lattice(encoded);
+                }
+                if let Ok(encoded) = (Envelope::RhizomeEvent { event }).encode() {
+                    let _ = self.hyphae.broadcast_lattice(encoded);
+                }
+            }
+            RhizomeOutbound::SendDirectChat {
+                to_node_id,
+                envelope,
+            } => {
+                if let Ok(to) = to_node_id.parse::<NodeId>() {
+                    self.send_direct(to, Envelope::RhizomeChat { envelope });
+                } else {
+                    tracing::warn!(%to_node_id, "rhizome chat destino NodeId inválido");
+                }
+            }
+            RhizomeOutbound::SendDirectReceipt {
+                to_node_id,
+                receipt,
+            } => {
+                if let Ok(to) = to_node_id.parse::<NodeId>() {
+                    self.send_direct(to, Envelope::RhizomeReceipt { receipt });
+                }
+            }
+            RhizomeOutbound::SendGroupManifest {
+                to_node_id,
+                manifest,
+            } => {
+                if let Ok(to) = to_node_id.parse::<NodeId>() {
+                    self.send_direct(to, Envelope::RhizomeGroupInvite { manifest });
+                }
+            }
+            RhizomeOutbound::SyncSnapshotNow => {
+                self.broadcast_rhizome_snapshot();
+            }
+            RhizomeOutbound::GetSwarmSnapshot { reply } => {
+                let _ = reply.send(self.build_swarm_snapshot());
+            }
+            RhizomeOutbound::GetWalletReport { reply } => {
+                let _ = reply.send(self.build_wallet_report());
+            }
+            RhizomeOutbound::ExecuteTransfer {
+                to_hex,
+                amount,
+                nutrient,
+                kind,
+                memo,
+                asset,
+                reply,
+            } => {
+                let outcome = match (
+                    nutrient.parse::<Nutrient>(),
+                    kind.parse::<mycelium_nutrients::TxKind>(),
+                ) {
+                    (Ok(n), Ok(k)) => {
+                        self.transfer(&to_hex, amount, n, k, memo, asset)
+                            .map(|tx| crate::rhizome_ion::TransferOutcome {
+                                tx_id: tx.short(),
+                                kind: k.as_str().to_string(),
+                                nutrient: n.to_string(),
+                                amount,
+                                to_hex,
+                            })
+                    }
+                    (Err(_), _) => Err(format!("nutriente inválido: {nutrient}")),
+                    (_, Err(_)) => Err(format!("tipo de transação inválido: {kind}")),
+                };
+                let _ = reply.send(outcome);
+            }
+            RhizomeOutbound::SetSwarmConfig {
+                volunteer_donor,
+                device_type,
+                reply,
+            } => {
+                if let Some(v) = volunteer_donor {
+                    self.rhizome_volunteer_donor = v;
+                }
+                if let Some(dt) = device_type {
+                    if matches!(dt.as_str(), "mobile" | "desktop" | "server" | "edge") {
+                        self.rhizome_device_type = dt;
+                    }
+                }
+                let _ = reply.send(self.build_swarm_snapshot());
+            }
+            RhizomeOutbound::GetVeilStatus { reply } => {
+                let _ = reply.send(self.build_veil_status_dto());
+            }
+            RhizomeOutbound::StartVeil { reply, .. } => {
+                let _ = reply.send(Err("StartVeil deve ser atendido no laço assíncrono do Organismo".into()));
+            }
+            RhizomeOutbound::StopVeil { reply } => {
+                self.stop_veil_service();
+                let _ = reply.send(self.build_veil_status_dto());
+            }
+            RhizomeOutbound::SetVeilKillSwitch { engaged, reply } => {
+                #[cfg(feature = "veil")]
+                {
+                    if let Some(ref eng) = self.veil_engine {
+                        if engaged {
+                            eng.kill_switch().trigger("rhizome-ui-manual-killswitch");
+                        } else {
+                            eng.kill_switch().reset();
+                        }
+                        let _ = reply.send(Ok(self.build_veil_status_dto()));
+                    } else {
+                        let _ = reply.send(Err("VEIL Ω não está ativo; inicie o proxy primeiro".into()));
+                    }
+                }
+                #[cfg(not(feature = "veil"))]
+                {
+                    let _ = engaged;
+                    let _ = reply.send(Err("recompile mycelium-node com --features veil".into()));
+                }
+            }
+            RhizomeOutbound::AexBridgeOp { op, reply } => {
+                let _ = reply.send(self.handle_rhizome_aex_bridge_op(op));
+            }
+            RhizomeOutbound::GetMintReserveStatus {
+                cpx_circulating_base,
+                reply,
+            } => {
+                let _ = reply.send(self.handle_rhizome_mint_reserve_status(cpx_circulating_base));
+            }
+            RhizomeOutbound::MintReserveSettle { units, memo, reply } => {
+                let _ = reply.send(self.handle_rhizome_mint_reserve_settle(units, &memo));
+            }
+            RhizomeOutbound::GetReservePolicy { reply } => {
+                let _ = reply.send(self.handle_rhizome_get_reserve_policy());
+            }
+            RhizomeOutbound::ConfigureReservePolicy {
+                chain_id,
+                min_quorum,
+                min_hashcash_bits,
+                extra_sporocarps,
+                include_self,
+                reply,
+            } => {
+                let _ = reply.send(self.handle_rhizome_configure_reserve_policy(
+                    chain_id,
+                    min_quorum,
+                    min_hashcash_bits,
+                    extra_sporocarps,
+                    include_self,
+                ));
+            }
+            RhizomeOutbound::SubmitMintClaimP2p { units, memo, reply } => {
+                let _ = reply.send(self.handle_rhizome_submit_mint_claim_p2p(units, &memo));
+            }
+            RhizomeOutbound::DrainSettledMintReceipts { reply } => {
+                let receipts = std::mem::take(&mut self.settled_mint_receipts);
+                let policy = self
+                    .mint_engine
+                    .as_ref()
+                    .map(|e| e.policy.clone())
+                    .unwrap_or_else(mycelium_mint::MonetaryPolicy::mainnet);
+                let _ = reply.send((receipts, policy));
+            }
+        }
+    }
+
+    fn handle_rhizome_get_reserve_policy(&self) -> serde_json::Value {
+        let self_node = self.gland.node_id().to_string();
+        let self_pk = hex::encode(self.gland.verifying_key().to_bytes());
+        match self.mint_engine.as_ref() {
+            Some(engine) => {
+                let sporocarps: Vec<serde_json::Value> = engine
+                    .sporocarps
+                    .iter()
+                    .map(|(nid, pk)| {
+                        serde_json::json!({
+                            "node_id": nid.to_string(),
+                            "pubkey_hex": hex::encode(pk),
+                            "is_self": *nid == self.gland.node_id(),
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "active": true,
+                    "mode": if engine.min_quorum > 1 { "multi_sporocarp" } else { "solo_local" },
+                    "chain_id": engine.chain_id,
+                    "current_epoch": engine.current_epoch,
+                    "min_quorum": engine.min_quorum,
+                    "min_hashcash_bits": engine.policy.min_hashcash_bits,
+                    "self_is_sporocarp": self.sporocarp,
+                    "self_node_id": self_node,
+                    "self_pubkey_hex": self_pk,
+                    "pending_claims": self.pending_mint_claims.len(),
+                    "pending_attestation_batches": self.pending_mint_attestations.len(),
+                    "sporocarps": sporocarps,
+                })
+            }
+            None => serde_json::json!({
+                "active": false,
+                "mode": "uninitialized",
+                "chain_id": "mycelium-rhizome-reserve-v1",
+                "current_epoch": 0,
+                "min_quorum": 1,
+                "min_hashcash_bits": 4,
+                "self_is_sporocarp": self.sporocarp,
+                "self_node_id": self_node,
+                "self_pubkey_hex": self_pk,
+                "pending_claims": 0,
+                "pending_attestation_batches": 0,
+                "sporocarps": [],
+            }),
+        }
+    }
+
+    fn handle_rhizome_configure_reserve_policy(
+        &mut self,
+        chain_id: Option<String>,
+        min_quorum: usize,
+        min_hashcash_bits: Option<u8>,
+        extra_sporocarps: Vec<(String, String)>,
+        include_self: bool,
+    ) -> Result<serde_json::Value, String> {
+        use mycelium_mint::{MainnetMintEngine, MonetaryPolicy};
+
+        let mut policy = MonetaryPolicy::mainnet();
+        policy.min_hashcash_bits = min_hashcash_bits.unwrap_or(4).clamp(1, 20);
+
+        let mut sporocarps = HashMap::new();
+        if include_self {
+            sporocarps.insert(self.gland.node_id(), self.gland.verifying_key().to_bytes());
+        }
+        for (nid_str, pk_hex) in extra_sporocarps {
+            let pk_bytes = hex::decode(pk_hex.trim())
+                .map_err(|e| format!("pubkey_hex inválido '{pk_hex}': {e}"))?;
+            let pk: [u8; 32] = pk_bytes
+                .try_into()
+                .map_err(|_| format!("pubkey_hex deve ter 32 bytes (64 hex): '{pk_hex}'"))?;
+            let derived = NodeId::derive(&pk);
+            if !nid_str.trim().is_empty() && nid_str.trim() != derived.to_string() {
+                return Err(format!(
+                    "node_id '{}' não corresponde ao pubkey_hex (esperado {})",
+                    nid_str.trim(),
+                    derived
+                ));
+            }
+            sporocarps.insert(derived, pk);
+        }
+
+        if sporocarps.is_empty() {
+            return Err("informe ao menos um esporocarpo (ou include_self=true)".into());
+        }
+        let cid = chain_id
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "mycelium-rhizome-quorum-v1".into());
+        let engine = MainnetMintEngine::genesis(
+            cid.clone(),
+            cid.as_bytes(),
+            policy,
+            sporocarps,
+            min_quorum.max(1),
+        )
+        .map_err(|e| format!("política de reserva inválida: {e}"))?;
+
+        self.sporocarp = include_self;
+        self.enable_mint_engine(engine);
+        if let Some(ref eng) = self.mint_engine {
+            let _ = self.store.save_mint_engine(eng);
+        }
+        Ok(self.handle_rhizome_get_reserve_policy())
+    }
+
+    fn handle_rhizome_submit_mint_claim_p2p(
+        &mut self,
+        units: u64,
+        memo: &str,
+    ) -> Result<serde_json::Value, String> {
+        use ed25519_dalek::SigningKey;
+        use mycelium_mint::WorkClaim;
+        use mycelium_nutrients::TxKind;
+
+        let local_node_id = self.gland.node_id();
+        if self.mint_engine.is_none() {
+            self.handle_rhizome_configure_reserve_policy(None, 1, Some(4), vec![], true)?;
+        }
+        let (chain_id, epoch, hashcash_bits, min_quorum) = {
+            let eng = self.mint_engine.as_ref().unwrap();
+            (
+                eng.chain_id.clone(),
+                eng.current_epoch,
+                eng.policy.min_hashcash_bits,
+                eng.min_quorum,
+            )
+        };
+
+        let mut cp_hasher = blake3::Hasher::new();
+        cp_hasher.update(b"mycelium-mint-reserve-counterparty-v1:");
+        cp_hasher.update(&self.gland.seed());
+        let counterparty_signing = SigningKey::from_bytes(cp_hasher.finalize().as_bytes());
+
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let work_seed = format!("p2p-reserve-claim:{epoch}:{units}:{now_nanos}:{memo}");
+        let work_id = ContentId::of(work_seed.as_bytes());
+
+        let producer_spores = self.ledger.balance(Nutrient::Spores);
+        let producer_resilience = self.ledger.balance(Nutrient::Resilience);
+        let claim = WorkClaim::build_signed(
+            &chain_id,
+            epoch,
+            local_node_id,
+            &counterparty_signing,
+            work_id,
+            TxKind::Seeding,
+            units.max(1),
+            producer_spores,
+            producer_resilience,
+            hashcash_bits,
+        );
+
+        self.submit_mint_claim(claim);
+        let new_epoch = self
+            .mint_engine
+            .as_ref()
+            .map(|e| e.current_epoch)
+            .unwrap_or(epoch);
+        let settled_immediately = new_epoch > epoch;
+        Ok(serde_json::json!({
+            "chain_id": chain_id,
+            "submitted_epoch": epoch,
+            "current_epoch": new_epoch,
+            "min_quorum": min_quorum,
+            "settled_immediately": settled_immediately,
+            "pending_claims": self.pending_mint_claims.len(),
+            "settled_receipts_buffered": self.settled_mint_receipts.len(),
+        }))
+    }
+
+    fn build_veil_status_dto(&self) -> crate::ecosystem_ion::VeilStatusDto {
+        #[cfg(feature = "veil")]
+        {
+            use std::sync::atomic::Ordering;
+            let active = self.veil_enabled;
+            let (mode, session_id, bytes_routed, kill_switch_state, active_layers) =
+                if let Some(ref eng) = self.veil_engine {
+                    let ks = match eng.kill_switch().state() {
+                        mycelium_veil::KillSwitchState::Triggered => "triggered",
+                        mycelium_veil::KillSwitchState::Armed => "armed",
+                        mycelium_veil::KillSwitchState::Disarmed => "disarmed",
+                    };
+                    let sess = eng.current_session();
+                    let sid = sess.as_ref().map(|s| s.session_id.clone());
+                    let bytes = sess.as_ref().map(|s| s.bytes_routed).unwrap_or(0);
+                    let layers = eng.wired_layer_count();
+                    let m = match eng.config().mode {
+                        mycelium_veil::VeilMode::Veil => "veil",
+                        mycelium_veil::VeilMode::Geo => "geo",
+                        mycelium_veil::VeilMode::Mix => "mix",
+                    };
+                    (m.to_string(), sid, bytes, ks.to_string(), layers)
+                } else {
+                    (
+                        self.veil_mode.clone().unwrap_or_else(|| "veil".into()),
+                        None,
+                        0,
+                        "uninitialized".into(),
+                        0,
+                    )
+                };
+            let socks5_addr = if active {
+                self.veil_socks5_addr.map(|a| a.to_string())
+            } else {
+                None
+            };
+            let socks5_uri = socks5_addr.as_ref().map(|a| format!("socks5h://{a}"));
+            let tun_bridge_addr = if active {
+                self.veil_tun_addr.map(|a| a.to_string())
+            } else {
+                None
+            };
+            let tun_bridge_port = if active {
+                self.veil_tun_addr.map(|a| a.port())
+            } else {
+                None
+            };
+            let (tun_clients, tun_packets_in, tun_packets_out, tun_dns_queries) =
+                if let Some(ref st) = self.veil_tun_stats {
+                    (
+                        st.connected_clients.load(Ordering::Relaxed),
+                        st.packets_in.load(Ordering::Relaxed),
+                        st.packets_out.load(Ordering::Relaxed),
+                        st.dns_queries.load(Ordering::Relaxed),
+                    )
+                } else {
+                    (0, 0, 0, 0)
+                };
+            let remote_hops_configured = self.veil_role.as_deref() == Some("client")
+                && (!self.veil_guards.is_empty() || !self.veil_exits.is_empty());
+            let honest_scope = if remote_hops_configured {
+                "Circuito pós-quântico ML-KEM-1024 conectado a relays REMOTOS + proxy SOCKS5 (RFC 1928) + ponte TUN IPv4/TCP/DNS para Android VpnService (mascara IP público quando ativado).".into()
+            } else if self.veil_role.as_deref() == Some("exit") || self.veil_role.as_deref() == Some("relay") {
+                "Nó Relay/Exit VEIL Ω ativo aceitando circuitos ML-KEM-1024 remotos — compartilhe o descritor JSON abaixo para conectar seu celular/PC em modo cliente.".into()
+            } else {
+                "Circuito telescópico ML-KEM-1024 + SOCKS5 (RFC 1928) + ponte TUN IPv4/TCP/DNS (Android VpnService) ativos em modo local (`all`). Para mascarar IP público na internet, altere para papel `client` e informe os descritores de relays remotos (Guard/Middle/Exit).".into()
+            };
+            crate::ecosystem_ion::VeilStatusDto {
+                compiled: true,
+                active,
+                mode,
+                role: self.veil_role.clone().unwrap_or_else(|| "all".into()),
+                socks5_addr,
+                socks5_uri,
+                tun_bridge_addr,
+                tun_bridge_port,
+                tun_clients,
+                tun_packets_in,
+                tun_packets_out,
+                tun_dns_queries,
+                remote_hops_configured,
+                kill_switch_state,
+                session_id,
+                bytes_routed,
+                active_layers,
+                exit_node: self.veil_active_entry.clone(),
+                local_descriptor: self.veil_local_descriptor.clone(),
+                honest_scope,
+            }
+        }
+        #[cfg(not(feature = "veil"))]
+        {
+            crate::ecosystem_ion::VeilStatusDto {
+                compiled: false,
+                active: false,
+                mode: "disabled".into(),
+                role: "none".into(),
+                socks5_addr: None,
+                socks5_uri: None,
+                tun_bridge_addr: None,
+                tun_bridge_port: None,
+                tun_clients: 0,
+                tun_packets_in: 0,
+                tun_packets_out: 0,
+                tun_dns_queries: 0,
+                remote_hops_configured: false,
+                kill_switch_state: "uncompiled".into(),
+                session_id: None,
+                bytes_routed: 0,
+                active_layers: 0,
+                exit_node: None,
+                local_descriptor: None,
+                honest_scope: "Feature `veil` não compilada neste binário.".into(),
+            }
+        }
+    }
+
+    fn handle_rhizome_aex_bridge_op(
+        &mut self,
+        op: crate::ecosystem_ion::AexBridgeOpReq,
+    ) -> serde_json::Value {
+        use crate::ecosystem_ion::AexBridgeOpReq;
+        let resp = match op {
+            AexBridgeOpReq::Info => crate::aex_bridge::handle_bridge_info(),
+            AexBridgeOpReq::GhostSpawn { ttl_secs } => {
+                crate::aex_bridge::handle_ghost_spawn(&mut self.aex_bridge, ttl_secs.unwrap_or(300))
+            }
+            AexBridgeOpReq::GhostSign {
+                handle,
+                payload_b64,
+            } => crate::aex_bridge::handle_ghost_sign(&mut self.aex_bridge, &handle, &payload_b64),
+            AexBridgeOpReq::GhostDestroy { handle } => {
+                crate::aex_bridge::handle_ghost_destroy(&mut self.aex_bridge, &handle)
+            }
+            AexBridgeOpReq::QelFragment {
+                data_b64,
+                content_id,
+                threshold,
+                total,
+                ttl_secs,
+            } => crate::aex_bridge::handle_qel_fragment(
+                &data_b64,
+                &content_id,
+                threshold,
+                total,
+                ttl_secs.unwrap_or(3600),
+                None,
+            ),
+            AexBridgeOpReq::PedersenCommit { value } => {
+                crate::aex_bridge::handle_zk_pedersen_commit(&value.to_string(), None)
+            }
+            AexBridgeOpReq::DtnPoll { limit } => {
+                crate::aex_bridge::handle_dtn_poll(&mut self.aex_bridge, limit.unwrap_or(32))
+            }
+        };
+        serde_json::to_value(resp).unwrap_or_else(|_| serde_json::json!({ "error": "falha ao serializar resposta aex_bridge" }))
+    }
+
+    fn handle_rhizome_mint_reserve_status(
+        &self,
+        cpx_circulating_base: u128,
+    ) -> serde_json::Value {
+        match self.mint_engine.as_ref() {
+            Some(engine) => {
+                let status = engine.cpx_reserve_status(cpx_circulating_base);
+                serde_json::json!({
+                    "active": true,
+                    "role": "mycelium-mint reserve vault (PoUW-DAG + Quórum Esporocarpo)",
+                    "chain_id": engine.chain_id,
+                    "current_epoch": engine.current_epoch,
+                    "epoch_budget_myc": engine.current_epoch_budget(),
+                    "max_supply_myc": engine.policy.max_supply,
+                    "usdc_per_myc": engine.policy.usdc_per_myc,
+                    "cpx_per_myc": mycelium_mint::DEFAULT_CPX_PER_MYC,
+                    "min_quorum": engine.min_quorum,
+                    "reserve_status": status,
+                })
+            }
+            None => {
+                let policy = mycelium_mint::MonetaryPolicy::mainnet();
+                serde_json::json!({
+                    "active": false,
+                    "role": "mycelium-mint reserve vault (inicialização automática na 1ª liquidação)",
+                    "chain_id": "mycelium-rhizome-reserve-v1",
+                    "current_epoch": 0,
+                    "epoch_budget_myc": policy.epoch_budget(0, 0),
+                    "max_supply_myc": policy.max_supply,
+                    "usdc_per_myc": policy.usdc_per_myc,
+                    "cpx_per_myc": mycelium_mint::DEFAULT_CPX_PER_MYC,
+                    "min_quorum": 1,
+                    "reserve_status": {
+                        "chain_id": "mycelium-rhizome-reserve-v1",
+                        "current_epoch": 0,
+                        "myc_reserve_supply": 0,
+                        "cpx_per_myc": mycelium_mint::DEFAULT_CPX_PER_MYC,
+                        "max_cpx_backed_supply": 0,
+                        "cpx_circulating_supply": cpx_circulating_base,
+                        "coverage_bps": if cpx_circulating_base == 0 { 10_000 } else { 0 },
+                        "is_fully_backed": cpx_circulating_base == 0,
+                    }
+                })
+            }
+        }
+    }
+
+    fn handle_rhizome_mint_reserve_settle(
+        &mut self,
+        units: u64,
+        memo: &str,
+    ) -> Result<crate::ecosystem_ion::MintReserveSettleOutcome, String> {
+        use ed25519_dalek::SigningKey;
+        use mycelium_mint::{
+            MainnetMintEngine, MonetaryPolicy, SporocarpAttestation, WorkClaim,
+        };
+        use mycelium_nutrients::TxKind;
+
+        let local_signing = SigningKey::from_bytes(&self.gland.seed());
+        let local_vk = local_signing.verifying_key().to_bytes();
+        let local_node_id = self.gland.node_id();
+
+        if self.mint_engine.is_none() {
+            let mut policy = MonetaryPolicy::mainnet();
+            // 4 bits de Hashcash permitem liquidação PoUW soberana imediata mesmo em ARM64 móvel
+            policy.min_hashcash_bits = 4;
+            let mut sporocarps = HashMap::new();
+            sporocarps.insert(local_node_id, local_vk);
+            let engine = MainnetMintEngine::genesis(
+                "mycelium-rhizome-reserve-v1",
+                &local_vk,
+                policy,
+                sporocarps,
+                1,
+            )
+            .map_err(|e| format!("falha ao inicializar mycelium-mint reserve: {e}"))?;
+            self.mint_engine = Some(engine);
+        }
+
+        let engine = self.mint_engine.as_mut().unwrap();
+        // Contraparte determinística distinta do produtor para respeitar regra anti-self-work do PoUW
+        let mut cp_hasher = blake3::Hasher::new();
+        cp_hasher.update(b"mycelium-mint-reserve-counterparty-v1:");
+        cp_hasher.update(&self.gland.seed());
+        let counterparty_signing = SigningKey::from_bytes(cp_hasher.finalize().as_bytes());
+
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let work_seed = format!(
+            "reserve-work:{}:{}:{}:{}",
+            engine.current_epoch, units, now_nanos, memo
+        );
+        let work_id = ContentId::of(work_seed.as_bytes());
+
+        let producer_spores = self.ledger.balance(Nutrient::Spores);
+        let producer_resilience = self.ledger.balance(Nutrient::Resilience);
+        let hashcash_bits = engine.policy.min_hashcash_bits;
+        let chain_id = engine.chain_id.clone();
+        let epoch = engine.current_epoch;
+
+        let claim = WorkClaim::build_signed(
+            &chain_id,
+            epoch,
+            local_node_id,
+            &counterparty_signing,
+            work_id,
+            TxKind::Seeding,
+            units.max(1),
+            producer_spores,
+            producer_resilience,
+            hashcash_bits,
+        );
+
+        let claims = vec![claim];
+        let batch_root = engine.compute_batch_root(epoch, &claims);
+        let attestation = SporocarpAttestation::sign(&chain_id, epoch, batch_root, &local_signing);
+
+        let receipts = engine
+            .settle_epoch(&claims, &[attestation])
+            .map_err(|e| format!("falha ao liquidar época no mycelium-mint: {e}"))?;
+        let receipt = receipts
+            .into_iter()
+            .next()
+            .ok_or_else(|| "época liquidada sem recibo emitido (teto de supply atingido?)".to_string())?;
+
+        let _ = self.store.save_mint_engine(engine);
+        let cpx_backed = engine.policy.myc_reserve_to_cpx(engine.total_supply);
+        let reserve_status = engine.cpx_reserve_status(cpx_backed);
+        Ok(crate::ecosystem_ion::MintReserveSettleOutcome {
+            receipt,
+            policy: engine.policy.clone(),
+            reserve_status,
+        })
     }
 
     /// Ativa o motor de emissão mainnet (`mycelium-mint`) neste nó.
@@ -2825,11 +3974,12 @@ impl Organism {
                 self.processed.remove(&guard_id);
                 tracing::warn!(error = %e, "recibo de emissão rejeitado");
             } else {
+                self.settled_mint_receipts.push(receipt.clone());
                 tracing::info!(
                     epoch = receipt.epoch,
                     amount = receipt.amount,
                     nutrient = ?receipt.nutrient,
-                    "emissão mainnet creditada no ledger local"
+                    "emissão mainnet creditada no ledger local e enfileirada para lastro CPX"
                 );
             }
         }
@@ -2965,7 +4115,16 @@ impl Organism {
         const OFFER_COOLDOWN: Duration = Duration::from_secs(120);
         const RECOMBINE_AFTER_WINDOWS: u32 = 3;
 
-        let counts = { self.horizon.write().unwrap().take_request_counts() };
+        let (counts, delivered) = {
+            let mut horizon = self.horizon.write().unwrap();
+            (horizon.take_request_counts(), horizon.take_delivery_counts())
+        };
+        for (name, current) in delivered {
+            let total = self.habitat_deliveries.entry(name).or_default();
+            total.successful_responses = total.successful_responses
+                .saturating_add(current.successful_responses);
+            total.body_bytes = total.body_bytes.saturating_add(current.body_bytes);
+        }
 
         // 1. Sense: carga por ion local vivo + janelas de ociosidade.
         for name in self.chambers.keys().cloned().collect::<Vec<_>>() {
@@ -3548,15 +4707,29 @@ impl Organism {
                     }
                 });
 
+                let tun_bridge = mycelium_veil::TunBridgeServer::new(
+                    std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+                    Arc::clone(&circuit_client),
+                    engine.kill_switch().clone(),
+                );
+                let (tun_addr, tun_stats, tun_handle) = tun_bridge
+                    .bind_and_spawn()
+                    .await
+                    .map_err(|e| OrganismError::Msg(e.to_string()))?;
+
                 self.veil_engine = Some(engine);
                 self.veil_socks5_handle = Some(task_handle);
                 self.veil_socks5_addr = Some(actual_bind);
+                self.veil_tun_handle = Some(tun_handle);
+                self.veil_tun_addr = Some(tun_addr);
+                self.veil_tun_stats = Some(tun_stats);
                 self.veil_router_handles = router_handles;
                 self.veil_enabled = true;
 
                 tracing::info!(
                     bind = %actual_bind,
-                    "VEIL Ω cliente ativo — SOCKS5 pronto com circuito telescópico ML-KEM-1024"
+                    tun_bridge = %tun_addr,
+                    "VEIL Ω cliente ativo — SOCKS5 + TUN bridge prontos com circuito ML-KEM-1024"
                 );
 
                 Ok(actual_bind)
@@ -3647,15 +4820,29 @@ impl Organism {
                     }
                 });
 
+                let tun_bridge = mycelium_veil::TunBridgeServer::new(
+                    std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+                    Arc::clone(&circuit_client),
+                    engine.kill_switch().clone(),
+                );
+                let (tun_addr, tun_stats, tun_handle) = tun_bridge
+                    .bind_and_spawn()
+                    .await
+                    .map_err(|e| OrganismError::Msg(e.to_string()))?;
+
                 self.veil_engine = Some(engine);
                 self.veil_socks5_handle = Some(task_handle);
                 self.veil_socks5_addr = Some(actual_bind);
+                self.veil_tun_handle = Some(tun_handle);
+                self.veil_tun_addr = Some(tun_addr);
+                self.veil_tun_stats = Some(tun_stats);
                 self.veil_router_handles = router_handles;
                 self.veil_enabled = true;
 
                 tracing::info!(
                     bind = %actual_bind,
-                    "VEIL Ω ativo no organismo — SOCKS5 pronto com circuito telescópico ML-KEM-1024"
+                    tun_bridge = %tun_addr,
+                    "VEIL Ω ativo no organismo — SOCKS5 + TUN bridge prontos com circuito ML-KEM-1024"
                 );
 
                 Ok(actual_bind)
@@ -3668,6 +4855,11 @@ impl Organism {
         if let Some(handle) = self.veil_socks5_handle.take() {
             handle.abort();
         }
+        if let Some(handle) = self.veil_tun_handle.take() {
+            handle.abort();
+        }
+        self.veil_tun_addr = None;
+        self.veil_tun_stats = None;
         for handle in self.veil_router_handles.drain(..) {
             handle.abort();
         }
@@ -3689,6 +4881,25 @@ impl Organism {
 
     async fn handle_control(&mut self, req: Request) -> Response {
         match req {
+            Request::HabitatRegister { name, kind, privacy, replicas, permitted_nodes } => {
+                crate::habitat::HabitatRegistry::open(&self.store.root, &self.gland)
+                    .and_then(|mut registry| registry.register(
+                        &self.gland, name, kind, privacy, replicas, permitted_nodes,
+                    ))
+                    .map(|item| Response::HabitatItem { item: Box::new(item) })
+                    .unwrap_or_else(|e| Response::Err { message: e.to_string() })
+            }
+            Request::HabitatList => {
+                crate::habitat::HabitatRegistry::open(&self.store.root, &self.gland)
+                    .map(|registry| Response::HabitatItems { items: registry.list() })
+                    .unwrap_or_else(|e| Response::Err { message: e.to_string() })
+            }
+            Request::HabitatInspect { name } => {
+                crate::habitat::HabitatRegistry::open(&self.store.root, &self.gland)
+                    .and_then(|registry| registry.get(&name))
+                    .map(|item| Response::HabitatItem { item: Box::new(item) })
+                    .unwrap_or_else(|e| Response::Err { message: e.to_string() })
+            }
             Request::Status => Response::Status(Box::new(self.status_report())),
             Request::S1LiveSend { target, payload, expires_at_ms } => {
                 let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
@@ -4026,6 +5237,44 @@ impl Organism {
                     }
                 }
             }
+            Request::GatewayVeilProbe { hostname } => {
+                #[cfg(feature = "veil")]
+                {
+                    if !self.veil_enabled {
+                        Response::Err {
+                            message: "VEIL não está ativo: conexão direta proibida".into(),
+                        }
+                    } else if let Some(proxy) = self.veil_socks5_addr {
+                        match mycelium_meta_gateway::VeilEgress::new(proxy) {
+                            Ok(egress) => match egress.connect_tls_endpoint(&hostname).await {
+                                Ok(socket) => {
+                                    drop(socket);
+                                    Response::GatewayVeilProbeResult {
+                                        proxy: egress.proxy_addr().to_string(),
+                                        hostname,
+                                        connection_established: true,
+                                        tls_verified: false,
+                                        payment_submitted: false,
+                                    }
+                                }
+                                Err(error) => Response::Err { message: error.to_string() },
+                            },
+                            Err(error) => Response::Err { message: error.to_string() },
+                        }
+                    } else {
+                        Response::Err {
+                            message: "VEIL está sem endpoint SOCKS5: conexão direta proibida".into(),
+                        }
+                    }
+                }
+                #[cfg(not(feature = "veil"))]
+                {
+                    let _ = hostname;
+                    Response::Err {
+                        message: "recompile mycelium-node com --features veil".into(),
+                    }
+                }
+            }
             Request::GatewayPay {
                 receiver_id,
                 amount_micros,
@@ -4072,6 +5321,30 @@ impl Organism {
                     Err(e) => Response::Err {
                         message: format!("destino/valor inválido para meta-gateway: {e}"),
                     },
+                }
+            }
+            Request::HabitatUsage { name } => {
+                match crate::habitat::HabitatRegistry::open(&self.store.root, &self.gland)
+                    .and_then(|reg| reg.get(&name))
+                {
+                    Ok(signed) => {
+                        let mut stats = self.habitat_deliveries.get(&name).cloned().unwrap_or_default();
+                        // Inclui o intervalo atual, mesmo antes do próximo tick
+                        // do Plasma; leitura não drena os contadores do proxy.
+                        let pending = self.horizon.read().unwrap().delivery_snapshot(&name);
+                        stats.successful_responses = stats.successful_responses
+                            .saturating_add(pending.successful_responses);
+                        stats.body_bytes = stats.body_bytes.saturating_add(pending.body_bytes);
+                        Response::HabitatUsageReport {
+                            name,
+                            service_id: signed.manifest.service_id.to_string(),
+                            successful_responses: stats.successful_responses,
+                            body_bytes: stats.body_bytes,
+                            observation: "event_horizon_2xx_in_memory_since_start".into(),
+                            payment_status: "not_priced_not_settled".into(),
+                        }
+                    }
+                    Err(err) => Response::Err { message: err.to_string() },
                 }
             }
             Request::Balance => {
@@ -5084,6 +6357,114 @@ impl Organism {
                 &value,
                 &blinding_hex,
             ),
+            Request::RhizomeOverview => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    let _ = r.reload();
+                    let ov = r.overview();
+                    Response::RhizomeJson {
+                        data: serde_json::to_value(ov).unwrap_or_else(|_| serde_json::json!({})),
+                    }
+                } else {
+                    Response::Err {
+                        message: "rhizome lock indisponível".into(),
+                    }
+                }
+            }
+            Request::RhizomeBroadcast {
+                event,
+                plots,
+                media_packets,
+            } => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    let _ = r.reload();
+                    let _ = r.absorb_sync_envelope(event.clone());
+                }
+                self.dispatch_rhizome_outbound(
+                    crate::rhizome_ion::RhizomeOutbound::BroadcastEvent { event, plots },
+                );
+                if !media_packets.is_empty() {
+                    self.dispatch_rhizome_outbound(
+                        crate::rhizome_ion::RhizomeOutbound::QueueMediaPackets {
+                            packets: media_packets,
+                        },
+                    );
+                }
+                Response::Ok {
+                    message: "evento rhizome propagado na malha".into(),
+                }
+            }
+            Request::RhizomeStorySync {
+                isotope_key,
+                atom,
+                event,
+            } => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    let _ = r.reload();
+                    let _ = r.absorb_sync_envelope(event.clone());
+                }
+                self.dispatch_rhizome_outbound(crate::rhizome_ion::RhizomeOutbound::SyncStory {
+                    isotope_key,
+                    atom,
+                    event,
+                });
+                Response::Ok {
+                    message: "story rhizome propagado via Isotope".into(),
+                }
+            }
+            Request::RhizomeChatSend {
+                to_node_id,
+                envelope,
+            } => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    let _ = r.reload();
+                }
+                self.dispatch_rhizome_outbound(
+                    crate::rhizome_ion::RhizomeOutbound::SendDirectChat {
+                        to_node_id,
+                        envelope,
+                    },
+                );
+                Response::Ok {
+                    message: "chat PQ enviado via DTN Direct".into(),
+                }
+            }
+            Request::RhizomeReceiptSend {
+                to_node_id,
+                receipt,
+            } => {
+                self.dispatch_rhizome_outbound(
+                    crate::rhizome_ion::RhizomeOutbound::SendDirectReceipt {
+                        to_node_id,
+                        receipt,
+                    },
+                );
+                Response::Ok {
+                    message: "recibo rhizome enviado via DTN Direct".into(),
+                }
+            }
+            Request::RhizomeGroupSend {
+                to_node_id,
+                manifest,
+            } => {
+                self.dispatch_rhizome_outbound(
+                    crate::rhizome_ion::RhizomeOutbound::SendGroupManifest {
+                        to_node_id,
+                        manifest,
+                    },
+                );
+                Response::Ok {
+                    message: "manifesto de grupo PQ enviado via DTN Direct".into(),
+                }
+            }
+            Request::RhizomeSyncNow => {
+                if let Ok(mut r) = self.rhizome.lock() {
+                    let _ = r.reload();
+                }
+                self.broadcast_rhizome_snapshot();
+                Response::Ok {
+                    message: "snapshot rhizome sincronizado na malha".into(),
+                }
+            }
             Request::Shutdown => Response::Ok {
                 message: "encerrando".into(),
             },
@@ -5327,33 +6708,35 @@ impl Organism {
             let _ = axum::serve(listener, app).await;
         });
 
-        // Expõe o Code Hub soberano (ion `hub`) no Event Horizon.
-        let hub_home = self.home.clone();
-        let hub_horizon = self.horizon.clone();
+        // Expõe o TheField (ion `field` — Forja Soberana de Repositórios Git P2P & Signals) no Event Horizon.
+        let (field_outbound_tx, mut field_outbound_rx) =
+            mpsc::unbounded_channel::<crate::field_ion::FieldOutbound>();
+        let field_home = self.home.clone();
+        let field_horizon = self.horizon.clone();
         tokio::spawn(async move {
-            let app = crate::hub_ion::create_hub_router(&hub_home);
-            let hub_bind: std::net::SocketAddr = "127.0.0.1:0"
+            let app = crate::field_ion::create_field_router(&field_home, Some(field_outbound_tx));
+            let field_bind: std::net::SocketAddr = "127.0.0.1:0"
                 .parse()
                 .expect("bind valid");
-            let listener = match tokio::net::TcpListener::bind(hub_bind).await {
+            let listener = match tokio::net::TcpListener::bind(field_bind).await {
                 Ok(l) => l,
                 Err(e) => {
-                    tracing::error!(error = %e, "falha ao escutar hub server");
+                    tracing::error!(error = %e, "falha ao escutar thefield server");
                     return;
                 }
             };
             let local = listener.local_addr().expect("local addr");
             tracing::info!(
-                url = %format!("http://127.0.0.1:{}/hub/", local),
-                "mycelium code hub ion escutando"
+                url = %format!("http://127.0.0.1:{}/field/", local),
+                "thefield ion escutando"
             );
             {
-                let mut table = hub_horizon.write().unwrap();
+                let mut table = field_horizon.write().unwrap();
                 table.expose(
-                    "hub.mycelium",
+                    "field.mycelium",
                     Orbit {
-                        ion: "hub".into(),
-                        node: NodeId::derive(b"hub"),
+                        ion: "field".into(),
+                        node: NodeId::derive(b"field"),
                         mass: 100,
                         resistance: 0,
                         upstream: format!("http://{}", local),
@@ -5362,6 +6745,50 @@ impl Organism {
             }
             let _ = axum::serve(listener, app).await;
         });
+
+        // Expõe o Super-App Social Soberano Mycelium Rhizome (ion `rhizome`) no Event Horizon.
+        let rhizome_store_ref = self.rhizome.clone();
+        let rhizome_tx = self.rhizome_outbound_tx.clone();
+        let rhizome_horizon = self.horizon.clone();
+        tokio::spawn(async move {
+            let app = crate::rhizome_ion::create_rhizome_router(rhizome_store_ref, rhizome_tx);
+            let rhizome_bind: std::net::SocketAddr = "127.0.0.1:0"
+                .parse()
+                .expect("bind valid");
+            let listener = match tokio::net::TcpListener::bind(rhizome_bind).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(error = %e, "falha ao escutar rhizome server");
+                    return;
+                }
+            };
+            let local = listener.local_addr().expect("local addr");
+            tracing::info!(
+                url = %format!("http://127.0.0.1:{}/rhizome/", local),
+                "mycelium rhizome ion escutando"
+            );
+            {
+                let mut table = rhizome_horizon.write().unwrap();
+                table.expose(
+                    "rhizome.mycelium",
+                    Orbit {
+                        ion: "rhizome".into(),
+                        node: NodeId::derive(b"rhizome"),
+                        mass: 100,
+                        resistance: 0,
+                        upstream: format!("http://{}", local),
+                    },
+                );
+            }
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let mut rhizome_outbound_rx = self
+            .rhizome_outbound_rx
+            .take()
+            .ok_or_else(|| OrganismError::Msg("canal rhizome já em uso".into()))?;
+        let mut rhizome_media_tick = tokio::time::interval(Duration::from_millis(15));
+        rhizome_media_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         let pheromone = self
             .gland
@@ -5477,6 +6904,67 @@ impl Organism {
 
                 Some(found) = nostr_found_rx.recv() => {
                     self.on_nostr_discovered(found);
+                }
+
+                Some(fout) = field_outbound_rx.recv() => {
+                    self.dispatch_field_outbound(fout);
+                }
+
+                Some(out) = rhizome_outbound_rx.recv() => {
+                    match out {
+                        crate::rhizome_ion::RhizomeOutbound::StartVeil {
+                            mode,
+                            role,
+                            socks5_port,
+                            guards,
+                            middles,
+                            exits,
+                            trust,
+                            listen,
+                            advertise,
+                            reply,
+                        } => {
+                            let mode_norm = match mode.trim().to_ascii_lowercase().as_str() {
+                                "geo" => "geo".to_string(),
+                                "mix" => "mix".to_string(),
+                                _ => "veil".to_string(),
+                            };
+                            let role_norm = match role.trim().to_ascii_lowercase().as_str() {
+                                "client" => "client".to_string(),
+                                "relay" => "relay".to_string(),
+                                "exit" => "exit".to_string(),
+                                _ => "all".to_string(),
+                            };
+                            self.veil_mode = Some(mode_norm);
+                            self.veil_role = Some(role_norm);
+                            self.veil_socks5_addr = Some(std::net::SocketAddr::from((
+                                [127, 0, 0, 1],
+                                socks5_port,
+                            )));
+                            self.veil_guards = guards.into_iter().filter(|s| !s.trim().is_empty()).collect();
+                            self.veil_middles = middles.into_iter().filter(|s| !s.trim().is_empty()).collect();
+                            self.veil_exits = exits.into_iter().filter(|s| !s.trim().is_empty()).collect();
+                            self.veil_trust = trust.into_iter().filter(|s| !s.trim().is_empty()).collect();
+                            self.veil_listen = listen
+                                .as_deref()
+                                .filter(|s| !s.trim().is_empty())
+                                .and_then(|s| s.parse().ok());
+                            self.veil_advertise = advertise.filter(|s| !s.trim().is_empty());
+                            let res = self
+                                .start_veil_service()
+                                .await
+                                .map(|_| self.build_veil_status_dto())
+                                .map_err(|e| e.to_string());
+                            let _ = reply.send(res);
+                        }
+                        other => {
+                            self.dispatch_rhizome_outbound(other);
+                        }
+                    }
+                }
+
+                _ = rhizome_media_tick.tick(), if !self.rhizome_media_queue.is_empty() => {
+                    self.drain_rhizome_media_queue(4);
                 }
 
                 _ = metrics_tick.tick() => {
@@ -5791,6 +7279,7 @@ impl Organism {
                         | Some(HyphaEvent::Anastomosis { peer }) => {
                             tracing::info!(%peer, "hifa viva");
                             self.announce_peer_binding();
+                            self.broadcast_rhizome_snapshot();
                             if !secreted {
                                 if let Ok(true) = self.hyphae.secrete(pheromone_bytes.clone()) {
                                     secreted = true;
@@ -5940,7 +7429,16 @@ impl Organism {
                                     .unwrap_or(false);
                                 if valid {
                                     match self.bank.absorb_public(&value) {
-                                        Ok(_) => tracing::info!(plot = %id.short(), "esporo público recuperado do DHT"),
+                                        Ok(_) => {
+                                            if let Ok(plot) = serde_json::from_slice::<Plot>(&value) {
+                                                if plot.message.starts_with("rhizome:") {
+                                                    if let Ok(mut r) = self.rhizome.lock() {
+                                                        let _ = r.absorb_plot(&plot);
+                                                    }
+                                                }
+                                            }
+                                            tracing::info!(plot = %id.short(), "esporo público recuperado do DHT");
+                                        }
                                         Err(e) => tracing::warn!("absorb DHT: {e}"),
                                     }
                                     let _ = self.persist();

@@ -149,12 +149,46 @@ pub struct Exchange {
     pub kind: Option<TxKind>,
 }
 
+mod serde_seen_nonces {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::collections::HashMap;
+
+    pub fn serialize<S>(map: &HashMap<[u8; 32], u64>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut ser = s.serialize_map(Some(map.len()))?;
+        for (k, v) in map {
+            ser.serialize_entry(&hex::encode(k), v)?;
+        }
+        ser.end()
+    }
+
+    pub fn deserialize<'de, D>(d: D) -> Result<HashMap<[u8; 32], u64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = HashMap::<String, u64>::deserialize(d)?;
+        let mut out = HashMap::with_capacity(raw.len());
+        for (k, v) in raw {
+            let bytes = hex::decode(&k).map_err(serde::de::Error::custom)?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("chave seen_nonces precisa de 32 bytes"))?;
+            out.insert(arr, v);
+        }
+        Ok(out)
+    }
+}
+
 /// Ledger local de nutrientes de um nó.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Ledger {
     pub balances: HashMap<Nutrient, u64>,
     pub history: Vec<Exchange>,
     /// nonces já vistos por pagador (replay protection).
+    #[serde(default, with = "serde_seen_nonces")]
     seen_nonces: HashMap<[u8; 32], u64>,
     /// Transferências recentes (para a UI).
     pub transfers: Vec<SignedTransfer>,
@@ -710,5 +744,18 @@ mod tests {
         ));
         // Nada foi creditado.
         assert_eq!(ledger.balance(Nutrient::Atp), 0);
+    }
+
+    #[test]
+    fn ledger_json_roundtrip_with_nonces() {
+        let from = [0x11; 32];
+        let to = [0x22; 32];
+        let mut ledger = Ledger::new();
+        ledger.feed(Nutrient::Atp, 10, "init");
+        let tx = mk_tx(from, to, 3, 1);
+        ledger.apply_transfer(&tx, &from).unwrap();
+        let json = serde_json::to_vec_pretty(&ledger).unwrap();
+        let back: Ledger = serde_json::from_slice(&json).unwrap();
+        assert_eq!(back.balance(Nutrient::Atp), 7);
     }
 }

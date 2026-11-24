@@ -80,7 +80,7 @@ impl CompliancePolicy {
                     .get("local_hour")
                     .and_then(|v| v.as_u64())
                 {
-                    let is_night = hour >= 20 || hour < 6;
+                    let is_night = !(6..20).contains(&hour);
                     if is_night && intent.amount_micros > self.pix_night_limit_micros {
                         return Err(GatewayError::ComplianceViolation {
                             rule: "pix_night_limit",

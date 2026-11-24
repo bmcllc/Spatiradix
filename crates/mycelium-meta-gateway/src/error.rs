@@ -16,7 +16,10 @@ pub enum GatewayError {
     ComplianceViolation { rule: &'static str, detail: String },
 
     #[error("transição de estado inválida na FSM: {from} -> {to}")]
-    InvalidTransition { from: &'static str, to: &'static str },
+    InvalidTransition {
+        from: &'static str,
+        to: &'static str,
+    },
 
     #[error("falha criptográfica (PQC/Ed25519/ZKP): {0}")]
     Crypto(String),

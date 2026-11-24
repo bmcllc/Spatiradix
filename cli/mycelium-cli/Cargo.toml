@@ -4,6 +4,7 @@ description = "CLI do Mycelium Network: daemon, sow, signal, resonate, deploy"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [[bin]]
 name = "mycelium"
@@ -32,6 +33,7 @@ hex = { workspace = true }
 blake3 = { workspace = true }
 base64 = "0.22"
 mycelium-media = { workspace = true }
+mycelium-rhizome = { workspace = true }
 mycelium-sclerotium = { workspace = true }
 rand = { workspace = true }
 mycelium-pkarr = { workspace = true }
@@ -39,7 +41,7 @@ mycelium-root = { workspace = true }
 zeroize = "1.9"
 
 [features]
-default = ["nostr", "nostr-transport", "pqc-transport"]
+default = ["nostr", "nostr-transport", "pqc-transport", "veil"]
 veil = ["mycelium-node/veil"]
 webrtc = ["mycelium-node/webrtc", "mycelium-hyphae/webrtc"]
 license = ["mycelium-node/license"]

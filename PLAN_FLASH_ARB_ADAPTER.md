@@ -29,15 +29,15 @@ Build a **read-only** flash loan arbitrage scanning adapter that integrates with
 This adapter implements `OpportunityAdapter` for `OpportunityClass::Arbitrage`, replacing the S1 shadow file reader with a direct on-chain scanner that:
 
 1. Queries Balancer Vault contract for flash loan availability (0% fee)
-2. Scans DEX pools (Aerodrome, Uniswap V3, BaseSwap) for price discrepancies
+2. Scans DEX pools (Aerodrome, Uniswap V3) for price discrepancies
 3. Models arbitrage profit: `spread × loan_amount - gas_cost - loan_fee`
 4. Produces `OpportunityCandidate` entries with metadata describing the route
 
 **Key contract addresses on Base (chain 8453)**:
-- Balancer Vault: `0xBA12222222228d8Ba445958a71eAFfee3787EC92`
-- Balancer FlashLoan simple type: 0% fee
-- Aerodrome Router: `0xcF77a3Ba9A5CA389B7c97C74d54e5b1Beb874E43`
-- Uniswap V3 Router: `0x2626664c2603336E57B271c5C0b26F421741e481`
+- Balancer Vault: `0xBA12222222228d8Ba445958a75a0704d566BF2C8`
+- Balancer flash loan fee: read live from the ProtocolFeesCollector `0xce88686553686DA562CE7Cea497CE749DA109f9F` (0% when checked)
+- Aerodrome Router: `0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43`
+- Uniswap V3 Router: `0x2626664c2603336E57B271c5C0b26F421741e481` (execution only; quotes come from QuoterV2 `0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a`)
 - USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
 **Read-only RPC methods needed** (must add to `base_usdc.rs` allowlist):

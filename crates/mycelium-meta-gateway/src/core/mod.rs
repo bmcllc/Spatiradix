@@ -1,5 +1,6 @@
 pub mod types;
 
 pub use types::{
-    DispatchReceipt, GatewayType, PaymentIntent, SwiftCspType, TransactionState, MICRO_UNIT,
+    DispatchReceipt, GatewayType, IndicativeMycQuote, PaymentIntent, SwiftCspType,
+    TransactionState, MICRO_UNIT,
 };

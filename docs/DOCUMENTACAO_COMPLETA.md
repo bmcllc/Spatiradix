@@ -270,13 +270,14 @@ Interface visual de demonstração das capacidades soberanas da rede:
 - **Mycelium Video**: Demonstração de streaming P2P com fragmentação HLS e distribuição por esporos.
 - **MicroEasy Studio**: Loja e runtime de preservação de jogos retrô e emulação soberana.
 
-### 7.3. Mycelium Code Hub (`/hub/`) — O Hub e Forja Soberana de Repositórios
-Interface web completa para substituição do GitHub e forjas centralizadas de código:
+### 7.3. TheField (`/field/`) — Forja Soberana de Repositórios Git P2P & Signals
+Interface web unificada que substitui o GitHub e forjas centralizadas de código:
 - **Catálogo de Repositórios**: Lista todos os repositórios persistentes na `RefStore` e snapshots do `SporeBank`.
-- **Explorador de Arquivos & Código**: Navegação por diretórios em breadcrumbs e visualizador de código fonte com hashes BLAKE3 por folha.
+- **Explorador de Arquivos & Código**: Navegação por diretórios e visualizador de código fonte com hashes BLAKE3 por folha.
 - **Genealogia de Commits (Lineage DAG)**: Rastreamento do histórico completo de Plots a partir do nó raiz.
+- **Signals & Ressonância (`thefield`)**: Emissão e votação P2P por quórum (`MergePlot`, `Release`, `Pipeline`) diretamente via `/field/api/signals`.
 - **Chamber CI Integrado**: Validação e verificação de integridade automatizada em Vacuum Chambers com sanitização zero-trace de memória.
-- **Comandos de Clone Prontos**: Integração com a CLI `mycelium repo clone --cid <CID> --dest <pasta>` e `mycelium hub`.
+- **Comandos de Clone Prontos**: Integração com a CLI `mycelium repo clone --cid <CID> --dest <pasta>` e `mycelium field`.
 
 ---
 

@@ -121,6 +121,31 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), RootError> {
     fs::rename(&tmp, path).map_err(|e| io(path, e))
 }
 
+/// Escrita atômica sem fsync (o chamador faz `sync_fs` em lote depois).
+pub fn write_nosync(path: &Path, bytes: &[u8]) -> Result<(), RootError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
+    }
+    let tmp = path.with_extension(format!("tmp{}", rand::random::<u32>()));
+    fs::write(&tmp, bytes).map_err(|e| io(&tmp, e))?;
+    fs::rename(&tmp, path).map_err(|e| io(path, e))
+}
+
+/// `syncfs(2)` no sistema de arquivos que contém `dir` (uma chamada por raiz).
+pub fn sync_fs(dir: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        if let Ok(f) = fs::File::open(dir) {
+            unsafe {
+                libc::syncfs(f.as_raw_fd());
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
 pub fn io(path: &Path, e: std::io::Error) -> RootError {
     RootError::Msg(format!("{}: {e}", path.display()))
 }

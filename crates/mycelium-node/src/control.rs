@@ -18,6 +18,19 @@ fn tcp_port_path(sock_path: &Path) -> PathBuf {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Request {
+    /// Registrar uma política assinada de serviço, somente local (sem deploy ou gossip).
+    HabitatRegister {
+        name: String,
+        kind: crate::habitat::ServiceKind,
+        privacy: crate::habitat::Privacy,
+        replicas: u8,
+        #[serde(default)]
+        permitted_nodes: Vec<mycelium_core::NodeId>,
+    },
+    /// Listar manifestos do proprietário deste daemon.
+    HabitatList,
+    /// Ler e verificar um manifesto assinado por nome.
+    HabitatInspect { name: String },
     Status,
     Sow {
         message: String,
@@ -94,6 +107,8 @@ pub enum Request {
     MintClaim {
         claim: mycelium_mint::WorkClaim,
     },
+    /// Testa somente SOCKS5 CONNECT/porta 443 via VEIL local: não envia pagamento nem TLS.
+    GatewayVeilProbe { hostname: String },
     /// Executa um pagamento pelo Supreme Meta-Gateway (auto-roteamento pix:/swift:/brics:/myc:).
     GatewayPay {
         receiver_id: String,
@@ -102,6 +117,8 @@ pub enum Request {
         #[serde(default)]
         compliance_json: Option<String>,
     },
+    /// Observa entregas 2xx de um serviço Habitat. Sem cobrança nem settlement.
+    HabitatUsage { name: String },
     /// Mostra balance local + de peers.
     Balance,
     /// Dispara migração de Ion para outro nó.
@@ -421,6 +438,39 @@ pub enum Request {
         value: String,
         blinding_hex: String,
     },
+    /// Retorna visão geral (identidade soberana, stats, bridges) do Mycelium Rhizome vivo.
+    RhizomeOverview,
+    /// Propaga um `SyncEnvelope` público + Plots + pacotes de mídia no gossipsub/DHT do daemon.
+    RhizomeBroadcast {
+        event: mycelium_rhizome::SyncEnvelope,
+        #[serde(default)]
+        plots: Vec<giggs::Plot>,
+        #[serde(default)]
+        media_packets: Vec<mycelium_rhizome::MediaChunkPacket>,
+    },
+    /// Propaga um Story efêmero no Isotope (`AtomSync`) + gossipsub.
+    RhizomeStorySync {
+        isotope_key: String,
+        atom: isotope::Atom,
+        event: mycelium_rhizome::SyncEnvelope,
+    },
+    /// Envia um envelope de chat E2EE pós-quântico para `to_node_id` via `Direct`/DTN.
+    RhizomeChatSend {
+        to_node_id: String,
+        envelope: mycelium_rhizome::SealedChatEnvelope,
+    },
+    /// Envia um recibo assinado de chat (`Delivered`/`Read`) via `Direct`/DTN.
+    RhizomeReceiptSend {
+        to_node_id: String,
+        receipt: mycelium_rhizome::ChatReceipt,
+    },
+    /// Envia convite/manifesto de grupo E2EE pós-quântico via `Direct`/DTN.
+    RhizomeGroupSend {
+        to_node_id: String,
+        manifest: mycelium_rhizome::GroupManifest,
+    },
+    /// Força sincronização imediata do snapshot Rhizome com os peers conectados.
+    RhizomeSyncNow,
     Shutdown,
 }
 
@@ -444,6 +494,9 @@ pub struct AexDtnInboxItem {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
+    HabitatItem { item: Box<crate::habitat::SignedServiceManifest> },
+    HabitatItems { items: Vec<crate::habitat::SignedServiceManifest> },
+    RhizomeJson { data: serde_json::Value },
     Ok { message: String },
     Status(Box<StatusReport>),
     Err { message: String },
@@ -615,6 +668,23 @@ pub enum Response {
         total_supply_usdc: u64,
         pending_claims: usize,
         min_quorum: usize,
+    },
+    /// Resultado de SOCKS CONNECT via VEIL. NÃO verifica identidade do destino via TLS.
+    GatewayVeilProbeResult {
+        proxy: String,
+        hostname: String,
+        connection_established: bool,
+        tls_verified: bool,
+        payment_submitted: bool,
+    },
+    /// Telemetria de servidor local: não há pagador nem prova de liquidação.
+    HabitatUsageReport {
+        name: String,
+        service_id: String,
+        successful_responses: u64,
+        body_bytes: u64,
+        observation: String,
+        payment_status: String,
     },
     /// Resultado da execução de uma intenção no Supreme Meta-Gateway.
     GatewayPayResult {

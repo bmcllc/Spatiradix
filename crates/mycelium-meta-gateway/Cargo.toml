@@ -4,6 +4,7 @@ description = "Supreme Meta-Gateway: orquestrador financeiro descentralizado (Pi
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 publish = false
 
 [features]
@@ -15,10 +16,12 @@ brics = []
 [dependencies]
 mycelium-core = { workspace = true }
 mycelium-mint = { workspace = true }
+mycelium-keyring = { path = "../mycelium-keyring" }
 mycelium-zkp = { workspace = true }
 mycelium-pqc = { workspace = true }
 mycelium-pkarr = { workspace = true }
 mycelium-bank = { workspace = true }
+mycelium-pay = { workspace = true }
 mycelium-sporebank = { workspace = true }
 giggs = { workspace = true }
 blake3 = { workspace = true }
@@ -30,9 +33,13 @@ thiserror = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+rand = { workspace = true }
+subtle = "2"
+tempfile = "3"
+chacha20poly1305 = "0.10"
+zeroize = "1"
 
 [dev-dependencies]
-tempfile = "3"
 tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }

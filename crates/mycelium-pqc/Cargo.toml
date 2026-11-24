@@ -4,9 +4,14 @@ description = "PQC nativo: ML-KEM-1024 (port ET-COSMIC void_core, sem WASM)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
 zeroize = { version = "1", features = ["derive"] }
-ml-kem = { version = "0.2.1", features = ["std"] }
+ml-kem = { version = "0.2.1", features = ["std", "deterministic"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+hex = { workspace = true }

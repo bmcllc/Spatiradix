@@ -40,7 +40,7 @@ Wallet, assinatura, saldos, chain, stablecoin e Lightning estão apresentados co
 
 Na verificação de 6 de outubro de 2026, um sensor marcou 95,05 °C, o estado S1-MUPP estava ausente e o socket real recusou a conexão. As três prioridades permanecem abertas. Evidência: `research/evidence/mycelium-next-20261006T121526Z.json`.
 
-O roteiro de implementação está em `research/PLANO_MYCELIUM_NEXT.md`. Preserve os avisos e a licença AGPL-3.0 aplicáveis ao código reaproveitado do projeto.
+O roteiro de implementação está em `research/PLANO_MYCELIUM_NEXT.md`. Consulte a [licença atual do Mycelium](../../LICENSE) e preserve os avisos e as licenças aplicáveis ao código reaproveitado.
 
 ## AEM-ECO — integração passiva (2026-10-07)
 

@@ -26,8 +26,13 @@ docs/
 ## 📖 Descrição Detalhada por Módulo
 
 ### 1. 🏛️ Arquitetura & Fundamentos (`docs/architecture/`)
+- **[Space-Web Ω · SWP-Ω 1.0](../specs/swp/swp-1.0.md)**. Proposta SW0 para endereços de mundos, manifestos assinados e recuperação de cenas pelo SporeBank.
 - **[`ARQUITETURA_GERAL_SISTEMICA.md`](architecture/ARQUITETURA_GERAL_SISTEMICA.md)**: A bíblia do sistema. Detalha as camadas de L0 a L4, os fluxos de vida do The Lattice, a economia metabólica e a política de membrana.
 - **[`CRATES_REFERENCE.md`](architecture/CRATES_REFERENCE.md)**: Dicionário exaustivo de todos os 30 crates e plataformas do monorepo, com tipos centrais, papéis e dependências.
+- **[`SUBSTITUTO_INFRA_P2P.md`](architecture/SUBSTITUTO_INFRA_P2P.md)**: Plano para substituir VPS, hospedagem, domínio, git, Docker e servidores pela malha, integrando o framework MAPS (memória, agente, rotinas, painel) em N nós.
+- **[`EVOLUCAO_2NOS_SOBERANA.md`](architecture/EVOLUCAO_2NOS_SOBERANA.md)**: Evolução de P2P, Nostr e web convencional para o mínimo de 2 nós, pegando emprestados os comuns públicos (Mainline DHT/Pkarr, relays Nostr/iroh) no lugar de seed/VPS/DNS próprios; inclui a triagem do que entra e do que não entra da pasta Alien Files.
+- **[`MACHINE_HUB.md`](architecture/MACHINE_HUB.md)**: Desenho do Mycelium Machine Hub — núcleo nativo de simulação (contrato por quadro, perfil libretro, host isolado sem VM), SDK e níveis de fidelidade, integração com store/giggs/nostr/economy, modelo econômico com liquidação verificável e decisões de compatibilidade.
+- **[`MACHINE_HUB_AUDITORIA.md`](architecture/MACHINE_HUB_AUDITORIA.md)**: Auditoria de segurança do código que o Hub reutiliza (store, Event Horizon, vitrine, giggs, nutrients, bank), com a cadeia "abrir um site → comando no host" e os portões por etapa.
 - **[`architecture.md`](architecture.md)**: Visão histórica e fluxo original do organismo daemon e suas chambers.
 - **[`protocol.md`](protocol.md)**: Especificação binária e JSON dos envelopes que trafegam nas hifas.
 - **[`glossary.md`](glossary.md)**: Dicionário terminológico comparando conceitos da micologia real com a engenharia de software.

@@ -3,17 +3,19 @@
 //! Motor determinístico de emissão cripto de mainnet (PoUW-DAG, paridade 1 MYC = 8 USDC)
 //! integrado com `mycelium-zkp` e `mycelium-nutrients`.
 
+pub mod arq;
 pub mod engine;
 pub mod error;
 pub mod policy;
 pub mod proof;
 
-pub use engine::MainnetMintEngine;
+pub use arq::{ArqMintDecision, ArqMintPolicy, ArqRegime};
+pub use engine::{CpxReserveStatus, MainnetMintEngine};
 pub use error::MintError;
 pub use policy::{
-    MonetaryPolicy, COIN, DEFAULT_HALVING_EPOCHS, DEFAULT_INITIAL_EPOCH_BUDGET,
-    DEFAULT_MAX_NODE_SHARE_BPS, DEFAULT_MAX_SUPPLY, DEFAULT_MIN_HASHCASH_BITS,
-    DEFAULT_USDC_PER_MYC,
+    MonetaryPolicy, COIN, DEFAULT_CPX_PER_MYC, DEFAULT_HALVING_EPOCHS,
+    DEFAULT_INITIAL_EPOCH_BUDGET, DEFAULT_MAX_NODE_SHARE_BPS, DEFAULT_MAX_SUPPLY,
+    DEFAULT_MIN_HASHCASH_BITS, DEFAULT_USDC_PER_MYC,
 };
 pub use proof::{MintReceipt, SporocarpAttestation, WorkClaim};
 
@@ -58,6 +60,149 @@ mod tests {
     }
 
     #[test]
+    fn arq_genesis_commits_policy_and_quorum_cannot_bypass_budget_rules() {
+        let (validator_keys, validators) = make_sporocarps(&[2, 3, 4]);
+        let mut monetary = MonetaryPolicy::mainnet();
+        monetary.min_hashcash_bits = 4;
+        monetary.initial_epoch_budget = 100;
+        monetary.max_node_share_bps = 10_000;
+        monetary.max_supply = 200;
+        let governance = ArqMintPolicy::default();
+        let mut engine = MainnetMintEngine::genesis_arq(
+            "mint-arq-test",
+            b"genesis-arq",
+            monetary.clone(),
+            validators.clone(),
+            2,
+            governance.clone(),
+        )
+        .unwrap();
+        assert_eq!(engine.arq_policy(), Some(&governance));
+        let legacy_engine = MainnetMintEngine::genesis(
+            "mint-arq-test",
+            b"genesis-arq",
+            monetary.clone(),
+            validators.clone(),
+            2,
+        )
+        .unwrap();
+        assert_ne!(engine.epoch_parents, legacy_engine.epoch_parents);
+
+        let claims = vec![
+            WorkClaim::build_signed(
+                "mint-arq-test",
+                0,
+                NodeId::derive(b"producer-a"),
+                &key_from_byte(90),
+                ContentId::of(b"arq-seeding"),
+                TxKind::Seeding,
+                100,
+                1000,
+                1000,
+                4,
+            ),
+            WorkClaim::build_signed(
+                "mint-arq-test",
+                0,
+                NodeId::derive(b"producer-b"),
+                &key_from_byte(91),
+                ContentId::of(b"arq-compute"),
+                TxKind::Compute,
+                100,
+                1000,
+                1000,
+                4,
+            ),
+        ];
+        let (arq_root, decision) = engine.compute_arq_batch_root(&claims).unwrap();
+        assert_eq!(decision.regime, ArqRegime::Healthy);
+        assert_eq!(decision.allowed_epoch_budget, 100);
+        let raw = engine.compute_batch_root(engine.current_epoch, &claims);
+        assert_ne!(arq_root, raw);
+
+        let legacy_attestations: Vec<_> = validator_keys[..2]
+            .iter()
+            .map(|k| SporocarpAttestation::sign(&engine.chain_id, engine.current_epoch, raw, k))
+            .collect();
+        assert_eq!(
+            engine
+                .settle_epoch(&claims, &legacy_attestations)
+                .unwrap_err(),
+            MintError::ArqModeMismatch,
+        );
+        assert!(engine
+            .settle_epoch_arq(&claims, &legacy_attestations)
+            .is_err());
+        assert_eq!(engine.total_supply, 0);
+        assert_eq!(engine.current_epoch, 0);
+
+        let valid_attestations: Vec<_> = validator_keys[..2]
+            .iter()
+            .map(|k| {
+                SporocarpAttestation::sign(&engine.chain_id, engine.current_epoch, arq_root, k)
+            })
+            .collect();
+        let receipts = engine
+            .settle_epoch_arq(&claims, &valid_attestations)
+            .unwrap();
+        assert_eq!(receipts.len(), 2);
+        assert!(engine.total_supply <= decision.allowed_epoch_budget);
+        assert_eq!(
+            receipts.iter().map(|r| r.amount).sum::<u64>(),
+            engine.total_supply
+        );
+        assert_eq!(engine.current_epoch, 1);
+        let restored: MainnetMintEngine =
+            serde_json::from_str(&serde_json::to_string(&engine).unwrap()).unwrap();
+        assert_eq!(restored.arq_policy(), Some(&governance));
+        assert_eq!(restored.total_supply, engine.total_supply);
+        assert!(engine
+            .settle_epoch_arq(&claims, &valid_attestations)
+            .is_err());
+    }
+
+    #[test]
+    fn arq_stressed_single_producer_receives_only_fraction_of_issuance() {
+        let (validator_keys, validators) = make_sporocarps(&[12, 13, 14]);
+        let mut monetary = MonetaryPolicy::mainnet();
+        monetary.min_hashcash_bits = 4;
+        monetary.initial_epoch_budget = 100;
+        monetary.max_node_share_bps = 10_000;
+        let mut engine = MainnetMintEngine::genesis_arq(
+            "mint-arq-test",
+            b"genesis-stressed",
+            monetary,
+            validators,
+            2,
+            ArqMintPolicy::default(),
+        )
+        .unwrap();
+        let claims = vec![WorkClaim::build_signed(
+            "mint-arq-test",
+            0,
+            NodeId::derive(b"solo-worker"),
+            &key_from_byte(99),
+            ContentId::of(b"arq-solo"),
+            TxKind::Compute,
+            100,
+            1000,
+            1000,
+            4,
+        )];
+        let (root, decision) = engine.compute_arq_batch_root(&claims).unwrap();
+        assert_eq!(decision.regime, ArqRegime::Stressed);
+        assert_eq!(decision.allowed_epoch_budget, 25);
+        let attestations: Vec<_> = validator_keys[..2]
+            .iter()
+            .map(|k| SporocarpAttestation::sign(&engine.chain_id, engine.current_epoch, root, k))
+            .collect();
+        let receipts = engine.settle_epoch_arq(&claims, &attestations).unwrap();
+        assert_eq!(receipts[0].amount, 25);
+        assert_eq!(engine.total_supply, 25);
+        assert_eq!(engine.current_epoch, 1);
+    }
+
+    #[test]
     fn halving_schedule_and_shift_saturation() {
         let policy = MonetaryPolicy::mainnet();
         assert_eq!(policy.epoch_budget(0, 0), 50 * COIN);
@@ -89,8 +234,9 @@ mod tests {
         policy.max_node_share_bps = 10_000;
         policy.min_hashcash_bits = 4;
 
-        let mut engine = MainnetMintEngine::genesis("mycelium-test", b"genesis", policy, sporocarps, 2)
-            .expect("genesis válido");
+        let mut engine =
+            MainnetMintEngine::genesis("mycelium-test", b"genesis", policy, sporocarps, 2)
+                .expect("genesis válido");
 
         let producer = NodeId::derive(b"produtor-1");
         let client = key_from_byte(99);
@@ -155,8 +301,9 @@ mod tests {
         policy.min_hashcash_bits = 4;
         policy.max_node_share_bps = 5_000;
 
-        let mut engine = MainnetMintEngine::genesis("mycelium-replay", b"seed", policy, sporocarps, 2)
-            .expect("genesis válido");
+        let mut engine =
+            MainnetMintEngine::genesis("mycelium-replay", b"seed", policy, sporocarps, 2)
+                .expect("genesis válido");
 
         let producer = NodeId::derive(b"produtor-replay");
         let client = key_from_byte(42);
@@ -212,8 +359,9 @@ mod tests {
         policy.max_node_share_bps = 500;
         policy.min_hashcash_bits = 4;
 
-        let mut engine = MainnetMintEngine::genesis("mycelium-whale", b"seed", policy, sporocarps, 2)
-            .expect("genesis válido");
+        let mut engine =
+            MainnetMintEngine::genesis("mycelium-whale", b"seed", policy, sporocarps, 2)
+                .expect("genesis válido");
 
         let whale = NodeId::derive(b"no-baleia");
         let client = key_from_byte(77);
@@ -231,7 +379,9 @@ mod tests {
             4,
         );
         let att = sign_batch(&engine, &[claim.clone()], &val_keys[..2]);
-        let receipts = engine.settle_epoch(&[claim], &att).expect("época liquidada");
+        let receipts = engine
+            .settle_epoch(&[claim], &att)
+            .expect("época liquidada");
 
         assert_eq!(receipts.len(), 1);
         assert_eq!(receipts[0].amount, 500);
@@ -245,8 +395,9 @@ mod tests {
         let mut policy = MonetaryPolicy::mainnet();
         policy.min_hashcash_bits = 4;
 
-        let mut engine = MainnetMintEngine::genesis("mycelium-quorum", b"seed", policy, sporocarps, 2)
-            .expect("genesis válido");
+        let mut engine =
+            MainnetMintEngine::genesis("mycelium-quorum", b"seed", policy, sporocarps, 2)
+                .expect("genesis válido");
 
         let claim = WorkClaim::build_signed(
             "mycelium-quorum",
@@ -267,13 +418,21 @@ mod tests {
             MintError::InsufficientQuorum { got: 1, need: 2 }
         );
 
-        let att_dup = sign_batch(&engine, &[claim.clone()], &[val_keys[0].clone(), val_keys[0].clone()]);
+        let att_dup = sign_batch(
+            &engine,
+            &[claim.clone()],
+            &[val_keys[0].clone(), val_keys[0].clone()],
+        );
         assert_eq!(
             engine.settle_epoch(&[claim.clone()], &att_dup).unwrap_err(),
             MintError::DuplicateValidator(node_id_of(&val_keys[0]))
         );
 
-        let att_rogue = sign_batch(&engine, &[claim.clone()], &[val_keys[0].clone(), rogue.clone()]);
+        let att_rogue = sign_batch(
+            &engine,
+            &[claim.clone()],
+            &[val_keys[0].clone(), rogue.clone()],
+        );
         assert_eq!(
             engine.settle_epoch(&[claim], &att_rogue).unwrap_err(),
             MintError::UnauthorizedValidator(node_id_of(&rogue))
@@ -288,8 +447,9 @@ mod tests {
         policy.max_node_share_bps = 10_000;
         policy.min_hashcash_bits = 4;
 
-        let mut engine = MainnetMintEngine::genesis("mycelium-e2e", b"genesis-e2e", policy, sporocarps, 2)
-            .expect("genesis válido");
+        let mut engine =
+            MainnetMintEngine::genesis("mycelium-e2e", b"genesis-e2e", policy, sporocarps, 2)
+                .expect("genesis válido");
 
         let genesis_parent = engine.epoch_parents[0];
         let producer = NodeId::derive(b"produtor-e2e");

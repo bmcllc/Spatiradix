@@ -2,11 +2,22 @@
 //! SWIFT (CSP Decision Tree A1/A2/A3/A4/B + Trust Boundary + pacs.008 / MQ-FileAct),
 //! BRICS Pay (DCMS P2P) e MYC Settlement Rail (comportamento estilo USDC, 1 MYC = 8 USDC).
 
-use crate::core::{DispatchReceipt, GatewayType, PaymentIntent, SwiftCspType, MICRO_UNIT};
+#[cfg(feature = "swift")]
+use crate::core::SwiftCspType;
+#[cfg(any(feature = "pix", feature = "swift", feature = "brics"))]
+use crate::core::MICRO_UNIT;
+use crate::core::{DispatchReceipt, GatewayType, PaymentIntent};
 use crate::error::GatewayError;
+#[cfg(feature = "swift")]
+use crate::swift_formats::bic_has_valid_syntax;
+#[cfg(any(feature = "swift", feature = "brics"))]
+use crate::swift_formats::uetr_from_intent;
+#[cfg(feature = "brics")]
 use ed25519_dalek::{Signer, SigningKey};
 use mycelium_mint::MonetaryPolicy;
+#[cfg(any(feature = "pix", feature = "brics"))]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "pix")]
 use std::collections::HashMap;
 
 /// Contrato comum de tradução de um `PaymentIntent` para o protocolo nativo do gateway.
@@ -115,7 +126,7 @@ pub fn build_emv_brcode(
     let body = format!(
         "{}{}{}{}{}{}{}{}{}{}6304",
         emv_tlv("00", "01"),
-        emv_tlv("01", "12"),
+        emv_tlv("01", "11"),
         mai,
         emv_tlv("52", "0000"),
         emv_tlv("53", "986"),
@@ -173,6 +184,9 @@ impl MetaGatewayAdapter for PixAdapter {
     }
 
     fn dispatch(&self, intent: &PaymentIntent) -> Result<DispatchReceipt, GatewayError> {
+        if intent.currency != "BRL" || intent.amount_micros % 10_000 != 0 {
+            return Err(GatewayError::InvalidAmount);
+        }
         let raw_key = intent
             .receiver_id
             .strip_prefix("pix:")
@@ -221,14 +235,8 @@ impl MetaGatewayAdapter for PixAdapter {
             )
         };
 
-        let emv_qr = build_emv_brcode(
-            &dict.key,
-            &valor,
-            &dict.holder_name,
-            &dict.merchant_city,
-            &txid,
-        );
-
+        // Dynamic COB/COBV QR codes require a PSP-issued location.
+        // This crate currently prepares a request, but does not submit it.
         let payload = serde_json::json!({
             "kind": charge_kind,
             "txid": txid,
@@ -236,7 +244,8 @@ impl MetaGatewayAdapter for PixAdapter {
             "dict": dict,
             "calendario": calendario,
             "valor": { "original": valor },
-            "emv_qr_code": emv_qr,
+            "emv_qr_code": serde_json::Value::Null,
+            "dispatch_status": "prepared_not_submitted",
             "mtls_thumbprint": self.icp_brasil_cert_thumbprint,
         });
 
@@ -244,7 +253,7 @@ impl MetaGatewayAdapter for PixAdapter {
             gateway: GatewayType::Pix,
             external_ref: txid,
             native_payload: payload.to_string(),
-            settled_immediately: charge_kind == PixChargeKind::Cob,
+            settled_immediately: false,
         })
     }
 }
@@ -262,7 +271,10 @@ pub struct SwiftAdapter {
 #[cfg(feature = "swift")]
 impl SwiftAdapter {
     /// Verifica a fronteira de confiança (Trust Boundary) exigida pela árvore de decisão SWIFT CSP.
-    pub fn verify_trust_boundary(&self, intent: &PaymentIntent) -> Result<&'static str, GatewayError> {
+    pub fn verify_trust_boundary(
+        &self,
+        intent: &PaymentIntent,
+    ) -> Result<&'static str, GatewayError> {
         let meta = &intent.compliance_metadata;
         match self.architecture {
             SwiftCspType::A1 => {
@@ -273,7 +285,8 @@ impl SwiftAdapter {
                 {
                     return Err(GatewayError::ComplianceViolation {
                         rule: "swift_trust_boundary_a1",
-                        detail: "arquitetura A1 exige hsm_pki_verified=true (MI/CI próprios)".into(),
+                        detail: "arquitetura A1 exige hsm_pki_verified=true (MI/CI próprios)"
+                            .into(),
                     });
                 }
                 Ok("MI/CI-Direct-ISO20022")
@@ -340,8 +353,9 @@ impl SwiftAdapter {
                 if !sb || !mfa {
                     return Err(GatewayError::ComplianceViolation {
                         rule: "swift_trust_boundary_b",
-                        detail: "arquitetura B exige service_bureau_id e operator_mfa_verified=true"
-                            .into(),
+                        detail:
+                            "arquitetura B exige service_bureau_id e operator_mfa_verified=true"
+                                .into(),
                     });
                 }
                 Ok("ServiceBureau-ZeroFootprint-Portal")
@@ -364,20 +378,29 @@ impl MetaGatewayAdapter for SwiftAdapter {
             .strip_prefix("swift:")
             .unwrap_or(&intent.receiver_id)
             .trim();
-        if bic_receiver.len() < 8 {
-            return Err(GatewayError::InvalidTarget(intent.receiver_id.clone()));
+        // ISO 9362 BIC syntax only; BIC registry validation is an external dependency.
+        if !bic_has_valid_syntax(bic_receiver) || !bic_has_valid_syntax(&self.bic_sender) {
+            return Err(GatewayError::InvalidTarget("invalid BIC syntax".into()));
+        }
+        // ISO 20022 draft amounts are expressed in 2 decimal places here.
+        // Reject unstable precision and four-letter tokens such as USDC.
+        if intent.currency.len() != 3
+            || !intent.currency.bytes().all(|b| b.is_ascii_uppercase())
+            || intent.amount_micros % 10_000 != 0
+        {
+            return Err(GatewayError::InvalidAmount);
+        }
+        if self
+            .channel_endpoint
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | '&' | '"' | '\''))
+        {
+            return Err(GatewayError::InvalidTarget(
+                "unsafe SWIFT transport endpoint".into(),
+            ));
         }
 
-        let h = blake3::hash(&intent.canonical_bytes());
-        let b = h.as_bytes();
-        let uetr = format!(
-            "{}-{}-{}-{}-{}",
-            hex::encode(&b[0..4]),
-            hex::encode(&b[4..6]),
-            hex::encode(&b[6..8]),
-            hex::encode(&b[8..10]),
-            hex::encode(&b[10..16]),
-        );
+        let uetr = uetr_from_intent(&intent.canonical_bytes());
 
         let amount_fmt = format!(
             "{}.{:02}",
@@ -471,16 +494,7 @@ impl MetaGatewayAdapter for BricsPayAdapter {
         }
 
         let sig = self.node_signing_key.sign(&intent.canonical_bytes());
-        let h = blake3::hash(&intent.canonical_bytes());
-        let b = h.as_bytes();
-        let uetr = format!(
-            "{}-{}-{}-{}-{}",
-            hex::encode(&b[0..4]),
-            hex::encode(&b[4..6]),
-            hex::encode(&b[6..8]),
-            hex::encode(&b[8..10]),
-            hex::encode(&b[10..16]),
-        );
+        let uetr = uetr_from_intent(&intent.canonical_bytes());
         let dcms_tx_id = format!(
             "dcms:{}",
             hex::encode(&blake3::hash(&sig.to_bytes()).as_bytes()[..16])
@@ -490,11 +504,23 @@ impl MetaGatewayAdapter for BricsPayAdapter {
             intent.amount_micros / MICRO_UNIT,
             (intent.amount_micros % MICRO_UNIT) / 10_000
         );
+        // Never fabricate a settlement value date. The sending participant
+        // must specify a value_date (full calendar validation remains pending).
         let value_date = intent
             .compliance_metadata
             .get("value_date")
             .and_then(|v| v.as_str())
-            .unwrap_or("2026-11-20")
+            .filter(|s| {
+                s.len() == 10
+                    && s.as_bytes()[4] == b'-'
+                    && s.as_bytes()[7] == b'-'
+                    && s.bytes()
+                        .enumerate()
+                        .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+            })
+            .ok_or_else(|| {
+                GatewayError::InvalidTarget("DCMS value_date must be YYYY-MM-DD".into())
+            })?
             .to_string();
         let (myc_reference_micros, _) = intent.myc_usdc_parity(&MonetaryPolicy::mainnet());
 
@@ -520,7 +546,7 @@ impl MetaGatewayAdapter for BricsPayAdapter {
             gateway: GatewayType::BricsPay,
             external_ref: dcms_tx_id,
             native_payload: payload,
-            settled_immediately: true,
+            settled_immediately: false,
         })
     }
 }
@@ -560,7 +586,7 @@ impl MetaGatewayAdapter for MycSettlementAdapter {
             gateway: GatewayType::MycRail,
             external_ref: ref_id,
             native_payload: payload.to_string(),
-            settled_immediately: true,
+            settled_immediately: false,
         })
     }
 }

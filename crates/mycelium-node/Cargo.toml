@@ -4,6 +4,7 @@ description = "Organismo do nó: daemon persistente, protocolo Lattice e control
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-s1 = { path = "../mycelium-s1" }
@@ -36,10 +37,16 @@ tracing = { workspace = true }
 hex = { workspace = true }
 blake3 = { workspace = true }
 rand = { workspace = true }
+zeroize = "1"
 libp2p = { workspace = true }
 axum = { workspace = true }
 base64 = "0.22"
 mycelium-media = { workspace = true }
+mycelium-rhizome = { workspace = true }
+mycelium-bank = { workspace = true }
+mycelium-pay = { workspace = true }
+mycelium-royalty = { workspace = true }
+reqwest = { workspace = true, features = ["socks"] }
 mycelium-sclerotium = { workspace = true }
 mycelium-qel = { workspace = true }
 mycelium-ipfs = { workspace = true }
@@ -57,7 +64,7 @@ reqwest = { workspace = true }
 axum = { workspace = true }
 
 [features]
-default = []
+default = ["veil"]
 veil = ["dep:mycelium-veil"]
 webrtc = ["mycelium-hyphae/webrtc"]
 license = ["mycelium-zkp/license", "mycelium-hyphae/license"]

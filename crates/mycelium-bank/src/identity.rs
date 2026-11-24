@@ -72,6 +72,37 @@ impl SovereignWallet {
         let arr: [u8; 64] = sig.try_into().unwrap();
         Verifier::verify(verifying, msg, &Signature::from_bytes(&arr)).is_ok()
     }
+
+    /// Seed determinístico de 32 bytes (secp256k1) do GhostID vinculado a esta carteira.
+    pub fn ghost_secret_bytes(&self) -> [u8; 32] {
+        let mut h = blake3::Hasher::new();
+        h.update(b"mycelium-bank-ghostid-v1");
+        h.update(&self.signing_seed);
+        *h.finalize().as_bytes()
+    }
+
+    /// Deriva uma identidade `GhostId` (secp256k1 BIP-340 Schnorr) vinculada a esta carteira
+    /// para interoperabilidade direta com NFC, `mycelium-pay` (P2PK x-only), Nostr e AEX World.
+    pub fn derive_ghost_id(&self, ttl_secs: u64) -> Result<mycelium_ghostid::GhostId, BankError> {
+        let seed = self.ghost_secret_bytes();
+        mycelium_ghostid::GhostId::from_secret_bytes(seed, ttl_secs)
+            .map_err(|e| BankError::Invalid(format!("ghostid inválido: {e}")))
+    }
+
+    /// Chave pública x-only (32 bytes) do GhostID associado a esta carteira.
+    pub fn ghost_pubkey_xonly(&self) -> Result<[u8; 32], BankError> {
+        Ok(self.derive_ghost_id(3_600)?.nostr_pubkey())
+    }
+
+    /// Verifica assinatura Schnorr BIP-340 emitida por um `GhostId`.
+    pub fn verify_ghost_schnorr(pubkey_xonly: &[u8; 32], msg: &[u8], sig: &[u8]) -> bool {
+        if sig.len() != 64 {
+            return false;
+        }
+        let mut sig64 = [0u8; 64];
+        sig64.copy_from_slice(sig);
+        mycelium_ghostid::GhostId::verify(pubkey_xonly, msg, &sig64).is_ok()
+    }
 }
 
 impl Drop for SovereignWallet {

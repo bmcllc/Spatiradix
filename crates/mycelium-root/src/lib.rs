@@ -45,7 +45,31 @@ pub struct SyncReport {
     pub delivered: usize,
 }
 
+/// Pedaços decifrados recentes (jogos leem o mesmo trecho várias vezes).
+struct ChunkCache {
+    map: HashMap<String, std::rc::Rc<Vec<u8>>>,
+    order: std::collections::VecDeque<String>,
+    cap: usize,
+}
+
+impl ChunkCache {
+    fn get(&mut self, id: &str) -> Option<std::rc::Rc<Vec<u8>>> {
+        self.map.get(id).cloned()
+    }
+    fn put(&mut self, id: String, data: std::rc::Rc<Vec<u8>>) {
+        if self.map.insert(id.clone(), data).is_none() {
+            self.order.push_back(id);
+        }
+        while self.order.len() > self.cap {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+    }
+}
+
 pub struct Vault {
+    cache: std::cell::RefCell<ChunkCache>,
     roots: Vec<Root>,
     vault: String,
     k: u8,
@@ -125,6 +149,11 @@ impl Vault {
         let mut w = [0u8; 4];
         rand::rngs::OsRng.fill_bytes(&mut w);
         let mut v = Self {
+            cache: std::cell::RefCell::new(ChunkCache {
+                map: HashMap::new(),
+                order: Default::default(),
+                cap: 96, // ~96 MiB
+            }),
             roots,
             vault,
             k,
@@ -183,12 +212,79 @@ impl Vault {
     }
 
     fn append(&mut self, op: Op, base: Option<String>) -> Result<(), RootError> {
+        // pedaços gravados sem fsync individual: um syncfs por raiz antes da
+        // entrada de log garante que o log nunca aponta para dado não durável
+        for r in &self.roots {
+            roots::sync_fs(&r.root_dir());
+        }
         let lamport = self.entries.last().map(|e| e.lamport).unwrap_or(0) + 1;
         let (id, sealed) = log::seal_entry(&self.keys, lamport, &self.writer, base, op)?;
         for r in &self.roots {
             write_atomic(&r.log_dir().join(format!("{id}.e")), &sealed)?;
         }
-        self.reload()
+        let entry = log::open_entry(&self.keys, &id, &sealed)?;
+        self.tree.apply(&entry);
+        self.entries.push(entry);
+        Ok(())
+    }
+
+    /// Grava um arquivo lendo de `reader` em pedaços (memória constante).
+    pub fn write_stream(&mut self, path: &str, reader: &mut dyn std::io::Read) -> Result<u64, RootError> {
+        let mut ids = Vec::new();
+        let mut size = 0u64;
+        let mut buf = vec![0u8; chunk::CHUNK_SIZE];
+        loop {
+            let mut filled = 0;
+            while filled < buf.len() {
+                match reader.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(RootError::Msg(e.to_string())),
+                }
+            }
+            if filled == 0 {
+                break;
+            }
+            ids.push(self.store_chunk(&buf[..filled])?);
+            size += filled as u64;
+            if filled < buf.len() {
+                break;
+            }
+        }
+        self.commit_file(path, size, ids)?;
+        Ok(size)
+    }
+
+    /// Registra um arquivo cujos pedaços já foram gravados com `store_chunk`.
+    pub fn commit_file(&mut self, path: &str, size: u64, chunks: Vec<String>) -> Result<(), RootError> {
+        let path = normalize(path).ok_or_else(|| RootError::Msg(format!("caminho inválido: {path}")))?;
+        if path.is_empty() {
+            return Err(RootError::Msg("caminho vazio".into()));
+        }
+        let expect = size.div_ceil(chunk::CHUNK_SIZE as u64) as usize;
+        if chunks.len() != expect {
+            return Err(RootError::Msg(format!("{path}: {} pedaços para {size} bytes", chunks.len())));
+        }
+        let base = self.tree.entry_of(&path);
+        self.append(
+            Op::Put {
+                path,
+                size,
+                mtime: now_secs(),
+                chunks,
+            },
+            base,
+        )
+    }
+
+    /// Lê `len` bytes a partir de `offset`, carregando só os pedaços tocados.
+    pub fn read_range(&self, path: &str, offset: u64, len: usize) -> Result<Vec<u8>, RootError> {
+        let path = normalize(path).ok_or_else(|| RootError::NotFound(path.to_string()))?;
+        let Some(Node::File { chunks, size, .. }) = self.tree.get(&path) else {
+            return Err(RootError::NotFound(path));
+        };
+        read_chunks_range(self, chunks, *size, offset, len)
     }
 
     /// Grava (ou substitui) um arquivo.
@@ -201,23 +297,11 @@ impl Vault {
         for piece in data.chunks(chunk::CHUNK_SIZE) {
             ids.push(self.store_chunk(piece)?);
         }
-        if data.is_empty() {
-            ids.clear();
-        }
-        let base = self.tree.entry_of(&path);
-        let mtime = now_secs();
-        self.append(
-            Op::Put {
-                path,
-                size: data.len() as u64,
-                mtime,
-                chunks: ids,
-            },
-            base,
-        )
+        self.commit_file(&path, data.len() as u64, ids)
     }
 
-    fn store_chunk(&self, plain: &[u8]) -> Result<String, RootError> {
+    /// Cifra, codifica e grava um pedaço (até `CHUNK_SIZE`). Devolve o id.
+    pub fn store_chunk(&self, plain: &[u8]) -> Result<String, RootError> {
         let id = chunk::chunk_id(&self.keys, plain);
         let present: HashMap<u8, &Root> = self.roots.iter().map(|r| (r.meta.index, r)).collect();
         // dedup: já gravado em todas as raízes presentes?
@@ -231,11 +315,11 @@ impl Vault {
         let frags = chunk::encode(&self.keys, &id, plain, self.k, self.n)?;
         for (i, frag) in (1..=self.n).zip(frags) {
             match present.get(&i) {
-                Some(r) => write_atomic(&r.chunk_path(&id), &frag)?,
+                Some(r) => roots::write_nosync(&r.chunk_path(&id), &frag)?,
                 // raiz ausente: todas as presentes levam o fragmento dela
                 None => {
                     for r in &self.roots {
-                        write_atomic(&r.carry_path(i, &id), &frag)?;
+                        roots::write_nosync(&r.carry_path(i, &id), &frag)?;
                     }
                 }
             }
@@ -243,7 +327,17 @@ impl Vault {
         Ok(id)
     }
 
-    fn load_chunk(&self, id: &str) -> Result<Vec<u8>, RootError> {
+    /// Pedaço decifrado (com cache).
+    pub fn load_chunk(&self, id: &str) -> Result<std::rc::Rc<Vec<u8>>, RootError> {
+        if let Some(hit) = self.cache.borrow_mut().get(id) {
+            return Ok(hit);
+        }
+        let data = std::rc::Rc::new(self.load_chunk_uncached(id)?);
+        self.cache.borrow_mut().put(id.to_string(), data.clone());
+        Ok(data)
+    }
+
+    fn load_chunk_uncached(&self, id: &str) -> Result<Vec<u8>, RootError> {
         let mut frags: Vec<Option<Vec<u8>>> = vec![None; self.n as usize];
         for i in 1..=self.n {
             let mut candidates: Vec<PathBuf> = Vec::new();
@@ -361,7 +455,7 @@ impl Vault {
             .flatten()
             .collect();
         for id in &ids {
-            let plain = self.load_chunk(id)?;
+            let plain = self.load_chunk_uncached(id)?;
             let frags = chunk::encode(&self.keys, id, &plain, self.k, self.n)?;
             write_atomic(&root.chunk_path(id), &frags[(index - 1) as usize])?;
             for r in &self.roots {
@@ -448,6 +542,36 @@ fn sync_roots(roots: &[Root]) -> Result<SyncReport, RootError> {
         }
     }
     Ok(report)
+}
+
+/// Trecho `[offset, offset+len)` de um arquivo descrito por seus pedaços.
+pub fn read_chunks_range(
+    v: &Vault,
+    chunks: &[String],
+    size: u64,
+    offset: u64,
+    len: usize,
+) -> Result<Vec<u8>, RootError> {
+    if offset >= size || len == 0 {
+        return Ok(Vec::new());
+    }
+    let end = size.min(offset + len as u64);
+    let cs = chunk::CHUNK_SIZE as u64;
+    let mut out = Vec::with_capacity((end - offset) as usize);
+    let mut pos = offset;
+    while pos < end {
+        let idx = (pos / cs) as usize;
+        let id = chunks.get(idx).ok_or_else(|| RootError::Corrupt(format!("pedaço {idx}")))?;
+        let data = v.load_chunk(id)?;
+        let start = (pos % cs) as usize;
+        let stop = ((end - idx as u64 * cs) as usize).min(data.len());
+        if start >= stop {
+            return Err(RootError::Corrupt(id.clone()));
+        }
+        out.extend_from_slice(&data[start..stop]);
+        pos += (stop - start) as u64;
+    }
+    Ok(out)
 }
 
 fn load_roots(paths: &[PathBuf]) -> Result<Vec<Root>, RootError> {

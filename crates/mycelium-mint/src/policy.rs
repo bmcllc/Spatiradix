@@ -8,6 +8,10 @@ pub const COIN: u64 = 100_000_000;
 /// Paridade de referência da mainnet: 1 MYC = 8 USDC.
 pub const DEFAULT_USDC_PER_MYC: u64 = 8;
 
+/// Razão de lastro de reserva do `mycelium-mint` para a moeda unificada da plataforma (CPX):
+/// 1 MYC em reserva lastreia 8 CPX operacionais (paridade 1 CPX = 1 USDC ref).
+pub const DEFAULT_CPX_PER_MYC: u64 = DEFAULT_USDC_PER_MYC;
+
 /// Suprimento máximo padrão da mainnet: 21 milhões de MYC.
 pub const DEFAULT_MAX_SUPPLY: u64 = 21_000_000 * COIN;
 
@@ -140,5 +144,10 @@ impl MonetaryPolicy {
     /// Converte unidades base de USDC (8 casas) para unidades base de MYC (8 casas).
     pub fn usdc_to_myc(&self, usdc_base_units: u128) -> u64 {
         (usdc_base_units / self.usdc_per_myc as u128) as u64
+    }
+
+    /// Capacidade máxima de emissão de CPX (8 casas) lastreada por `myc_base_units` em reserva.
+    pub fn myc_reserve_to_cpx(&self, myc_base_units: u64) -> u128 {
+        myc_base_units as u128 * self.usdc_per_myc as u128
     }
 }

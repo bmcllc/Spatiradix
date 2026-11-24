@@ -63,10 +63,38 @@ pub fn proxied_timeout(direct: std::time::Duration) -> std::time::Duration {
     }
 }
 
-/// Substituto de `tokio_tungstenite::connect_async` que respeita o proxy.
+/// Substituto de `tokio_tungstenite::connect_async` que respeita o proxy
+/// e funciona no Android (sem `/etc/resolv.conf` e sem Google DNS).
 pub async fn connect_ws(url: &str) -> Result<(WsStream, Response), String> {
     let Some(proxy) = socks5_proxy()? else {
-        return tokio_tungstenite::connect_async(url)
+        if std::path::Path::new("/etc/resolv.conf").exists() {
+            return tokio_tungstenite::connect_async(url)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        let parsed = url::Url::parse(url).map_err(|e| format!("URL inválida: {e}"))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| format!("URL sem host: {url}"))?
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string();
+        let port = parsed
+            .port_or_known_default()
+            .ok_or_else(|| format!("URL sem porta conhecida: {url}"))?;
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            let stream = TcpStream::connect(SocketAddr::new(ip, port))
+                .await
+                .map_err(|e| format!("TCP {host}:{port}: {e}"))?;
+            return tokio_tungstenite::client_async_tls_with_config(url, stream, None, None)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        let ip = resolve_without_resolv_conf(&host).await?;
+        let stream = TcpStream::connect(SocketAddr::new(ip, port))
+            .await
+            .map_err(|e| format!("TCP {host}:{port}: {e}"))?;
+        return tokio_tungstenite::client_async_tls_with_config(url, stream, None, None)
             .await
             .map_err(|e| e.to_string());
     };
@@ -86,6 +114,26 @@ pub async fn connect_ws(url: &str) -> Result<(WsStream, Response), String> {
     tokio_tungstenite::client_async_tls_with_config(url, stream, None, None)
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn resolve_without_resolv_conf(host: &str) -> Result<std::net::IpAddr, String> {
+    use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+    use hickory_resolver::TokioAsyncResolver;
+
+    let cf = TokioAsyncResolver::tokio(ResolverConfig::cloudflare(), ResolverOpts::default());
+    if let Ok(resp) = cf.lookup_ip(host).await {
+        if let Some(ip) = resp.iter().next() {
+            return Ok(ip);
+        }
+    }
+    let q9 = TokioAsyncResolver::tokio(ResolverConfig::quad9(), ResolverOpts::default());
+    let resp = q9
+        .lookup_ip(host)
+        .await
+        .map_err(|e| format!("DNS sem resolv.conf ({host}): {e}"))?;
+    resp.iter()
+        .next()
+        .ok_or_else(|| format!("nenhum IP retornado para {host}"))
 }
 
 /// Handshake SOCKS5 (RFC 1928) sem autenticação, CONNECT por **nome**

@@ -4,7 +4,7 @@
 //! Payload canónico de 121 bytes assinado pelo vendor; o handshake verifica
 //! a assinatura ML-DSA-87, binding do dispositivo e janela temporal.
 //!
-//! Requer feature `license` (dep: `ml-dsa =0.1.0`).
+//! Requer feature `license` (dep: `ml-dsa =0.1.2`).
 
 use sha3::{Digest, Sha3_256};
 
@@ -122,6 +122,15 @@ pub fn mldsa_verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool
     };
 
     vk.verify(message, &sig).is_ok()
+}
+
+pub type MlDsaSigningKey = ml_dsa::SigningKey<MlDsa87>;
+pub use ml_dsa::signature::{Keypair, Signer};
+
+/// Keygen determinístico ML-DSA-87 (FIPS 204 `KeyGen_internal`) a partir de `ξ` (32 B,
+/// keyring `mycelium/v1/pq/mldsa87`). Devolve a chave de assinatura.
+pub fn mldsa_signing_key_from_seed(xi: &[u8; 32]) -> MlDsaSigningKey {
+    MlDsaSigningKey::from_seed(&(*xi).into())
 }
 
 // ─── Handshake completo ──────────────────────────────────────────────────────
@@ -289,6 +298,20 @@ mod tests {
             let r = license_verify_handshake(&vk_bytes, dev, sku, &payload, &fake_sig, 100);
             assert!(!r.ok);
             assert!(r.reason.contains("inválida"));
+        });
+    }
+
+    #[test]
+    fn mldsa_from_seed_deterministic_and_signs() {
+        run_big_stack(|| {
+            let xi = [9u8; 32];
+            let (a, b) = (mldsa_signing_key_from_seed(&xi), mldsa_signing_key_from_seed(&xi));
+            let vk = a.verifying_key().encode().as_slice().to_vec();
+            assert_eq!(vk, b.verifying_key().encode().as_slice().to_vec());
+            assert_ne!(vk, mldsa_signing_key_from_seed(&[10u8; 32]).verifying_key().encode().as_slice().to_vec());
+            let sig = a.sign(b"msg");
+            assert!(mldsa_verify(&vk, b"msg", sig.encode().as_slice()));
+            assert_eq!(vk[..4], [0x89, 0x5e, 0x63, 0xda]); // regressão; KAT FIPS oficial pendente
         });
     }
 }

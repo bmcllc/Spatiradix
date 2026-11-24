@@ -6,6 +6,8 @@
 
 pub mod aex_bridge;
 pub mod assets;
+pub mod ecosystem_ion;
+pub mod habitat;
 mod control;
 mod organism;
 mod protocol;
@@ -13,7 +15,8 @@ mod seeds_ion;
 mod src_ion;
 mod store;
 mod vitrine_ion;
-mod hub_ion;
+pub mod field_ion;
+pub mod rhizome_ion;
 
 pub use control::{call, serve, Request, Response, StatusReport};
 pub use organism::{Organism, OrganismConfig, OrganismError};

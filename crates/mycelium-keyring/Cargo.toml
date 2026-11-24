@@ -1,0 +1,21 @@
+[package]
+name = "mycelium-keyring"
+description = "Keyring: uma semente BIP-39, todas as chaves (spec Sovereign Finance §4)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+license-file.workspace = true
+
+[features]
+# ML-DSA-87 puxa o zkp (feature license); fica opt-in.
+mldsa = ["dep:mycelium-zkp"]
+
+[dependencies]
+mycelium-pqc = { workspace = true }
+mycelium-zkp = { workspace = true, features = ["license"], optional = true }
+bip39 = "2"
+blake3 = "1"
+secp256k1 = { version = "0.29", default-features = false }
+zeroize = { version = "1", features = ["derive"] }
+thiserror = { workspace = true }
+hex = { workspace = true }

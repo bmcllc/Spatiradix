@@ -78,3 +78,13 @@ opencode.json
 
 # Repo git embutido (próprio .git) — não versionar como gitlink aqui.
 /apps/mycelium-s1-portal/
+
+# SBOM gerado por scripts/supply_chain.sh
+*.cdx.json
+
+# Toolchain soberana Android ARM64 e chave de assinatura local (NUNCA versionar!)
+/.android-sovereign/
+
+# Rodas Python avulsas e dumps de erro de JVM
+*.whl
+hs_err_pid*.log

@@ -4,6 +4,7 @@ description = "Transporte libp2p sobre CandidateRelay/backchannel Nostr (kind 39
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-ghostid = { workspace = true }

@@ -4,15 +4,18 @@ description = "Banco/corretora descentralizada e soberana sobre a Mycelium Netwo
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-pqc = { path = "../mycelium-pqc" }
+mycelium-ghostid = { workspace = true }
 mycelium-mint = { workspace = true }
 mycelium-core = { path = "../mycelium-core", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 blake3 = { workspace = true }
+base64 = "0.22"
 hex = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { workspace = true }

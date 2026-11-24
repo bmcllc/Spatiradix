@@ -2,7 +2,8 @@
 name = "mycelium-store"
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0"
+license.workspace = true
+license-file.workspace = true
 description = "App Store e Launcher P2P de Software Legado, Hardware antigo e Jogos com motor de emulação dinâmica (QEMU, MAME, RetroArch, WebAssembly e Cloud Streaming P2P)"
 
 [dependencies]

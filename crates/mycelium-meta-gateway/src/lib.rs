@@ -12,18 +12,28 @@ pub mod core;
 pub mod engine;
 pub mod error;
 pub mod persistence;
+pub mod merchant_checkout;
+pub mod sovereign_cipher;
+#[cfg(feature = "pix")]
+pub mod pix_brcode;
 pub mod pkarr_resolver;
+#[cfg(any(feature = "swift", feature = "brics"))]
+pub mod swift_formats;
 pub mod tls_hsm;
+pub mod veil_egress;
 pub mod webhooks;
 
 pub use adapters::MetaGatewayAdapter;
 pub use compliance::CompliancePolicy;
 pub use core::{
-    DispatchReceipt, GatewayType, PaymentIntent, SwiftCspType, TransactionState, MICRO_UNIT,
+    DispatchReceipt, GatewayType, IndicativeMycQuote, PaymentIntent, SwiftCspType,
+    TransactionState, MICRO_UNIT,
 };
 pub use engine::{ExecutionOutcome, MetaGatewayEngine};
 pub use error::GatewayError;
+pub use veil_egress::VeilEgress;
 pub use persistence::SporebankIntentStore;
+pub use merchant_checkout::{prepare_myc_purchase, PreparedMycCheckout};
 pub use pkarr_resolver::PkarrIdentityResolver;
 pub use tls_hsm::{CertFormat, HsmAttestation, PixMtlsConfig, SwiftHsmKeystore};
 pub use webhooks::{
@@ -32,6 +42,9 @@ pub use webhooks::{
 };
 
 #[cfg(test)]
+mod safety_tests;
+
+#[cfg(all(test, feature = "pix", feature = "swift", feature = "brics"))]
 mod tests {
     use super::*;
     use crate::adapters::{
@@ -50,7 +63,7 @@ mod tests {
     fn test_engine_with_home(home: &std::path::Path) -> MetaGatewayEngine {
         let sk = SigningKey::from_bytes(&[0x42; 32]);
         let author = NodeId::derive(sk.verifying_key().as_bytes());
-        let store = SporebankIntentStore::open(home, author).unwrap();
+        let store = SporebankIntentStore::open_encrypted(home, author, [0x32; 32]).unwrap();
         let mut engine =
             MetaGatewayEngine::new(sk, b"mycelium-meta-gateway-genesis").with_sporebank(store);
 
@@ -93,7 +106,7 @@ mod tests {
             "BRL",
             "did:mycelium:bob",
             "pix:desconhecido@exemplo.com",
-            json!({ "local_hour": 14 }),
+            json!({ "local_hour": 14, "external_disclosure_consent": true }),
         )
         .unwrap();
         assert!(matches!(
@@ -106,15 +119,27 @@ mod tests {
             "BRL",
             "did:mycelium:bob",
             "pix:alice@mycelium.net",
-            json!({ "local_hour": 14 }),
+            json!({ "local_hour": 14, "external_disclosure_consent": true }),
         )
         .unwrap();
         let out_cob = engine.execute(cob).unwrap();
-        assert!(matches!(out_cob.intent.state, TransactionState::Settled { .. }));
+        assert!(matches!(
+            out_cob.intent.state,
+            TransactionState::AwaitingGatewayResponse { .. }
+        ));
         let v: serde_json::Value = serde_json::from_str(&out_cob.receipt.native_payload).unwrap();
         assert_eq!(v["kind"], "cob");
-        let qr = v["emv_qr_code"].as_str().unwrap();
-        assert!(qr.starts_with("000201"));
+        assert!(v["emv_qr_code"].is_null());
+        assert_eq!(v["dispatch_status"], "prepared_not_submitted");
+        let static_qr = crate::adapters::build_emv_brcode(
+            "alice@mycelium.net",
+            "250.00",
+            "ALICE MYCELIUM",
+            "FORTALEZA",
+            "REF123",
+        );
+        let qr = static_qr.as_str();
+        assert!(qr.starts_with("000201010211"));
         let (body, crc_hex) = qr.split_at(qr.len() - 4);
         assert_eq!(format!("{:04X}", crc16_ccitt(body.as_bytes())), crc_hex);
     }
@@ -128,12 +153,12 @@ mod tests {
             let mut engine = test_engine_with_home(dir.path());
             let swift_intent = PaymentIntent::auto_route(
                 8_000 * MICRO_UNIT,
-                "USDC",
+                "USD",
                 "did:mycelium:treasury",
                 "swift:CHASUS33XXX",
                 json!({
                     "swift_csp_compliant": true,
-                    "secure_zone_log_id": "sz-restart-01"
+                    "secure_zone_log_id": "sz-restart-01", "external_disclosure_consent": true
                 }),
             )
             .unwrap();
@@ -167,7 +192,7 @@ mod tests {
             "BRL",
             "did:mycelium:bob",
             "pix:alice@mycelium.net",
-            json!({ "local_hour": 14, "due_date": "2026-12-20" }),
+            json!({ "local_hour": 14, "due_date": "2026-12-20", "external_disclosure_consent": true }),
         )
         .unwrap();
         let out_cobv = engine.execute(cobv).unwrap();
@@ -177,10 +202,10 @@ mod tests {
         // 2. Cria transferência SWIFT (aguardando pacs.002).
         let swift = PaymentIntent::auto_route(
             8_000 * MICRO_UNIT,
-            "USDC",
+            "USD",
             "did:mycelium:treasury",
             "swift:CHASUS33XXX",
-            json!({ "swift_csp_compliant": true, "secure_zone_log_id": "sz-wh-01" }),
+            json!({ "swift_csp_compliant": true, "secure_zone_log_id": "sz-wh-01", "external_disclosure_consent": true }),
         )
         .unwrap();
         let out_swift = engine.execute(swift).unwrap();
@@ -192,6 +217,17 @@ mod tests {
             webhook_secret: secret,
         }));
         let app = build_webhook_router(state.clone());
+        let no_public_read = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/intents/{cobv_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_public_read.status(), StatusCode::NOT_FOUND);
 
         // Assinatura adulterada -> 401 Unauthorized.
         let bad_ev = PixWebhookEvent {
@@ -244,8 +280,23 @@ mod tests {
         assert_eq!(ack.state, "settled");
         assert!(ack.sporebank_cid.is_some());
 
+        // Exactly the same signed callback is idempotent; do not emit a second settlement.
+        let again = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/webhooks/pix")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&ok_pix).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(again.status(), StatusCode::OK);
+
         // Webhook SWIFT `pacs.002` (ACSC) -> liquida transferência SWIFT.
-        let sig_swift = WebhookServiceState::sign_callback(&secret, &format!("swift:{uetr}:ACSC"));
+        let sig_swift = WebhookServiceState::sign_callback(&secret, &format!("swift:{uetr}:ACSC:"));
         let ok_swift = SwiftWebhookEvent {
             uetr,
             status_code: "ACSC".into(),
@@ -286,7 +337,7 @@ mod tests {
                 "USDC",
                 "did:mycelium:br-exporter",
                 brics_pkarr,
-                json!({ "value_date": "2026-11-20" }),
+                json!({ "value_date": "2026-11-20", "external_disclosure_consent": true }),
             )
             .unwrap();
 
@@ -309,9 +360,7 @@ mod tests {
         let mut fake_der = vec![0x30u8; 32];
         fake_der[1] = 0x1e;
         std::fs::write(&p12_path, &fake_der).unwrap();
-        let meta = PixMtlsConfig::load_pkcs12_metadata(&p12_path, "senha-icp-2026").unwrap();
-        assert_eq!(meta.format, CertFormat::Pkcs12);
-        assert!(meta.thumbprint.starts_with("icp-p12-blake3:"));
+        assert!(PixMtlsConfig::load_pkcs12_metadata(&p12_path, "senha-icp-2026").is_err());
 
         // SWIFT HSM Keystore: cria, bloqueia PIN errado e atesta Secure Zone com PIN correto.
         let hsm_path = dir.path().join("swift-hsm.json");

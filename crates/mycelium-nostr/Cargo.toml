@@ -4,6 +4,7 @@ description = "Transporte Nostr: RelayPool wss://, NIP-94, shards QEL 31234, Can
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 mycelium-ghostid = { workspace = true }
@@ -15,10 +16,11 @@ hex = { workspace = true }
 tokio = { workspace = true }
 futures-util = "0.3"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
-nip44 = "0.3.0"
+nip44 = "0.3.2"
 secp256k1 = { version = "0.31", features = ["global-context"] }
 sha2 = "0.10"
 tracing = { workspace = true }
+hickory-resolver = { workspace = true }
 url = "2"
 rand = { workspace = true }
 base64 = "0.22"

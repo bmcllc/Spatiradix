@@ -23,10 +23,15 @@ pub enum CertFormat {
 impl PixMtlsConfig {
     /// Carrega um bundle PEM (`cert + private key`) do disco, calcula o thumbprint
     /// criptográfico e constrói um `reqwest::Client` configurado com mTLS (fail-closed).
-    pub fn load_pem_client(path: impl AsRef<Path>) -> Result<(Self, reqwest::Client), GatewayError> {
+    pub fn load_pem_client(
+        path: impl AsRef<Path>,
+    ) -> Result<(Self, reqwest::Client), GatewayError> {
         let path = path.as_ref().to_path_buf();
         let pem_bytes = std::fs::read(&path).map_err(|e| {
-            GatewayError::Crypto(format!("falha ao ler certificado PEM `{}`: {e}", path.display()))
+            GatewayError::Crypto(format!(
+                "falha ao ler certificado PEM `{}`: {e}",
+                path.display()
+            ))
         })?;
         let identity = reqwest::Identity::from_pem(&pem_bytes)
             .map_err(|e| GatewayError::Crypto(format!("identidade PEM inválida para mTLS: {e}")))?;
@@ -36,7 +41,10 @@ impl PixMtlsConfig {
             .build()
             .map_err(|e| GatewayError::Crypto(format!("reqwest mTLS build: {e}")))?;
 
-        let thumbprint = format!("icp-blake3:{}", hex::encode(&blake3::hash(&pem_bytes).as_bytes()[..16]));
+        let thumbprint = format!(
+            "icp-blake3:{}",
+            hex::encode(&blake3::hash(&pem_bytes).as_bytes()[..16])
+        );
         Ok((
             Self {
                 cert_path: path,
@@ -60,7 +68,10 @@ impl PixMtlsConfig {
         }
         let path = path.as_ref().to_path_buf();
         let der = std::fs::read(&path).map_err(|e| {
-            GatewayError::Crypto(format!("falha ao ler arquivo .p12 `{}`: {e}", path.display()))
+            GatewayError::Crypto(format!(
+                "falha ao ler arquivo .p12 `{}`: {e}",
+                path.display()
+            ))
         })?;
         // ASN.1 SEQUENCE (0x30) mínimo para arquivo PKCS#12 DER.
         if der.len() < 16 || der[0] != 0x30 {
@@ -68,12 +79,10 @@ impl PixMtlsConfig {
                 "arquivo .p12 inválido (cabeçalho ASN.1 DER ausente)".into(),
             ));
         }
-        let thumbprint = format!("icp-p12-blake3:{}", hex::encode(&blake3::hash(&der).as_bytes()[..16]));
-        Ok(Self {
-            cert_path: path,
-            thumbprint,
-            format: CertFormat::Pkcs12,
-        })
+        // A DER prefix is not PKCS#12 validation. Fail closed.
+        Err(GatewayError::Crypto(
+            "PKCS#12 parsing and password verification are not implemented".into(),
+        ))
     }
 }
 
@@ -126,7 +135,8 @@ impl SwiftHsmKeystore {
             .map_err(|e| GatewayError::Crypto(format!("write hsm keystore: {e}")))?;
 
         let signing_key = SigningKey::from_bytes(&seed);
-        let key_fingerprint = hex::encode(&blake3::hash(signing_key.verifying_key().as_bytes()).as_bytes()[..16]);
+        let key_fingerprint =
+            hex::encode(&blake3::hash(signing_key.verifying_key().as_bytes()).as_bytes()[..16]);
         Ok(Self {
             slot_id,
             key_fingerprint,
@@ -150,7 +160,8 @@ impl SwiftHsmKeystore {
             .try_into()
             .map_err(|_| GatewayError::Crypto("seed do keystore HSM não tem 32 bytes".into()))?;
         let signing_key = SigningKey::from_bytes(&seed);
-        let key_fingerprint = hex::encode(&blake3::hash(signing_key.verifying_key().as_bytes()).as_bytes()[..16]);
+        let key_fingerprint =
+            hex::encode(&blake3::hash(signing_key.verifying_key().as_bytes()).as_bytes()[..16]);
         Ok(Self {
             slot_id: file.slot_id,
             key_fingerprint,

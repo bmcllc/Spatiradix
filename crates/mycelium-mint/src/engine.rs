@@ -1,3 +1,4 @@
+use crate::arq::{arq_batch_root, monetary_policy_hash, ArqMintDecision, ArqMintPolicy};
 use crate::error::MintError;
 use crate::policy::MonetaryPolicy;
 use crate::proof::{MintReceipt, SporocarpAttestation, WorkClaim};
@@ -20,6 +21,26 @@ pub struct MainnetMintEngine {
     pub used_nullifiers: HashSet<[u8; 32]>,
     pub sporocarps: HashMap<NodeId, [u8; 32]>,
     pub min_quorum: usize,
+    /// Committed in the genesis hash; legacy chains continue with None.
+    #[serde(default)]
+    arq_mint_policy: Option<ArqMintPolicy>,
+}
+
+/// Fotografia auditável do papel do `mycelium-mint` como reserva lastreadora de CPX.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CpxReserveStatus {
+    pub chain_id: String,
+    pub current_epoch: u64,
+    pub reserve_myc_base: u64,
+    pub max_supply_myc_base: u64,
+    pub usdc_per_myc: u64,
+    pub cpx_per_myc: u64,
+    pub cpx_backing_capacity_base: u128,
+    pub cpx_circulating_base: u128,
+    /// Cobertura da reserva em basis points (`10_000` = 100% lastreado).
+    pub reserve_coverage_bps: u64,
+    pub fully_backed: bool,
+    pub head_chronicle_hex: String,
 }
 
 impl MainnetMintEngine {
@@ -58,7 +79,73 @@ impl MainnetMintEngine {
             used_nullifiers: HashSet::new(),
             sporocarps,
             min_quorum,
+            arq_mint_policy: None,
         })
+    }
+
+    /// Separate, explicit consensus mode: ARQ is pinned at genesis.
+    /// No identity documents, external prices or KYC inputs are needed.
+    pub fn genesis_arq(
+        chain_id: impl Into<String>,
+        genesis_seed: &[u8],
+        policy: MonetaryPolicy,
+        sporocarps: HashMap<NodeId, [u8; 32]>,
+        min_quorum: usize,
+        arq_policy: ArqMintPolicy,
+    ) -> Result<Self, MintError> {
+        arq_policy.validate()?;
+        let mut engine = Self::genesis(chain_id, genesis_seed, policy, sporocarps, min_quorum)?;
+        let mut h = Blake3::new();
+        h.update(b"mycelium/mint/arq/genesis/v1");
+        h.update(&engine.epoch_parents[0]);
+        h.update(&monetary_policy_hash(&engine.policy));
+        h.update(&arq_policy.policy_hash());
+        engine.epoch_parents[0] = *h.finalize().as_bytes();
+        engine.arq_mint_policy = Some(arq_policy);
+        Ok(engine)
+    }
+
+    pub fn arq_policy(&self) -> Option<&ArqMintPolicy> {
+        self.arq_mint_policy.as_ref()
+    }
+
+    /// Intended for validators: verify all PoUW claims BEFORE signing the
+    /// ARQ root. A preview call alone is not a settlement authorization.
+    pub fn compute_arq_batch_root(
+        &self,
+        claims: &[WorkClaim],
+    ) -> Result<([u8; 32], ArqMintDecision), MintError> {
+        let policy = self
+            .arq_mint_policy
+            .as_ref()
+            .ok_or(MintError::ArqModeMismatch)?;
+        let mut batch_nullifiers = HashSet::new();
+        for claim in claims {
+            claim.verify(
+                &self.chain_id,
+                self.current_epoch,
+                self.policy.min_hashcash_bits,
+            )?;
+            let id = claim.nullifier(&self.chain_id);
+            if self.used_nullifiers.contains(&id) || !batch_nullifiers.insert(id) {
+                return Err(MintError::ReplayedClaim);
+            }
+            if self.policy.effective_weight(
+                claim.kind,
+                claim.units,
+                claim.producer_spores,
+                claim.producer_resilience,
+            ) == 0
+            {
+                return Err(MintError::ZeroWeight(claim.work_id));
+            }
+        }
+        let decision = policy.evaluate(claims, self.current_epoch_budget())?;
+        let base = self.compute_batch_root(self.current_epoch, claims);
+        Ok((
+            arq_batch_root(&base, &self.policy, policy, &decision),
+            decision,
+        ))
     }
 
     pub fn current_epoch_budget(&self) -> u64 {
@@ -119,17 +206,43 @@ impl MainnetMintEngine {
         Ok(())
     }
 
+    /// Legacy chains cannot bypass an ARQ governance policy.
     pub fn settle_epoch(
         &mut self,
         claims: &[WorkClaim],
         attestations: &[SporocarpAttestation],
     ) -> Result<Vec<MintReceipt>, MintError> {
-        let budget = self.current_epoch_budget();
+        if self.arq_mint_policy.is_some() {
+            return Err(MintError::ArqModeMismatch);
+        }
+        let root = self.compute_batch_root(self.current_epoch, claims);
+        self.settle_epoch_checked(claims, attestations, self.current_epoch_budget(), root)
+    }
+
+    /// Consensus-bound ARQ emission. The batch root commits the governance
+    /// profile and data-derived budget, so nodes cannot silently reprice work.
+    pub fn settle_epoch_arq(
+        &mut self,
+        claims: &[WorkClaim],
+        attestations: &[SporocarpAttestation],
+    ) -> Result<Vec<MintReceipt>, MintError> {
+        let (root, decision) = self.compute_arq_batch_root(claims)?;
+        if decision.allowed_epoch_budget == 0 {
+            return Err(MintError::ArqEpochHalted);
+        }
+        self.settle_epoch_checked(claims, attestations, decision.allowed_epoch_budget, root)
+    }
+
+    fn settle_epoch_checked(
+        &mut self,
+        claims: &[WorkClaim],
+        attestations: &[SporocarpAttestation],
+        budget: u64,
+        batch_root: [u8; 32],
+    ) -> Result<Vec<MintReceipt>, MintError> {
         if budget == 0 {
             return Err(MintError::SupplyExhausted);
         }
-
-        let batch_root = self.compute_batch_root(self.current_epoch, claims);
         self.verify_quorum(self.current_epoch, &batch_root, attestations)?;
 
         let mut batch_nullifiers = HashSet::with_capacity(claims.len());
@@ -218,6 +331,37 @@ impl MainnetMintEngine {
         }
 
         Ok(receipts)
+    }
+
+    /// Retorna o estado verificável da reserva MYC do `mycelium-mint` lastreando a moeda CPX.
+    pub fn cpx_reserve_status(&self, cpx_circulating_base: u128) -> CpxReserveStatus {
+        let backing_capacity = self.policy.myc_reserve_to_cpx(self.total_supply);
+        let coverage_bps = if cpx_circulating_base == 0 {
+            if backing_capacity > 0 { 10_000 } else { 0 }
+        } else {
+            let ratio = backing_capacity
+                .saturating_mul(10_000)
+                / cpx_circulating_base;
+            ratio.min(u64::MAX as u128) as u64
+        };
+        let head = self
+            .epoch_parents
+            .first()
+            .map(hex::encode)
+            .unwrap_or_default();
+        CpxReserveStatus {
+            chain_id: self.chain_id.clone(),
+            current_epoch: self.current_epoch,
+            reserve_myc_base: self.total_supply,
+            max_supply_myc_base: self.policy.max_supply,
+            usdc_per_myc: self.policy.usdc_per_myc,
+            cpx_per_myc: self.policy.usdc_per_myc,
+            cpx_backing_capacity_base: backing_capacity,
+            cpx_circulating_base,
+            reserve_coverage_bps: coverage_bps,
+            fully_backed: backing_capacity >= cpx_circulating_base,
+            head_chronicle_hex: head,
+        }
     }
 
     pub fn apply_receipt_to_ledger(

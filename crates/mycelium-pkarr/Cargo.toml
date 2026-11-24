@@ -4,6 +4,7 @@ description = "Pkarr anônimo: registros assinados com chave cegada por época, 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 authors.workspace = true
 
 [dependencies]

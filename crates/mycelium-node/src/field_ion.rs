@@ -1,26 +1,63 @@
-//! # Hub Ion — O Hub e Forja Soberana de Repositórios (Git P2P)
+//! # TheField Ion — Forja Soberana de Repositórios Git P2P & Campo de Signals
 //!
-//! Serve a interface web interativa do Code Hub e a API REST para:
-//! - Listar todos os repositórios versionados na malha (`RefStore` + `SporeBank`).
-//! - Navegar pela árvore de diretórios e arquivos de qualquer commit/plot.
-//! - Visualizar o código fonte com syntax highlight, linhas e hashes BLAKE3.
-//! - Consultar histórico de commits (lineage DAG) e atestações de CI em Vacuum Chambers.
+//! **TheField** é a forja unificada de código e colaboração sem plataforma do Mycelium Network
+//! (substituindo integralmente qualquer conceito separado de hub de código):
+//! - Lista e navega todos os repositórios Git P2P versionados na malha (`RefStore` + `SporeBank`).
+//! - Visualiza árvores de diretórios, código-fonte com hashes BLAKE3, histórico DAG de commits
+//!   e atestações de CI em `Vacuum Chambers`.
+//! - Integra em tempo real o campo `thefield::Field`: emissão e ressonância (quórum P2P) de
+//!   `Signals` (`MergePlot`, `Release`, `Pipeline`) diretamente sobre os repositórios da malha.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
-use axum::Router;
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use giggs::{Plot, RefStore};
 use mycelium_core::ContentId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path as FsPath, PathBuf};
+use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FieldSignalView {
+    pub id: String,
+    pub origin: String,
+    pub proposal: Value,
+    pub quorum: usize,
+    pub resonance: usize,
+    pub state: String,
+    pub resonators: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum FieldOutbound {
+    ListSignals {
+        reply: oneshot::Sender<Vec<FieldSignalView>>,
+    },
+    EmitSignal {
+        kind: String,
+        plot_cid: Option<String>,
+        version: Option<String>,
+        name: Option<String>,
+        target_ion: Option<String>,
+        quorum: usize,
+        reply: oneshot::Sender<Result<FieldSignalView, String>>,
+    },
+    ResonateSignal {
+        signal_id: String,
+        reply: oneshot::Sender<Result<FieldSignalView, String>>,
+    },
+}
 
 #[derive(Clone)]
-pub struct HubState {
+pub struct FieldIonState {
     pub home: PathBuf,
+    pub outbound: Option<UnboundedSender<FieldOutbound>>,
 }
 
 #[derive(Deserialize)]
@@ -34,23 +71,51 @@ pub struct FileQuery {
     pub cid: Option<String>,
 }
 
-pub fn create_hub_router(home: impl AsRef<FsPath>) -> Router {
+#[derive(Deserialize)]
+pub struct EmitSignalReq {
+    #[serde(default = "default_signal_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub plot_cid: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub target_ion: Option<String>,
+    #[serde(default = "default_quorum")]
+    pub quorum: usize,
+}
+fn default_signal_kind() -> String {
+    "merge_plot".into()
+}
+fn default_quorum() -> usize {
+    1
+}
+
+pub fn create_field_router(
+    home: impl AsRef<FsPath>,
+    outbound: Option<UnboundedSender<FieldOutbound>>,
+) -> Router {
     Router::new()
-        .route("/", get(hub_ui))
+        .route("/", get(field_ui))
         .route("/api/repos", get(list_repos_api))
         .route("/api/repos/{name}", get(repo_detail_api))
         .route("/api/repos/{name}/tree", get(repo_tree_api))
         .route("/api/repos/{name}/file", get(repo_file_api))
         .route("/api/repos/{name}/commits", get(repo_commits_api))
         .route("/api/repos/{name}/attestation", get(repo_attestation_api))
+        .route("/api/signals", get(list_signals_api).post(emit_signal_api))
+        .route("/api/signals/{id}/resonate", post(resonate_signal_api))
         .route("/api/stats", get(stats_api))
-        .with_state(HubState {
+        .with_state(FieldIonState {
             home: home.as_ref().to_path_buf(),
+            outbound,
         })
 }
 
-async fn hub_ui() -> impl IntoResponse {
-    let html = include_str!("../../../deploy/store-ui/hub.html");
+async fn field_ui() -> impl IntoResponse {
+    let html = include_str!("../../../deploy/store-ui/field.html");
     (
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -88,12 +153,11 @@ fn read_plot(home: &FsPath, cid_or_hex: &str) -> Option<(ContentId, Plot)> {
     }
 }
 
-async fn list_repos_api(State(state): State<HubState>) -> impl IntoResponse {
+async fn list_repos_api(State(state): State<FieldIonState>) -> impl IntoResponse {
     let home = &state.home;
     let mut repos = Vec::new();
     let mut seen_cids = HashSet::new();
 
-    // 1. Coleta repositórios registrados na RefStore (com nomes persistentes e branches)
     if let Ok(store) = RefStore::open(refs_dir(home)) {
         if let Ok(updates) = store.list_all() {
             for ref_item in updates {
@@ -102,14 +166,17 @@ async fn list_repos_api(State(state): State<HubState>) -> impl IntoResponse {
                 let target_cid = ref_item.update.target;
                 seen_cids.insert(target_cid);
 
-                let (message, author, leaves_count, total_bytes) = if let Some((_, plot)) = read_plot(home, &target_cid.to_string()) {
-                    let bytes: usize = plot.leaves.iter().map(|l| l.content.len()).sum();
-                    (plot.message, plot.author.to_string(), plot.leaves.len(), bytes)
-                } else {
-                    ("Ref publicada".into(), ref_item.signer.clone(), 0, 0)
-                };
+                let (message, author, leaves_count, total_bytes) =
+                    if let Some((_, plot)) = read_plot(home, &target_cid.to_string()) {
+                        let bytes: usize = plot.leaves.iter().map(|l| l.content.len()).sum();
+                        (plot.message, plot.author.to_string(), plot.leaves.len(), bytes)
+                    } else {
+                        ("Ref publicada".into(), ref_item.signer.clone(), 0, 0)
+                    };
 
-                let attestation_path = home.join("attestations").join(format!("{}.json", hex::encode(target_cid.0)));
+                let attestation_path = home
+                    .join("attestations")
+                    .join(format!("{}.json", hex::encode(target_cid.0)));
                 let has_attestation = attestation_path.exists();
 
                 repos.push(json!({
@@ -129,7 +196,6 @@ async fn list_repos_api(State(state): State<HubState>) -> impl IntoResponse {
         }
     }
 
-    // 2. Coleta Plots avulsos no SporeBank (caso não estejam explicitamente na RefStore)
     if let Ok(entries) = std::fs::read_dir(plots_dir(home)) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -137,14 +203,24 @@ async fn list_repos_api(State(state): State<HubState>) -> impl IntoResponse {
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Some((cid, plot)) = read_plot(home, stem) {
                         if !seen_cids.contains(&cid) {
-                            let total_bytes: usize = plot.leaves.iter().map(|l| l.content.len()).sum();
-                            let attestation_path = home.join("attestations").join(format!("{}.json", hex::encode(cid.0)));
+                            let total_bytes: usize =
+                                plot.leaves.iter().map(|l| l.content.len()).sum();
+                            let attestation_path = home
+                                .join("attestations")
+                                .join(format!("{}.json", hex::encode(cid.0)));
                             let has_attestation = attestation_path.exists();
 
-                            // Deriva nome amigável a partir da mensagem ou do CID
                             let repo_name = if plot.message.contains("repository:") {
-                                plot.message.split("repository:").nth(1).unwrap_or("").trim().to_string()
-                            } else if !plot.message.is_empty() && plot.message.len() < 30 && !plot.message.contains('\n') {
+                                plot.message
+                                    .split("repository:")
+                                    .nth(1)
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string()
+                            } else if !plot.message.is_empty()
+                                && plot.message.len() < 30
+                                && !plot.message.contains('\n')
+                            {
                                 plot.message.replace(' ', "-").to_lowercase()
                             } else {
                                 format!("plot-{}", &cid.to_string()[..12])
@@ -175,15 +251,20 @@ async fn list_repos_api(State(state): State<HubState>) -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
         json!({
             "status": "ok",
-            "hub": "mycelium-code-hub",
+            "forge": "thefield",
             "substrate": "mycelium",
             "repos_count": repos.len(),
             "repos": repos
-        }).to_string(),
+        })
+        .to_string(),
     )
 }
 
-fn resolve_cid_for_repo(home: &FsPath, name_or_cid: &str, override_cid: Option<&str>) -> Option<ContentId> {
+fn resolve_cid_for_repo(
+    home: &FsPath,
+    name_or_cid: &str,
+    override_cid: Option<&str>,
+) -> Option<ContentId> {
     if let Some(c) = override_cid {
         if let Some((cid, _)) = read_plot(home, c) {
             return Some(cid);
@@ -194,7 +275,6 @@ fn resolve_cid_for_repo(home: &FsPath, name_or_cid: &str, override_cid: Option<&
         return Some(cid);
     }
 
-    // Busca na RefStore por nome de repositório
     if let Ok(store) = RefStore::open(refs_dir(home)) {
         if let Ok(Some(signed)) = store.read(name_or_cid, "main") {
             return Some(signed.update.target);
@@ -212,7 +292,7 @@ fn resolve_cid_for_repo(home: &FsPath, name_or_cid: &str, override_cid: Option<&
 }
 
 async fn repo_detail_api(
-    State(state): State<HubState>,
+    State(state): State<FieldIonState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let home = &state.home;
@@ -231,7 +311,8 @@ async fn repo_detail_api(
                         "leaves_count": plot.leaves.len(),
                         "total_bytes": total_bytes,
                         "parents": plot.parents.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
-                    }).to_string(),
+                    })
+                    .to_string(),
                 )
             } else {
                 (
@@ -250,7 +331,7 @@ async fn repo_detail_api(
 }
 
 async fn repo_tree_api(
-    State(state): State<HubState>,
+    State(state): State<FieldIonState>,
     Path(name): Path<String>,
     Query(query): Query<TreeQuery>,
 ) -> impl IntoResponse {
@@ -279,7 +360,8 @@ async fn repo_tree_api(
                         "cid": cid.to_string(),
                         "files_count": files.len(),
                         "files": files,
-                    }).to_string(),
+                    })
+                    .to_string(),
                 )
             } else {
                 (
@@ -298,7 +380,7 @@ async fn repo_tree_api(
 }
 
 async fn repo_file_api(
-    State(state): State<HubState>,
+    State(state): State<FieldIonState>,
     Path(name): Path<String>,
     Query(query): Query<FileQuery>,
 ) -> impl IntoResponse {
@@ -324,13 +406,15 @@ async fn repo_file_api(
                             "is_text": is_text,
                             "content": content_str,
                             "hash": ContentId::of(&leaf.content).to_string(),
-                        }).to_string(),
+                        })
+                        .to_string(),
                     )
                 } else {
                     (
                         StatusCode::NOT_FOUND,
                         [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        json!({"error": format!("arquivo '{}' não encontrado no plot", query.path)}).to_string(),
+                        json!({"error": format!("arquivo '{}' não encontrado no plot", query.path)})
+                            .to_string(),
                     )
                 }
             } else {
@@ -350,7 +434,7 @@ async fn repo_file_api(
 }
 
 async fn repo_commits_api(
-    State(state): State<HubState>,
+    State(state): State<FieldIonState>,
     Path(name): Path<String>,
     Query(query): Query<TreeQuery>,
 ) -> impl IntoResponse {
@@ -384,7 +468,8 @@ async fn repo_commits_api(
                     "repo": name,
                     "commits_count": commits.len(),
                     "commits": commits,
-                }).to_string(),
+                })
+                .to_string(),
             )
         }
         None => (
@@ -396,14 +481,16 @@ async fn repo_commits_api(
 }
 
 async fn repo_attestation_api(
-    State(state): State<HubState>,
+    State(state): State<FieldIonState>,
     Path(name): Path<String>,
     Query(query): Query<TreeQuery>,
 ) -> impl IntoResponse {
     let home = &state.home;
     match resolve_cid_for_repo(home, &name, query.cid.as_deref()) {
         Some(cid) => {
-            let attestation_path = home.join("attestations").join(format!("{}.json", hex::encode(cid.0)));
+            let attestation_path = home
+                .join("attestations")
+                .join(format!("{}.json", hex::encode(cid.0)));
             if attestation_path.exists() {
                 if let Ok(bytes) = std::fs::read(&attestation_path) {
                     if let Ok(val) = serde_json::from_slice::<Value>(&bytes) {
@@ -424,7 +511,8 @@ async fn repo_attestation_api(
                     "chamber_runtime": "vacuum-zero-trace",
                     "status": "ready-for-chamber-validation",
                     "hint": format!("mycelium repo validate --cid {}", cid)
-                }).to_string(),
+                })
+                .to_string(),
             )
         }
         None => (
@@ -435,11 +523,137 @@ async fn repo_attestation_api(
     }
 }
 
-async fn stats_api(State(state): State<HubState>) -> impl IntoResponse {
+async fn list_signals_api(State(state): State<FieldIonState>) -> impl IntoResponse {
+    let Some(ref tx) = state.outbound else {
+        return (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "signals": [], "count": 0, "mode": "standalone" }).to_string(),
+        );
+    };
+    let (rtx, rrx) = oneshot::channel();
+    if tx.send(FieldOutbound::ListSignals { reply: rtx }).is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "Organismo indisponível" }).to_string(),
+        );
+    }
+    match tokio::time::timeout(Duration::from_secs(3), rrx).await {
+        Ok(Ok(signals)) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "signals": signals, "count": signals.len(), "forge": "thefield" }).to_string(),
+        ),
+        _ => (
+            StatusCode::GATEWAY_TIMEOUT,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "timeout consultando Signals do TheField" }).to_string(),
+        ),
+    }
+}
+
+async fn emit_signal_api(
+    State(state): State<FieldIonState>,
+    Json(req): Json<EmitSignalReq>,
+) -> impl IntoResponse {
+    let Some(ref tx) = state.outbound else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "TheField rodando sem Organismo conectado" }).to_string(),
+        );
+    };
+    let (rtx, rrx) = oneshot::channel();
+    if tx
+        .send(FieldOutbound::EmitSignal {
+            kind: req.kind,
+            plot_cid: req.plot_cid,
+            version: req.version,
+            name: req.name,
+            target_ion: req.target_ion,
+            quorum: req.quorum.max(1),
+            reply: rtx,
+        })
+        .is_err()
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "Organismo indisponível" }).to_string(),
+        );
+    }
+    match tokio::time::timeout(Duration::from_secs(5), rrx).await {
+        Ok(Ok(Ok(sig))) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "signal": sig }).to_string(),
+        ),
+        Ok(Ok(Err(e))) => (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": e }).to_string(),
+        ),
+        _ => (
+            StatusCode::GATEWAY_TIMEOUT,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "timeout emitindo Signal no TheField" }).to_string(),
+        ),
+    }
+}
+
+async fn resonate_signal_api(
+    State(state): State<FieldIonState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let Some(ref tx) = state.outbound else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "TheField rodando sem Organismo conectado" }).to_string(),
+        );
+    };
+    let (rtx, rrx) = oneshot::channel();
+    if tx
+        .send(FieldOutbound::ResonateSignal {
+            signal_id: id,
+            reply: rtx,
+        })
+        .is_err()
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "Organismo indisponível" }).to_string(),
+        );
+    }
+    match tokio::time::timeout(Duration::from_secs(5), rrx).await {
+        Ok(Ok(Ok(sig))) => (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "signal": sig }).to_string(),
+        ),
+        Ok(Ok(Err(e))) => (
+            StatusCode::BAD_REQUEST,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": e }).to_string(),
+        ),
+        _ => (
+            StatusCode::GATEWAY_TIMEOUT,
+            [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+            json!({ "error": "timeout ressoando Signal no TheField" }).to_string(),
+        ),
+    }
+}
+
+async fn stats_api(State(state): State<FieldIonState>) -> impl IntoResponse {
     let home = &state.home;
     let mut total_plots = 0;
     if let Ok(entries) = std::fs::read_dir(plots_dir(home)) {
-        total_plots = entries.flatten().filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false)).count();
+        total_plots = entries
+            .flatten()
+            .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+            .count();
     }
 
     (
@@ -447,9 +661,11 @@ async fn stats_api(State(state): State<HubState>) -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
         json!({
             "status": "ok",
+            "forge": "thefield",
             "total_plots": total_plots,
-            "runtime": "mycelium-git-hub",
-        }).to_string(),
+            "runtime": "mycelium-thefield",
+        })
+        .to_string(),
     )
 }
 
@@ -460,11 +676,10 @@ mod tests {
     use mycelium_core::NodeId;
 
     #[tokio::test]
-    async fn test_hub_ion_e2e() {
+    async fn test_field_ion_e2e() {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path();
 
-        // 1. Cria um plot de teste no SporeBank
         let plot = Plot {
             author: NodeId::derive(b"test-author"),
             message: "v1.0 release".into(),
@@ -472,11 +687,11 @@ mod tests {
             leaves: vec![
                 Leaf {
                     path: "src/main.rs".into(),
-                    content: b"fn main() { println!(\"Hello Mycelium!\"); }".to_vec(),
+                    content: b"fn main() { println!(\"Hello TheField!\"); }".to_vec(),
                 },
                 Leaf {
                     path: "README.md".into(),
-                    content: b"# Test Repo".to_vec(),
+                    content: b"# TheField Repo".to_vec(),
                 },
             ],
         };
@@ -488,8 +703,7 @@ mod tests {
         )
         .unwrap();
 
-        // 2. Inicializa o servidor HTTP do Hub em porta efêmera
-        let app = create_hub_router(home);
+        let app = create_field_router(home, None);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -499,7 +713,6 @@ mod tests {
 
         let client = reqwest::Client::new();
 
-        // Teste 1: UI HTML principal
         let res_ui = client
             .get(format!("http://{}/", addr))
             .send()
@@ -507,31 +720,28 @@ mod tests {
             .unwrap();
         assert_eq!(res_ui.status(), reqwest::StatusCode::OK);
         let html_text = res_ui.text().await.unwrap();
-        assert!(html_text.contains("Mycelium Code Hub"));
+        assert!(html_text.contains("TheField"));
+        assert!(!html_text.to_ascii_lowercase().contains("code hub"));
 
-        // Teste 2: API de Listagem de Repos
         let res_repos = client
             .get(format!("http://{}/api/repos", addr))
             .send()
             .await
             .unwrap();
         assert_eq!(res_repos.status(), reqwest::StatusCode::OK);
-        let repos_text = res_repos.text().await.unwrap();
-        let repos_json: Value = serde_json::from_str(&repos_text).unwrap();
+        let repos_json: Value = res_repos.json().await.unwrap();
+        assert_eq!(repos_json["forge"], "thefield");
         assert_eq!(repos_json["repos_count"], 1);
 
-        // Teste 3: API de Árvore de Arquivos
         let res_tree = client
             .get(format!("http://{}/api/repos/{}/tree", addr, plot_cid))
             .send()
             .await
             .unwrap();
         assert_eq!(res_tree.status(), reqwest::StatusCode::OK);
-        let tree_text = res_tree.text().await.unwrap();
-        let tree_json: Value = serde_json::from_str(&tree_text).unwrap();
+        let tree_json: Value = res_tree.json().await.unwrap();
         assert_eq!(tree_json["files_count"], 2);
 
-        // Teste 4: API de Leitura de Arquivo
         let res_file = client
             .get(format!(
                 "http://{}/api/repos/{}/file?path=src/main.rs",
@@ -541,23 +751,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res_file.status(), reqwest::StatusCode::OK);
-        let file_text = res_file.text().await.unwrap();
-        let file_json: Value = serde_json::from_str(&file_text).unwrap();
+        let file_json: Value = res_file.json().await.unwrap();
         assert!(file_json["content"]
             .as_str()
             .unwrap()
-            .contains("Hello Mycelium"));
+            .contains("Hello TheField"));
 
-        // Teste 5: API de Estatísticas
         let res_stats = client
             .get(format!("http://{}/api/stats", addr))
             .send()
             .await
             .unwrap();
         assert_eq!(res_stats.status(), reqwest::StatusCode::OK);
-        let stats_text = res_stats.text().await.unwrap();
-        let stats_json: Value = serde_json::from_str(&stats_text).unwrap();
+        let stats_json: Value = res_stats.json().await.unwrap();
         assert_eq!(stats_json["total_plots"], 1);
+        assert_eq!(stats_json["forge"], "thefield");
     }
 }
-

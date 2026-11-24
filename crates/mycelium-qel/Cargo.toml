@@ -4,6 +4,7 @@ description = "QEL: fragmentação Shamir multi-path para Plots Mycelium"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 
 [dependencies]
 serde = { workspace = true }

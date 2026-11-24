@@ -6,7 +6,7 @@
 //! (`1e-6`, compatível com `mycelium_bank::Asset::Myc` e `Asset::Usdc`).
 
 use crate::error::GatewayError;
-use mycelium_mint::{MonetaryPolicy, DEFAULT_USDC_PER_MYC};
+use mycelium_mint::MonetaryPolicy;
 use serde::{Deserialize, Serialize};
 
 /// 1 unidade inteira em micro-unidades (6 casas decimais, padrão USDC / mycelium-bank).
@@ -73,9 +73,7 @@ pub enum TransactionState {
         pedersen_commit_hex: String,
     },
     /// Despachado para o gateway externo ou trilho nativo aguardando confirmação.
-    AwaitingGatewayResponse {
-        external_ref: String,
-    },
+    AwaitingGatewayResponse { external_ref: String },
     /// Liquidado e contabilizado na paridade de referência MYC ↔ USDC (1 MYC = 8 USDC).
     Settled {
         external_tx_id: String,
@@ -83,14 +81,9 @@ pub enum TransactionState {
         usdc_equivalent_micros: u64,
     },
     /// Falha explícita com código e motivo.
-    Failed {
-        code: u32,
-        reason: String,
-    },
+    Failed { code: u32, reason: String },
     /// Estornado após liquidação ou falha parcial.
-    Refunded {
-        reason: String,
-    },
+    Refunded { reason: String },
 }
 
 impl TransactionState {
@@ -133,6 +126,15 @@ pub struct DispatchReceipt {
 }
 
 /// Intenção soberana de pagamento unificada no Mycelium Meta-Gateway.
+/// Internal reference price. Does not imply reserves or enforceable redemption.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndicativeMycQuote {
+    pub myc_micros: u64,
+    pub usdc_reference_micros: u64,
+    pub rate_usdc_per_myc: u64,
+    pub redemption_guaranteed: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentIntent {
     /// Identificador determinístico hex (32 bytes BLAKE3).
@@ -176,6 +178,23 @@ impl PaymentIntent {
         h.update(currency.as_bytes());
         h.update(sender_did.as_bytes());
         h.update(receiver_id.as_bytes());
+        let metadata = serde_json::to_vec(&compliance_metadata)
+            .map_err(|e| GatewayError::Crypto(format!("metadata encoding: {e}")))?;
+        h.update(&(metadata.len() as u64).to_be_bytes());
+        h.update(&metadata);
+        // Stable ID for explicit retries; unique ID otherwise.
+        if let Some(key) = compliance_metadata
+            .get("idempotency_key")
+            .and_then(|v| v.as_str())
+            .filter(|k| !k.trim().is_empty())
+        {
+            h.update(b"idempotency:");
+            h.update(key.as_bytes());
+        } else {
+            let nonce: [u8; 16] = rand::random();
+            h.update(b"nonce:");
+            h.update(&nonce);
+        }
         let id = hex::encode(h.finalize().as_bytes());
 
         Ok(Self {
@@ -224,26 +243,43 @@ impl PaymentIntent {
     }
 
     /// Calcula `(myc_micros, usdc_equivalent_micros)` sob a paridade de referência (`1 MYC = 8 USDC`).
-    pub fn myc_usdc_parity(&self, policy: &MonetaryPolicy) -> (u64, u64) {
-        let rate = policy.usdc_per_myc.max(DEFAULT_USDC_PER_MYC);
-        match self.currency.as_str() {
-            "MYC" => (
-                self.amount_micros,
-                self.amount_micros.saturating_mul(rate),
-            ),
-            "USDC" | "USD" => (self.amount_micros / rate, self.amount_micros),
-            _ => (self.amount_micros / rate, self.amount_micros),
+    /// Internal MYC↔USDC reference; never a redeemable quotation.
+    pub fn reference_quote(&self, policy: &MonetaryPolicy) -> Option<IndicativeMycQuote> {
+        let rate = policy.usdc_per_myc;
+        if rate == 0 {
+            return None;
         }
+        let (myc_micros, usdc_reference_micros) = match self.currency.as_str() {
+            "MYC" => (self.amount_micros, self.amount_micros.checked_mul(rate)?),
+            "USDC" => (self.amount_micros / rate, self.amount_micros),
+            _ => return None,
+        };
+        Some(IndicativeMycQuote {
+            myc_micros,
+            usdc_reference_micros,
+            rate_usdc_per_myc: rate,
+            redemption_guaranteed: false,
+        })
+    }
+
+    /// Legacy tuple output (0,0 means no reference or arithmetic overflow).
+    pub fn myc_usdc_parity(&self, policy: &MonetaryPolicy) -> (u64, u64) {
+        self.reference_quote(policy)
+            .map(|q| (q.myc_micros, q.usdc_reference_micros))
+            .unwrap_or((0, 0))
     }
 
     /// Bytes canônicos usados para assinatura Ed25519 e âncora causal `hash_chronicle`.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(128);
-        out.extend_from_slice(self.id.as_bytes());
-        out.extend_from_slice(&self.amount_micros.to_be_bytes());
-        out.extend_from_slice(self.currency.as_bytes());
-        out.extend_from_slice(self.sender_did.as_bytes());
-        out.extend_from_slice(self.receiver_id.as_bytes());
-        out
+        serde_json::to_vec(&(
+            &self.id,
+            &self.gateway,
+            self.amount_micros,
+            &self.currency,
+            &self.sender_did,
+            &self.receiver_id,
+            &self.compliance_metadata,
+        ))
+        .expect("payment intent fields are serializable")
     }
 }

@@ -309,7 +309,7 @@ async fn root(State(table): State<HorizonTable>) -> impl IntoResponse {
         "hosts": hosts,
         "ions": ions.iter().map(|(n, u)| serde_json::json!({"ion": n, "upstream": u})).collect::<Vec<_>>(),
         "hint": "GET /{ion}/  — rizomorfo proxya até a Chamber",
-        "hub": "/hub/",
+        "field": "/field/",
         "vitrine": "/vitrine/",
         "console": "/console",
     });
@@ -361,7 +361,7 @@ async fn console(State(table): State<HorizonTable>) -> impl IntoResponse {
   <h1>Event Horizon</h1>
   <p>Console do Singularity — ions em órbita neste nó. Cada link passa pelo rizomorfo até a Vacuum Chamber.</p>
   <ul>{items}</ul>
-  <p class="meta"><a href="/hub/">📦 Code Hub</a> · <a href="/vitrine/">🍄 Vitrine da Floresta</a> · <a href="/catalog">catálogo JSON</a> · <a href="/">JSON</a> · <a href="/health">health</a></p>
+  <p class="meta"><a href="/rhizome/">🌿 Mycelium Rhizome</a> · <a href="/field/">🌌 TheField</a> · <a href="/vitrine/">🍄 Vitrine da Floresta</a> · <a href="/catalog">catálogo JSON</a> · <a href="/">JSON</a> · <a href="/health">health</a></p>
 </body>
 </html>"#
     );
@@ -402,7 +402,7 @@ async fn proxy(State(table): State<HorizonTable>, req: Request) -> Response {
                 if let Some(home) = t.get_home() {
                     if let Ok(bank) = mycelium_sporebank::SporeBank::open(home) {
                         for id in bank.ids() {
-                            if let Some(plot) = bank.recall(&id) {
+                            if let Some(plot) = bank.recall(id) {
                                 if !plot.is_public() {
                                     continue;
                                 }
@@ -506,10 +506,25 @@ async fn proxy(State(table): State<HorizonTable>, req: Request) -> Response {
                     }
                     response = response.header(name.as_str(), value.as_bytes());
                 }
-                let bytes = upstream_resp.bytes().await.unwrap_or_default();
-                return response
-                    .body(Body::from(bytes))
+                let bytes = match upstream_resp.bytes().await {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        tracing::warn!(%ion, error = %err, "body HTTP upstream incompleto");
+                        return StatusCode::BAD_GATEWAY.into_response();
+                    }
+                };
+                // Conta apenas 2xx concluídos. O status HTTP não prova que
+                // houve um pagamento ou identifica o consumidor.
+                let result = response
+                    .body(Body::from(bytes.clone()))
                     .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response());
+                if status.is_success() && result.status().is_success() {
+                    table.write().unwrap().note_delivered_response(
+                        &ion,
+                        u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+                    );
+                }
+                return result;
             }
             Err(e) => {
                 tracing::warn!(%ion, node = %orbit.node, error = %e, "upstream falhou");

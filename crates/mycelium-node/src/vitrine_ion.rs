@@ -139,11 +139,11 @@ async fn overview_api(State(state): State<VitrineState>) -> impl IntoResponse {
                 ]
             },
             "forge": {
-                "title": "Forja Soberana de Código",
+                "title": "TheField — Forja Soberana de Código & Signals",
                 "tagline": "Substituto Descentralizado do Git e GitHub",
                 "status": "ativo",
                 "repos_count": repo_count,
-                "browser_url": "/hub/",
+                "browser_url": "/field/",
                 "raw_browser_url": "/src/",
                 "cli_commands": {
                     "publish": "mycelium repo publish --message 'feat: release' ./meu-app",
