@@ -1,23 +1,28 @@
-# 🍄 Mycelium Network — Arquitetura Geral Sistêmica
+# Arquitetura geral do Mycelium Network
 
-> 📌 **Estado de validação**: ver [`docs/VALIDACAO.md`](../VALIDACAO.md) para o nível de validação real e o número canônico de testes. Este documento descreve escopo e intenção de projeto; onde afirma prontidão, prevalece o registro em `VALIDACAO.md`.  
-> 📌 **Versões divergentes**: o cabeçalho abaixo declara `0.2.0-Sovereign`, o `Cargo.toml` raiz declara `0.1.0` e [`DOCUMENTACAO_COMPLETA.md`](../DOCUMENTACAO_COMPLETA.md) declara `0.1.0-alpha`. São rótulos de documentos diferentes sobre o mesmo sistema — não denoteem versões de release distintas.
+> Este documento reúne a arquitetura proposta e descrições dos componentes.
+> Para resultados de testes e limites conhecidos, consulte [Validação](../VALIDACAO.md).
+> O rótulo `0.2.0-Sovereign` abaixo identifica esta documentação; o `Cargo.toml`
+> raiz e a [documentação completa](../DOCUMENTACAO_COMPLETA.md) usam outros rótulos.
 
 > **Versão**: 0.2.0-Sovereign  
 > **Classificação**: Documentação de Engenharia e Especificação Sistêmica  
-> **Status**: Ativo / Em Produção  
+> **Status**: documento de arquitetura; consulte Validação para o estado do projeto.
 
 ---
 
-## 1. Visão Geral e Filosofia Arquitetural
+## 1. Visão geral
 
-O **Mycelium Network** é um organismo digital distribuído de computação em nuvem soberana, armazenamento descentralizado e redes peer-to-peer anônimas escrito em Rust. 
+O Mycelium Network é um projeto em Rust para conectar nós em uma rede P2P,
+compartilhar conteúdo e executar serviços distribuídos. Seus componentes usam
+nomes inspirados em fungos: por exemplo, as hifas conectam nós e o Spore Bank
+armazena conteúdo.
 
-A arquitetura rejeita o modelo tradicional de computação em nuvem ("cliente-servidor centralizado em datacenters") e adota uma **analogia estrita à micologia e fisiologia vegetal**:
-- **Nenhum servidor central ou autoridade mestra.**
-- **Nenhum login, conta de e-mail ou cartão de crédito**: nós existem na malha por seu reconhecimento químico (assinaturas ed25519 e decaimento de feromônios).
-- **Sem intermediários para armazenamento, computação ou tráfego**: todo dado é content-addressed via hashes criptográficos BLAKE3 imutáveis.
-- **Tolerância total a falhas e partição**: nós podem dormir (Sclerotium), desconectar e reconectar sem quebrar a integridade lógica da rede.
+A arquitetura busca reduzir a dependência de infraestrutura centralizada. Os
+nós usam identidades criptográficas, o conteúdo pode ser endereçado por hash
+e o Sclerotium trata de dormência e retomada. Descoberta, disponibilidade e
+privacidade dependem da configuração e das condições da rede; não há garantia
+de tolerância total a falhas ou partições.
 
 ---
 
