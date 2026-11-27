@@ -10,18 +10,16 @@ Fontes estudadas: repo Mycelium inteiro; pasta `/media/bruno/SAMBOOK/Alien Files
 (Protocolo de Malha Unificado AMP/CFA, ETΞRNET/VØID, PDC/Metal Math) e os
 duplicados no Google Drive; pesquisa web (Pkarr/Mainline DHT, iroh, Nostr
 Negentropy, Willow). A triagem anterior já está em
-[`research/ANALISE_ALIEN_FILES_MYCELIUM.md`](../../research/ANALISE_ALIEN_FILES_MYCELIUM.md).
+`research/ANALISE_ALIEN_FILES_MYCELIUM.md` (arquivo histórico, ausente da árvore atual).
 
 ---
 
-## 0. O deslocamento da pergunta
+## 0. A questão de infraestrutura
 
-A pergunta antiga era "como ter N nós sempre ligados?". A pergunta certa, e a que
-torna **2 nós** suficientes, é:
-
-> **Quais funções de infraestrutura eu posso pegar emprestado de um bem comum
-> público e gigante que já existe — sem manter, pagar ou confiar nele — em vez de
-> hospedar eu mesmo?**
+O plano investiga quais funções de infraestrutura podem ser prestadas por
+serviços públicos existentes enquanto dois nós próprios guardam os dados e
+executam os serviços. A proposta depende da disponibilidade desses serviços e
+de validação entre máquinas e redes distintas.
 
 Um VPS junta num só lugar cinco funções: *bootstrap/descoberta, nome (DNS),
 retransmissão (relay), guarda-e-encaminha (quando o outro lado está offline) e
@@ -40,7 +38,7 @@ como **comuns públicos** que ninguém controla e que você não mantém. Só a 
 Os três primeiros comuns são **dobradiças substituíveis**: se um relay Nostr cai,
 usa-se outro; se um nó DHT mente, a assinatura Pkarr denuncia. Nenhum é
 "servidor" no sentido de autoridade. É exatamente o contrato da
-[`EVOLUCAO.md`](../../EVOLUCAO.md) ("seeds e relays são substituíveis"), agora
+`EVOLUCAO.md` ("seeds e relays são substituíveis"), agora
 levado ao limite: **zero seeds próprios**.
 
 ---
@@ -66,8 +64,9 @@ Topologia mínima soberana:
 - **O "terceiro nó" é emprestado, não mantido.** Quando A está desligado, quem
   entrega o conteúdo a um visitante é B. Quando *os dois* estão atrás de CGNAT e
   não se enxergam, o encontro acontece via Mainline DHT + um relay público. O
-  relay guarda o cifrado por minutos/horas (store-and-forward Nostr) e some. Ele
-  nunca vê o conteúdo em claro (membrana `private` + VEIL/PQC já no repo).
+  relay pode guardar mensagens para entrega posterior. Para proteger conteúdo
+  sensível, a implementação precisa cifrá-lo antes do envio; a classificação
+  `private`, por si só, não comprova criptografia ponta a ponta.
 - **Celular velho como nó B.** Já há binário: [`dist/mycelium-android-arm64`](../../dist/mycelium-android-arm64)
   (Android 24+). Via Termux + `termux-wake-lock`, ~2–4 W. Não é "sempre ligado"
   garantido (Android mata background) — medir uptime real antes de prometer.
@@ -208,7 +207,7 @@ loopback), agora sem exigir alugar VPS.
 ## 5. Riscos e limites (ditos, não escondidos)
 
 - **R=2 tolera 1 falha, não 2.** Perdeu A e B juntos (roubo, enchente, formatação
-  dupla), perdeu o dado. Soberania ≠ durabilidade mágica. Um 3º detentor
+  dupla), perdeu o dado. Controle dos nós não garante durabilidade. Um 3º detentor
   (amigo/comunidade, pinning recíproco) sobe para R=3 quando quiser.
 - **Comuns públicos não são seus, mas também não são garantidos.** Mainline DHT é
   robusta por escala, mas BEP44 tem limite de tamanho e expiração; relays Nostr
@@ -232,4 +231,4 @@ loopback), agora sem exigir alugar VPS.
 - Willow (set reconciliation, naming): <https://jzhao.xyz/thoughts/Willow-Protocol> · Earthstar: <https://nlnet.nl/project/Earthstar/interview.html>
 - iroh 1.0 (dial por chave, hole punching em QUIC): <https://pinggy.io/amp/blog/iroh_1_0_dial_keys_not_ips/>
 - Radicle (git P2P, referência de seed sempre-ligado pago e substituível): <https://radicle.dev/faq>
-- Material interno estudado: `Alien Files/SECRET/Protocolo_de_Malha_Unificado.pdf` (AMP/CFA), `ETΞRNET.pdf`/`VOID*.pdf`, `Protocolo de Dinâmica Computacional 5.2` (Drive); triagem em [`research/ANALISE_ALIEN_FILES_MYCELIUM.md`](../../research/ANALISE_ALIEN_FILES_MYCELIUM.md).
+- Material interno estudado: `Alien Files/SECRET/Protocolo_de_Malha_Unificado.pdf` (AMP/CFA), `ETΞRNET.pdf`/`VOID*.pdf`, `Protocolo de Dinâmica Computacional 5.2` (Drive); triagem histórica em `research/ANALISE_ALIEN_FILES_MYCELIUM.md`.

@@ -10,7 +10,7 @@ misturando o Mycelium com o framework MAPS
 
 ---
 
-## 0. A restrição física, dita primeiro
+## 0. O hardware necessário
 
 "Sem o computador ligado" **não** significa "sem nenhum hardware ligado". Bytes e
 processos só existem em máquinas que estão online. O que a descentralização troca é
@@ -21,9 +21,11 @@ processos só existem em máquinas que estão online. O que a descentralização
 | 1 VPS alugado, 1 empresa, 1 cartão de crédito | N nós baratos/voluntários; qualquer um cai e o serviço continua |
 | Você paga uptime | Uptime = soma das réplicas online (E1/E2) |
 
-Consequência prática: o mínimo honesto é **3 nós em lugares/energias diferentes, onde
-pelo menos 2 ficam sempre ligados** e pelo menos 1 é alcançável de fora (inbound ou
-relay). O notebook vira só mais um nó — pode desligar.
+Para o cenário planejado aqui, a proposta considera **3 nós em locais e fontes
+de energia diferentes**, com pelo menos 2 ligados e 1 alcançável de fora, por
+conexão direta ou relay. Isso é uma hipótese operacional, não uma garantia de
+disponibilidade. O notebook pode desligar enquanto outros nós assumem o serviço,
+desde que a replicação e o acesso tenham sido configurados e validados.
 
 Candidatos a nó sempre-ligado, do mais barato ao mais caro:
 

@@ -3,7 +3,7 @@
 Data: 2026-10-21. Crate: [`crates/mycelium-root`](../../crates/mycelium-root).
 CLI: `mycelium root …`.
 
-## 0. A pergunta, levada a sério
+## 0. Como guardar dados sem um servidor
 
 > Onde os bytes podem morar se não for num servidor nem numa rede de pares?
 
@@ -12,7 +12,7 @@ o meio de outros (P2P) só tem uma saída: **os meios que você já possui**,
 espalhados pelo seu dia. Pendrive no chaveiro, cartão SD na carteira, o celular,
 um HD velho na gaveta, uma pasta no notebook do trabalho.
 
-Aqui a nuvem perde o servidor, mas mantém o que ela tem de bom:
+O Root distribui os dados entre esses meios e oferece as seguintes operações:
 
 | O que a nuvem dá | Como o Root dá, sem servidor e sem rede |
 |---|---|
@@ -20,7 +20,7 @@ Aqui a nuvem perde o servidor, mas mantém o que ela tem de bom:
 | Ninguém lê se roubarem um disco | cada pedaço é **cifrado**; a chave também é cortada (Shamir **K de N**). Com menos de K raízes, não sobra nada legível, nem a chave |
 | Sincronizar vários aparelhos | **sincronização por contato**: quando duas raízes se encontram no mesmo computador, trocam o que falta. Os dados viajam com você, como esporos |
 | Histórico, desfazer | log só de acréscimo; nenhuma escrita apaga a anterior |
-| Abrir como uma pasta | `mycelium root mount`: aparece como um **pendrive** (FUSE) em qualquer Linux |
+| Abrir como uma pasta | `mycelium root mount` usa FUSE em Linux com suporte e permissões adequados |
 
 Cada meio é uma **raiz**. O conjunto é o **Root**. Nenhuma raiz sozinha é a
 nuvem; **qualquer K delas são**.
@@ -98,7 +98,7 @@ mycelium root heal /media/pendrive /media/sd --replace 3 --into /media/novo
 - `entropy::Vault::shade_at` (Lagrange em x qualquer) recalcula a parte Shamir
   da raiz perdida sem reconstruir a chave em disco.
 
-## 5. Limites (ditos)
+## 5. Limites
 
 - **Não há acesso de qualquer lugar.** Você só acessa onde tiver K raízes à
   mão. É a troca entre soberania e onipresença. Receita prática: K=2 com o

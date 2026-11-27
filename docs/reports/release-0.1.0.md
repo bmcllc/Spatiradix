@@ -44,8 +44,9 @@ cinco nós, use `./scripts/stress-test-5nodes.sh`. O teste prolongado é
 
 ## Operação pública
 
-Leia antes [ops-seed.md](ops-seed.md), [volunteer-sporocarp.md](volunteer-sporocarp.md)
-e [protocol.md](protocol.md). Publique um seed apenas após a prova de
+Leia antes [ops-seed.md](../network/ops-seed.md),
+[volunteer-sporocarp.md](../network/volunteer-sporocarp.md) e
+[protocol.md](../architecture/protocol.md). Publique uma seed apenas após a prova de
 alcançabilidade descrita nesses documentos. O serviço systemd e a imagem
 Docker são pontos de partida operacionais; revise portas, endereço anunciado,
 limites de recursos e reverse proxy para o seu ambiente.

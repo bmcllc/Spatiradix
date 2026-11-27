@@ -1,7 +1,7 @@
-# 📚 Guia e Dicionário Completo de Crates do Mycelium Network
+# Referência de crates do Mycelium Network
 
-> **Classificação**: Referência Técnica Exaustiva do Monorepo  
-> **Total de Crates / Pacotes**: 30  
+> Esta referência descreve os componentes documentados aqui. Para a lista
+> atual de pacotes, consulte o [`Cargo.toml`](../../Cargo.toml) do workspace.
 > **Linguagem**: Rust (Edição 2021)  
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Núcleo, Redes e Transporte (Substrato Básico)
 
 ### 1.1. `mycelium-core`
-- **Caminho**: [`crates/mycelium-core`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-core)
+- **Caminho**: [`crates/mycelium-core`](../../crates/mycelium-core)
 - **Papel**: Tipos primitivos compartilhados por todo o ecossistema.
 - **Tipos Fundamentais**:
   - `NodeId(pub [u8; 32])`: Identificador canônico do nó, derivado via BLAKE3 da chave pública ed25519.
@@ -23,7 +23,7 @@
 ---
 
 ### 1.2. `mycelium-hyphae`
-- **Caminho**: [`crates/mycelium-hyphae`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-hyphae)
+- **Caminho**: [`crates/mycelium-hyphae`](../../crates/mycelium-hyphae)
 - **Papel**: Camada de rede e transporte vivo sobre `libp2p`.
 - **Funcionalidades**:
   - Conexões ponto-a-ponto via **QUIC** (UDP) e **TCP + Noise + Yamux**.
@@ -37,7 +37,7 @@
 ---
 
 ### 1.3. `mycelium-pheromones`
-- **Caminho**: [`crates/mycelium-pheromones`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-pheromones)
+- **Caminho**: [`crates/mycelium-pheromones`](../../crates/mycelium-pheromones)
 - **Papel**: Reconhecimento químico e identidade descentralizada.
 - **Funcionalidades**:
   - `Gland`: A glândula privada ed25519 do nó (`germinate()`, `from_seed()`, `sign_bytes()`).
@@ -47,17 +47,17 @@
 ---
 
 ### 1.4. `mycelium-nutrients`
-- **Caminho**: [`crates/mycelium-nutrients`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nutrients)
+- **Caminho**: [`crates/mycelium-nutrients`](../../crates/mycelium-nutrients)
 - **Papel**: O ledger econômico metabólico da rede.
 - **Funcionalidades**:
   - `Ledger`: Controle de saldos de nutrientes (`ATP`, `Enzymes`, `Mycelia`, `Spores`, `Resilience`).
-  - `SignedTransfer`: Transferências ponto-a-ponto assinadas criptograficamente com proteção contra double-spending e replay.
+  - `SignedTransfer`: transferências assinadas com verificação de nonce no ledger local. Isso, por si só, não prova que um débito foi confirmado em um estado comum entre recebedores.
   - Vouchers de liquidação e créditos automáticos por heartbeat e prestação de serviços.
 
 ---
 
 ### 1.5. `mycelium-sporebank`
-- **Caminho**: [`crates/mycelium-sporebank`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-sporebank)
+- **Caminho**: [`crates/mycelium-sporebank`](../../crates/mycelium-sporebank)
 - **Papel**: Persistência de dados content-addressed no disco do nó.
 - **Funcionalidades**:
   - `SporeBank`: Armazena objetos `Plot` serializados em `{home}/sporebank/plots/{cid}.json`.
@@ -67,7 +67,7 @@
 ---
 
 ### 1.6. `mycelium-node`
-- **Caminho**: [`crates/mycelium-node`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-node)
+- **Caminho**: [`crates/mycelium-node`](../../crates/mycelium-node)
 - **Papel**: O orquestrador central do nó (daemon do organismo).
 - **Funcionalidades**:
   - `Organism`: Loop principal assíncrono que integra hifas, control socket, persistência e métricas.
@@ -80,18 +80,18 @@
 ## 2. Portadoras Físicas, Dormência & Mídia
 
 ### 2.1. `mycelium-sclerotium`
-- **Caminho**: [`crates/mycelium-sclerotium`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-sclerotium)
+- **Caminho**: [`crates/mycelium-sclerotium`](../../crates/mycelium-sclerotium)
 - **Papel**: Protocolo de dormência profunda (Sclerotium) e portadora fantasma (Ghost Carrier).
 - **Funcionalidades**:
   - Máquina de estados: `Sprouting -> Alive <-> Dormant <-> Ghost -> Dead`.
   - `GhostLease`: Delegação de presença para nós vizinhos sem compartilhar chaves privadas.
-  - `WakeToken` & `ImpulsePacket`: Despertar seletivo anti-DoS via HMAC e 50 bytes binários.
+  - `WakeToken` e `ImpulsePacket`: autenticação de despertar com BLAKE3 keyed e pacote binário de 50 bytes.
   - `EthernetCarrier`: Despacho e recepção de Magic Packets Wake-on-LAN (WoL) com extensão SecureON.
 
 ---
 
 ### 2.2. `mycelium-media`
-- **Caminho**: [`crates/mycelium-media`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-media)
+- **Caminho**: [`crates/mycelium-media`](../../crates/mycelium-media)
 - **Papel**: Motor descentralizado para streaming de áudio e vídeo (Mycelium Video).
 - **Funcionalidades**:
   - Fatiamento de vídeos em chunks de 2MB indexados por hashes BLAKE3.
@@ -102,39 +102,39 @@
 ---
 
 ### 2.3. `mycelium-store`
-- **Caminho**: [`crates/mycelium-store`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-store)
+- **Caminho**: [`crates/mycelium-store`](../../crates/mycelium-store)
 - **Papel**: App Store P2P de software legado, jogos e motores de emulação.
 - **Funcionalidades**:
   - Detecção automática de capacidades do sistema host: **RetroArch, MAME, QEMU, WASM, Bubblewrap**.
   - Catálogo de spores de software (`SoftwareSpore`) com hashes de verificação de integridade.
-  - Execução isolada em sandbox Bubblewrap estrito (`store launch --sandbox`).
+  - Opções de execução com sandbox dependem do motor e da configuração; consulte a [auditoria](MACHINE_HUB_AUDITORIA.md) antes de executar conteúdo não confiável.
 
 ---
 
 ## 3. Privacidade, Anonimato & Pós-Quântica
 
 ### 3.1. `mycelium-veil`
-- **Caminho**: [`crates/mycelium-veil`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-veil)
+- **Caminho**: [`crates/mycelium-veil`](../../crates/mycelium-veil)
 - **Papel**: Rede de roteamento cebola (*onion routing*) pós-quântica VEIL Ω.
 - **Funcionalidades**:
-  - Cifragem cebola de 3 saltos (**Guard, Relay, Exit**) usando **ML-KEM-768 + X25519 + ChaCha20-Poly1305**.
+  - Roteamento cebola de três saltos (**Guard, Relay, Exit**) com **ML-KEM-1024 e ChaCha20-Poly1305**.
   - Servidor proxy **SOCKS5** local (`127.0.0.1:1080`).
-  - Blindagem **Anti-SSRF** estrita no nó de egresso (bloqueio de subredes privadas RFC1918 e metadados).
+  - Filtros **Anti-SSRF** no nó de egresso para redes privadas RFC 1918 e metadados.
   - Suporte a nós **Bridges** para evasão de censura estatal e bloqueios de IP.
 
 ---
 
 ### 3.2. `mycelium-pqc`
-- **Caminho**: [`crates/mycelium-pqc`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-pqc)
+- **Caminho**: [`crates/mycelium-pqc`](../../crates/mycelium-pqc)
 - **Papel**: Primitivas criptográficas pós-quânticas padronizadas (NIST / FIPS).
 - **Funcionalidades**:
-  - **ML-KEM-768 / 1024** (Kyber): Encapsulamento e troca de chaves resistente a computadores quânticos.
-  - **ML-DSA-87** (Dilithium nível 5): Assinaturas digitais pós-quânticas de altíssima segurança.
+  - **ML-KEM-1024**: encapsulamento de chave pós-quântico.
+  - A verificação de licenças ML-DSA-87 está no crate `mycelium-zkp`, não nesta API ML-KEM.
 
 ---
 
 ### 3.3. `mycelium-zkp`
-- **Caminho**: [`crates/mycelium-zkp`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-zkp)
+- **Caminho**: [`crates/mycelium-zkp`](../../crates/mycelium-zkp)
 - **Papel**: Provas de conhecimento zero, verificação de licenças e validação financeira.
 - **Funcionalidades**:
   - Verificação de licenças de software **VOID-00** com vinculação a hardware seguro (`device_entropy`).
@@ -143,7 +143,7 @@
 ---
 
 ### 3.4. `mycelium-ghostid`
-- **Caminho**: [`crates/mycelium-ghostid`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-ghostid)
+- **Caminho**: [`crates/mycelium-ghostid`](../../crates/mycelium-ghostid)
 - **Papel**: Identidades efémeras secp256k1 compatíveis com Nostr (NIP-01 Schnorr).
 - **Funcionalidades**:
   - Coleta de entropia do sistema e do ambiente (sem persistência em disco).
@@ -152,24 +152,24 @@
 ---
 
 ### 3.5. `mycelium-qel`
-- **Caminho**: [`crates/mycelium-qel`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-qel)
+- **Caminho**: [`crates/mycelium-qel`](../../crates/mycelium-qel)
 - **Papel**: Quantum-resistant Erasure Layer (Camada de fragmentação e tolerância a desastres).
 - **Funcionalidades**:
   - Fragmentação de arquivos em $N$ shards exigindo quórum de $K$ partes para reconstrução.
-  - Dispersão multicanal (Nostr, IPFS, RelayMesh, LoRa).
+  - Indicações de transporte para os shards; um `TransportHint` não comprova que o canal correspondente está implementado ou foi usado.
 
 ---
 
 ### 3.6. `entropy`
-- **Caminho**: [`crates/entropy`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/entropy)
+- **Caminho**: [`crates/entropy`](../../crates/entropy)
 - **Papel**: Cofre de segredos e Shamir Secret Sharing (SSS) sobre Galois Field $\text{GF}(256)$.
 - **Funcionalidades**:
-  - `Vault`: Divisão de segredos mestres em $M$-de-$N$ `Shade`s com meia-vida programada.
+  - `Vault`: divisão de segredos em $M$-de-$N$ `Shade`s. `ChaosKey` limita o tempo de leitura do segredo reconstruído; veja os [limites de custódia](../pipeline/entropy.md).
 
 ---
 
 ### 3.7. `isotope`
-- **Caminho**: [`crates/isotope`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/isotope)
+- **Caminho**: [`crates/isotope`](../../crates/isotope)
 - **Papel**: Estado distribuído com decaimento radioativo (CRDT Last-Write-Wins sobre gossip).
 - **Funcionalidades**:
   - `Nucleus`: Armazena átomos de dados versionados com relógio LWW que se sincronizam via hifas.
@@ -179,7 +179,7 @@
 ## 4. O Pipeline de Computação "The Lattice"
 
 ### 4.1. `giggs`
-- **Caminho**: [`crates/giggs`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/giggs)
+- **Caminho**: [`crates/giggs`](../../crates/giggs)
 - **Papel**: Forja soberana de código e DAG de plots.
 - **Funcionalidades**:
   - `Plot`: Objeto imutável content-addressed que representa um commit/snapshot da árvore de código.
@@ -188,7 +188,7 @@
 ---
 
 ### 4.2. `thefield`
-- **Caminho**: [`crates/thefield`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/thefield)
+- **Caminho**: [`crates/thefield`](../../crates/thefield)
 - **Papel**: O campo de ressonância e coordenação de quórum.
 - **Funcionalidades**:
   - `Signal`: Declaração pública de intenção de computação emitida na malha.
@@ -197,16 +197,16 @@
 ---
 
 ### 4.3. `inertia`
-- **Caminho**: [`crates/inertia`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/inertia)
+- **Caminho**: [`crates/inertia`](../../crates/inertia)
 - **Papel**: Motor de execução de compilação, testes e atestações criptográficas.
 - **Funcionalidades**:
   - `Vector`: Instrução precisa de execução de build/teste em cima de um snapshot exato.
-  - `SignedAttestation`: Prova criptográfica assinada de que o build foi realizado honestamente.
+  - `SignedAttestation`: atestação assinada que permite conferir autoria e integridade; ela não prova que o executor agiu honestamente.
 
 ---
 
 ### 4.4. `vacuum`
-- **Caminho**: [`crates/vacuum`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/vacuum)
+- **Caminho**: [`crates/vacuum`](../../crates/vacuum)
 - **Papel**: Camada de isolamento e execução segura de processos.
 - **Funcionalidades**:
   - `Chamber`: O contêiner leve e isolado do Mycelium.
@@ -215,7 +215,7 @@
 ---
 
 ### 4.5. `plasma`
-- **Caminho**: [`crates/plasma`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/plasma)
+- **Caminho**: [`crates/plasma`](../../crates/plasma)
 - **Papel**: Nuvem elástica de serviços e balanceamento de carga.
 - **Funcionalidades**:
   - `Ion`: Instância de serviço em execução com carga eletrostática (`Positive`, `Neutral`, `Negative`).
@@ -224,7 +224,7 @@
 ---
 
 ### 4.6. `singularity`
-- **Caminho**: [`crates/singularity`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/singularity)
+- **Caminho**: [`crates/singularity`](../../crates/singularity)
 - **Papel**: O horizonte de eventos HTTP (gateway de entrada da internet tradicional).
 - **Funcionalidades**:
   - `EventHorizon`: Reverse proxy HTTP na porta `:7474` que mapeia URLs `/{ion}/` até as Chambers vivas.
@@ -235,46 +235,46 @@
 ## 5. Transportes Heterogêneos & Pontes
 
 ### 5.1. `mycelium-nostr` & `mycelium-nostr-transport`
-- **Caminho**: [`crates/mycelium-nostr`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nostr) e [`crates/mycelium-nostr-transport`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-nostr-transport)
+- **Caminho**: [`crates/mycelium-nostr`](../../crates/mycelium-nostr) e [`crates/mycelium-nostr-transport`](../../crates/mycelium-nostr-transport)
 - **Papel**: Túnel libp2p sobre relays Nostr (WSS outbound na porta 443).
 - **Funcionalidades**: Permite a dois nós atrás de CGNAT/firewalls restritivos se conectarem sem abrir portas no roteador.
 
 ---
 
 ### 5.2. `mycelium-ipfs`
-- **Caminho**: [`crates/mycelium-ipfs`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-ipfs)
+- **Caminho**: [`crates/mycelium-ipfs`](../../crates/mycelium-ipfs)
 - **Papel**: Interoperabilidade com o ecossistema IPFS (blockstore local e CIDs).
 
 ---
 
 ### 5.3. `mycelium-tropical`
-- **Caminho**: [`crates/mycelium-tropical`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-tropical)
+- **Caminho**: [`crates/mycelium-tropical`](../../crates/mycelium-tropical)
 - **Papel**: Roteamento ótimo sobre álgebra tropical $(\min, +)$ para cálculo de menor custo e menor latência na malha.
 
 ---
 
 ### 5.4. `mycelium-distancebridge`
-- **Caminho**: [`crates/mycelium-distancebridge`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-distancebridge)
-- **Papel**: Ponte de distância geodésica e estimativa de latência geográfica entre pares.
+- **Caminho**: [`crates/mycelium-distancebridge`](../../crates/mycelium-distancebridge)
+- **Papel**: Seleção de transportes a partir do contexto disponível; meios físicos como LoRa não são implementados por este crate.
 
 ---
 
 ## 6. CLI e Plataformas COSMIC
 
 ### 6.1. `cosmic-cli`
-- **Caminho**: [`crates/cosmic-cli`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/cosmic-cli)
+- **Caminho**: [`crates/cosmic-cli`](../../crates/cosmic-cli)
 - **Papel**: Linha de comando para interação com a camada de computação e storage pós-quânticos COSMIC.
 
 ---
 
 ### 6.2. `platforms/cosmoplanck`
-- **Caminho**: [`platforms/cosmoplanck`](file:///media/bruno/SAMBOOK/Mycelium%20Network/platforms/cosmoplanck)
-- **Papel**: Adaptador de plataforma de baixíssimo nível para microcontroladores e dispositivos bare-metal.
+- **Caminho**: [`platforms/cosmoplanck`](../../platforms/cosmoplanck)
+- **Papel**: Cliente REST de integração com a plataforma Planck.
 
 ---
 
 ### 6.3. `cli/mycelium-cli`
-- **Caminho**: [`cli/mycelium-cli`](file:///media/bruno/SAMBOOK/Mycelium%20Network/cli/mycelium-cli)
+- **Caminho**: [`cli/mycelium-cli`](../../cli/mycelium-cli)
 - **Papel**: O binário principal de usuário `mycelium`.
 - **Comandos Principais**:
   - `sprout`, `daemon`, `status`, `shutdown` (Ciclo de vida do nó)

@@ -23,8 +23,9 @@ Referência de arquitetura: [Mycelium-ECO soberano](MYCELIUM_ECO_SOBERANO.md).
 | Gates físicos | [Next](../../apps/mycelium-next/mycelium_next.py), `gate`; [S1](../../apps/mycelium-next/s1_gate.py), `evaluate` | Sensores reais, histerese e bloqueio por estado ausente/inválido/antigo. Precisam cobrir todas as etapas novas. |
 | Supervisor ECO | [supervisor](../../apps/mycelium-next/eco_supervisor.py), `NativeRunner`, `EcoSupervisor` | Descoberta limitada e deduplicação de relatórios; os comandos permitidos são discovery/status/dashboard, sem execução de serviços ou pagamentos. |
 
-O caminho mais curto é ampliar essa base com um serviço pequeno. Criar outro
-loop que apenas imprime operações não resolve a falta do circuito econômico.
+Uma opção é ampliar essa base com um serviço pequeno que execute, verifique e
+liquide tarefas reais. Um loop que apenas registra operações não completa o
+circuito econômico.
 
 ## Bloqueios atuais e prioridades
 

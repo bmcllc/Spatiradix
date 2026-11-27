@@ -43,10 +43,10 @@ docs/
 - **[`ROOT.md`](root/ROOT.md)**: Cofre cifrado K-de-N espalhado pelos seus meios físicos (pendrive, SD, celular, HD), Reed-Solomon + chave Shamir, sincronização por contato, montável como pendrive (`mycelium root`).
 
 ### Privacidade e roteamento cebola (`docs/veil/`)
-- **[`VEIL_ONION_ROUTING.md`](veil/VEIL_ONION_ROUTING.md)**: Visão executiva e técnica do roteamento cebola de 3 saltos com ML-KEM-768, proxy SOCKS5 e blindagem Anti-SSRF.
+- **[`VEIL_ONION_ROUTING.md`](veil/VEIL_ONION_ROUTING.md)**: Roteamento cebola de três saltos com ML-KEM-1024, proxy SOCKS5 e filtros Anti-SSRF.
 - **[`VEIL_OMEGA_SPEC.md`](veil/VEIL_OMEGA_SPEC.md)**: Especificação formal do protocolo de transporte e encriptação de camadas do Veil.
 - **[`THREAT_MODEL.md`](veil/THREAT_MODEL.md)**: Análise contra adversários com visão global de tráfego, nós espiões e correlação estatística.
-- **[`VEIL_P12_WAN_FIELD_VALIDATION.md`](veil/VEIL_P12_WAN_FIELD_VALIDATION.md)** e **[`veil-homologacao-wan.md`](veil/veil-homologacao-wan.md)**: Relatórios de testes e validação em enlaces reais de internet pública.
+- **[`VEIL_P12_WAN_FIELD_VALIDATION.md`](veil/VEIL_P12_WAN_FIELD_VALIDATION.md)** e **[`veil-homologacao-wan.md`](veil/veil-homologacao-wan.md)**: Roteiros e critérios para a validação WAN, ainda pendente nos registros.
 
 ### Computação e armazenamento (`docs/cosmic/`)
 - **[`COSMIC_COMPUTE_STORAGE.md`](cosmic/COSMIC_COMPUTE_STORAGE.md)**: Proposta de computação e armazenamento com contratos criptográficos.
@@ -73,7 +73,7 @@ docs/
 - **[`nutrient-ledger.md`](pipeline/nutrient-ledger.md)**: O modelo econômico de incentivos computacionais.
 - **[`plasma-ion-migration.md`](pipeline/plasma-ion-migration.md)**: Como serviços migram dinamicamente entre nós baseados em carga eletrostática.
 - **[`entropy.md`](pipeline/entropy.md)**: Implementação do cofre Shamir Secret Sharing para segredos com tempo de expiração.
-- **[`pqc.md`](pipeline/pqc.md)**: Implementação dos algoritmos FIPS 203/204 (Kyber e Dilithium).
+- **[`pqc.md`](pipeline/pqc.md)**: Operações ML-KEM-1024 e transporte PQC das hifas.
 - **[`prometheus.md`](pipeline/prometheus.md)**: Métricas exportadas pelo endpoint `/metrics` do Event Horizon.
 - **[`ergotos.md`](pipeline/ergotos.md)**: Console e orquestração ErgotOS.
 - **[`microeasy-ecosystem.md`](pipeline/microeasy-ecosystem.md)**: Ecossistema de integração de jogos e software.

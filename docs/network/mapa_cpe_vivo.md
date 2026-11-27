@@ -1,8 +1,9 @@
 # Mapa CPE Vivo (TushiBook) — sensor
 
-Preencher com pcap + probes externos. **Não** anunciar `/esporocarp` a partir deste host.
+Registre aqui as capturas de pacotes e as sondas externas. Nas condições
+observadas abaixo, não anuncie `/esporocarp` a partir deste host.
 
-Actualização automática local: `./scripts/cpe-sensor.sh [--pcap]`
+Atualização local: `./scripts/cpe-sensor.sh [--pcap]`
 
 ## Topologia
 
@@ -23,7 +24,7 @@ externo → Internet → ASN Vivo → CGNAT? → CPE (192.168.15.1) → LAN → 
 | Escuta local | `0.0.0.0:4001` + `:443` (TCP) — daemon activo |
 | Firewall host (nft/ufw) | sem regras visíveis sem sudo / ufw n/a |
 
-## O que passa / o que morre
+## Resultados de conectividade
 
 | L3/L4 | LAN | Outbound WAN | Inbound WAN | Evidência | Onde morre (hipótese) |
 |-------|-----|--------------|-------------|-----------|----------------------|
@@ -56,12 +57,12 @@ externo → Internet → ASN Vivo → CGNAT? → CPE (192.168.15.1) → LAN → 
 #        ./scripts/probe-sporocarp.sh 2804:7f7:… 4001 telemovel-5g
 ```
 
-## Estado perigoso actual
+## Configuração a verificar
 
 Há (ou houve) daemon com `--sporocarp --announce-ip 177.102.211.60` **sem** `proof.json`.
 Isso viola [`invariante_membrana.md`](invariante_membrana.md).
 
-Acção:
+Ação recomendada:
 
 ```bash
 mycelium --home ~/.local/share/mycelium shutdown

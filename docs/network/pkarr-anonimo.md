@@ -7,9 +7,11 @@ Nível de validação: **(a)**, mais uma evidência real: publicação e resolu�
 [`testes-realidade.md`](../reports/testes-realidade.md)). Ainda não testado por
 dentro de um circuito VEIL vivo.
 
-Atende o gate **G1** de [`EVOLUCAO_2NOS_SOBERANA.md`](../architecture/EVOLUCAO_2NOS_SOBERANA.md),
-adaptado a **um nó só e anônimo**: o nó fica encontrável por um endereço
-`myc1…` sem revelar quem é nem onde está.
+Esta implementação adapta o gate **G1** de
+[`EVOLUCAO_2NOS_SOBERANA.md`](../architecture/EVOLUCAO_2NOS_SOBERANA.md) para
+um único nó. O objetivo é permitir a descoberta por um endereço `myc1…` sem
+publicar diretamente a identidade ou o endereço IP do nó. Isso não constitui
+garantia de anonimato; os riscos residuais estão na seção 4.
 
 ---
 

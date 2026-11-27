@@ -1,26 +1,26 @@
 # Mycelium Habitat × MYC × VEIL — H2
 
-Data: 2026-11-21. Integração local, sem commit nem push.
+Registro de 21 de novembro de 2026 sobre uma integração local. Os resultados
+abaixo descrevem os testes feitos naquela data.
 
 ## Transporte privado verificado
 
 Novo módulo: crates/mycelium-meta-gateway/src/veil_egress.rs
 
-O VeilEgress recebe um SOCKS5 loopback e abre uma conexão TCP ao domínio
-público, porta 443, usando ATYP=03 (DNS remoto). Não resolve o endereço
-do destinatário na máquina local, não usa proxy remoto não confiável,
-não aceita IP literal ou nomes reservados e NÃO FAZ FALLBACK DIRETO.
-O tempo máximo do handshake é 5 segundos.
+O `VeilEgress` usa um proxy SOCKS5 local para abrir uma conexão TCP na porta
+443 de um domínio público, com `ATYP=03` para resolução remota. Ele rejeita
+IPs literais e nomes reservados, não resolve o destino localmente e não tenta
+uma conexão direta em caso de falha. O handshake tem limite de cinco segundos.
 
 O control socket do daemon expõe GatewayVeilProbe, disponível apenas
 com --features veil e com o serviço VEIL ativado. A CLI:
 
     mycelium gateway veil-probe --host psp.exemplo-bancario.com
 
-O retorno positivo indica SOMENTE sucesso de SOCKS CONNECT.
-TLS/mTLS, identidade do PSP/banco, anonimato, execução e liquidação
-financeira NÃO foram demonstrados. Os adaptadores Pix/SWIFT/BRICS
-continuam criando mensagens preparadas, sem transmissão real.
+Um retorno positivo indica apenas que o SOCKS CONNECT teve sucesso. Os testes
+não demonstraram TLS/mTLS, identidade do PSP ou banco, anonimato, execução nem
+liquidação financeira. Naquele momento, os adaptadores Pix/SWIFT/BRICS criavam
+mensagens preparadas, sem transmissão real.
 
 ## Medição observada de serviços
 
@@ -59,7 +59,7 @@ serviço entregue.
 - cargo check de mycelium-node com a feature veil: aprovado.
 - Nenhuma integração com banco/PSP externo foi testada.
 
-## Próximos gates
+## Próximas etapas
 
 1. Autenticar a ligação manifesto Habitat -> Ion e executor.
 2. Vincular preço MYC a proposta assinada e aceite por consumidor.

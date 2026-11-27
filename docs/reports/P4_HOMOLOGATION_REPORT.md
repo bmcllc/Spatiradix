@@ -5,10 +5,10 @@
 
 ## Escopo executado
 
-O P4 foi executado sem ampliar o produto e sem repetir a suíte completa de 207
-testes. A homologação combinou uma execução real com dois nós privados e um
-teste de integração focado nas estruturas persistentes de Giggs, SporeBank e
-Inertia.
+A homologação combinou uma execução local com dois nós privados e um teste de
+integração das estruturas persistentes de Giggs, SporeBank e Inertia. Ela não
+repetiu a suíte completa de 207 testes. Os dois nós usaram loopback na mesma
+máquina; o teste não demonstrou conectividade WAN.
 
 | Item | Evidência |
 | --- | --- |
@@ -56,7 +56,7 @@ o transporte privado, a replicação, o Inertia remoto e o isolamento do deploy.
 Essa limitação de superfície foi registrada no roteiro e não foi mascarada como
 um teste de CLI.
 
-## Conclusão
+## Resultado
 
 Todos os critérios decisivos foram atendidos: CAS obsoleto recusado, linhagem
 recuperada após reinicialização e evidências adulteradas recusadas sem crédito

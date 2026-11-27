@@ -47,7 +47,7 @@ de tolerância total a falhas ou partições.
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ CAMADA 2: PRIVACIDADE, SEGURANÇA E CRIPTOGRAFIA AVANÇADA                    │
 │   • Veil Ω (Onion Routing pós-quântico de 3 saltos, Anti-SSRF, SOCKS5)     │
-│   • Mycelium PQC (ML-KEM-768/1024 para troca de chaves pós-quântica)        │
+│   • Mycelium PQC (ML-KEM-1024 para troca de chaves pós-quântica)            │
 │   • Mycelium ZKP (Provas de conhecimento zero, hardware binding, licenças)  │
 │   • Entropy (Shamir Secret Sharing com meia-vida / GF(256))                 │
 │   • Isotope (Anti-entropia, CRDT LWW sobre gossip de hifas)                 │
@@ -72,12 +72,15 @@ de tolerância total a falhas ou partições.
 
 ## 3. Fluxo de Vida e Computação Ponta a Ponta
 
-### 3.1. Publicação e Execução (The Lattice Pipeline)
+### 3.1. Publicação e execução (The Lattice)
+
+O fluxo abaixo descreve o desenho da integração. A propagação e o isolamento
+dependem da configuração e dos recursos disponíveis no nó.
 1. **Sementeira (Sow)**: O desenvolvedor empacota arquivos em um `giggs::Plot`. Cada arquivo vira uma `Leaf` content-addressed pelo hash BLAKE3.
 2. **Propagação (Gossip & DHT)**: O Plot é anunciado via Kademlia DHT (`spore/<ContentId>`) e replicado pelas hifas vizinhas.
 3. **Sinal de Computação (Signal)**: Um `thefield::Signal` é emitido na rede solicitando build, teste ou processamento do Plot com um quórum de nós.
 4. **Ressonância**: Nós que possuem recursos ociosos (`Resources { cpu, ram, storage, bandwidth }`) assinam e ressoam com o Signal.
-5. **Execução Segura (Inertia & Vacuum)**: Quando o quórum fecha, o `inertia::Vector` executa o build/teste dentro de uma `vacuum::Chamber` isolada por **Bubblewrap** (`bwrap`), gerando uma atestação criptográfica assinada.
+5. **Execução (Inertia e Vacuum)**: Após o quórum, o `inertia::Vector` executa build e teste em uma `vacuum::Chamber`, gerando uma atestação assinada. O isolamento disponível depende da configuração; consulte o [guia de arquitetura](architecture.md).
 6. **Frutificação (Plasma & Singularity)**: O serviço vira um `plasma::Ion` e passa a ser roteado pelo `singularity::EventHorizon` na porta HTTP `:7474`.
 
 ### 3.2. Ciclo de Dormência e Despertar (Sclerotium)
@@ -105,7 +108,9 @@ O Mycelium não utiliza moedas fiduciárias nem tokens inflacionários emitidos 
 
 ## 5. Matriz de Conectividade e Membrana Fisiológica
 
-Para garantir que nós residenciais consigam conversar com nós de data center sem intervenção manual de roteadores, o Mycelium adota a **Política de Membrana**:
+O Mycelium usa a **política de membrana** para classificar papéis de
+conectividade. Ela não garante que um nó residencial esteja acessível: NAT,
+firewall, relays e configuração do roteador podem afetar a conexão.
 
 ```text
                ┌──────────────┐

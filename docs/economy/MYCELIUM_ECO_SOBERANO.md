@@ -5,10 +5,11 @@
 
 ## Objetivo e limite econômico
 
-Operar sem internet, exchange, RPC público, assinatura de API, custodiante ou
-modelo de IA remoto. Identidade, tarefas, verificação, armazenamento, políticas
-e liquidação ficam no computador do operador; outros equipamentos podem entrar
-pela LAN. Energia, hardware e manutenção continuam necessários.
+A proposta é operar sem internet, exchange, RPC público, assinatura de API,
+custodiante ou modelo de IA remoto. Identidade, tarefas, verificação,
+armazenamento, políticas e liquidação ficariam no computador do operador;
+outros equipamentos poderiam participar pela LAN. Energia, hardware e
+manutenção continuam necessários.
 
 O produto econômico inicial é um **crédito local de direito a serviço**. Ele
 representa uma obrigação limitada de entregar um serviço especificado, e não

@@ -30,9 +30,9 @@ ELSE:
     # opcional: mycelium candidate [--loop]  → peers via Nostr 39401
 ```
 
-## Mentiras perigosas
+## Erros de configuração e consequências
 
-| Mentira | Efeito |
+| Erro | Efeito |
 |---------|--------|
 | `MYCELIUM_REACHABLE=1` sem prova | folhas dialam o impossível |
 | Anunciar IP CGNAT como público | timeouts em massa |

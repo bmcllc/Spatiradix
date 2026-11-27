@@ -1,24 +1,30 @@
-# Operar um seed / Volunteer Sporocarp (zero VPS)
+# Operar uma seed ou esporocarpo voluntário
 
-O seed público **não exige VPS**. Preferência: peer voluntário com inbound
-**verificado** (`MYCELIUM_REACHABLE=1`). Casa atrás de CGNAT/firewall ISP
-(ex. Vivo residencial) é folha — ver [`volunteer-sporocarp.md`](volunteer-sporocarp.md)
-e [`rizomorphs.md`](rizomorphs.md). Sem UPnP.
+Uma seed pública pode rodar em uma máquina voluntária, desde que sua porta de
+entrada esteja acessível e seja verificada a partir de outra rede. Nós atrás
+de CGNAT ou firewall podem operar como folhas. Veja os guias de
+[esporocarpo voluntário](volunteer-sporocarp.md) e [membranas](rizomorphs.md).
 
 ## Fluxo rápido (voluntário)
 
+Substitua `IP_PUBLICO`, `IPV4` e `IPV6` pelos endereços do candidato antes de
+executar os comandos. Use apenas os endereços correspondentes à sua configuração.
+
 ```bash
 # 1) No peer: port-forward TCP(+UDP) 4001, daemon a escutar 0.0.0.0
-# 2) De OUTRA rede (5G):
-./scripts/verify-sporocarp.sh IP_PUBLICO 4001
+# 2) De outra rede (ex.: 5G), gere a prova:
+./scripts/probe-sporocarp.sh IP_PUBLICO 4001 telemovel-5g > proof.json
 
-# 3) Só se ok:
+# 3) Copie proof.json para o candidato e verifique lá:
+./scripts/verify-sporocarp.sh 4001 proof.json
+
+# 4) Somente se a verificação passar:
 MYCELIUM_REACHABLE=1 ./scripts/run-public-seed.sh
 # ou 24/7:
 sudo MYCELIUM_REACHABLE=1 ./scripts/install-seed.sh \
   --announce-ip IPV4 --announce-ip6 IPV6
 
-# 4) Exportar linha /esporocarp → seeds/mainnet.txt ou DuckDNS TXT
+# 5) Exporte a linha /esporocarp para seeds/mainnet.txt ou DuckDNS TXT
 ./scripts/export-seed.sh ~/.local/share/mycelium-seed
 ```
 
@@ -65,6 +71,7 @@ Folhas priorizam `/esporocarp`. Não dialam `/folha`.
 - **DNS:** DuckDNS TXT do voluntário  
 - **HTTP/git:** `seeds/mainnet.txt` via `--public-bootstrap` / `--seed-file`
 
-## Filosofia
+## Verificação de acesso
 
-Inbound verificado → esporocarp. IPv6 na interface ≠ alcançável. Sem “enganar” o NAT.
+Verifique o acesso de entrada antes de anunciar o esporocarpo. Ter um endereço
+IPv6 na interface não prova que ele é alcançável pela internet.

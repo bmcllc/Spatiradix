@@ -1,12 +1,13 @@
 # Candidatos a esporocarpo voluntário
 
-Critério verde: IP público real + probe TCP ok + verify exit 0.
+Um candidato está pronto quando tem endereço público, passa na sonda TCP
+externa e `verify-sporocarp.sh` termina com código zero.
 
 **Hybrid Theory:** sem verde, a folha já tem mesh leve via **Nostr transport**
 (`vizinhos` sobre WSS, auto em `folha`/`floresta`). O voluntário desbloqueia
 **mesh live** (circuit relay, baixa latência).
 
-## Pipeline automático (usa isto)
+## Procedimento com o pipeline
 
 ```bash
 # O que falta agora (checklist):
@@ -38,7 +39,8 @@ Critério verde: IP público real + probe TCP ok + verify exit 0.
 ./scripts/volunteer-pipeline.sh mark "Amigo fibra" "verde"
 ```
 
-Estado persistente: [`candidatos.state.json`](candidatos.state.json) (actualizado por `pitch` / `mark`).
+O estado fica em [`candidatos.state.json`](candidatos.state.json), atualizado
+pelos comandos `pitch` e `mark`.
 
 ## Tabela (manual / referência)
 
@@ -50,8 +52,10 @@ Estado persistente: [`candidatos.state.json`](candidatos.state.json) (actualizad
 | Familiar | | | ? | ? | ? | NAS/PC | prospecto |
 | Hackerspace | | | ? | ? | ? | rack | prospecto |
 
-## O que ainda é humano
+## Participação do voluntário
 
-Só o passo **enviar a mensagem** e o voluntário **abrir a porta no router**. O resto (prova, seed, mainnet, attach da folha, matriz) está no pipeline.
+É preciso entrar em contato com o voluntário e configurar a porta no roteador.
+O pipeline reúne os comandos para sondar, verificar, exportar a seed e conectar
+a folha; acompanhe os resultados antes de avançar.
 
 Pitch: [`pitch_voluntario.txt`](pitch_voluntario.txt) · Ops: [`volunteer-sporocarp.md`](volunteer-sporocarp.md) · Nostr mesh: [`nostr-transport.md`](nostr-transport.md) · Demo hybrid: `./scripts/hybrid-demo.sh`

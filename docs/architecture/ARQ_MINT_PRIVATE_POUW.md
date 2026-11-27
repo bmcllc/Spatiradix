@@ -5,10 +5,10 @@ Escopo: crates/mycelium-mint/src/arq.rs e src/engine.rs.
 
 ## Princípio
 
-O QVP-2/ARQ fornecido pelo autor é um modelo adaptativo de avaliação
-de criptoativos e risco. Adaptamos somente mecanismos defensivos à
-emissão PoUW. O score de mercado original NÃO é uma cotação de Cameon,
-nem gera moeda fiduciária, crédito, liquidez ou valorização.
+O QVP-2/ARQ fornecido pelo autor é um modelo adaptativo de avaliação de
+criptoativos e risco. Esta etapa adapta mecanismos defensivos para a emissão
+PoUW. O score original não é uma cotação de Cameon e não gera moeda fiduciária,
+crédito, liquidez ou valorização.
 
 Prioridades: privacidade no protocolo de emissão, dados agregados,
 múltiplos validadores, sem cadastro civil exigido pelo ARQ, anti-replay,

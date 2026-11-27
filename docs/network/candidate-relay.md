@@ -1,19 +1,24 @@
 # CandidateRelay — terceiro estado (kind 39401)
 
-Quebra o ponto fixo CGNAT (`peers = 0`) **sem** violar o invariante de membrana.
+CandidateRelay ajuda nós atrás de CGNAT a descobrir pares usando Nostr, sem
+anunciar que aceitam conexões de entrada como esporocarpos.
 
 ```text
 /esporocarp      ⇔ MYCELIUM_REACHABLE   (permanente, proof.json)
 /candidate-relay ⇔ Nostr outbound       (temporário, TTL ~5 min, sem proof)
-/folha           ⇔ nada                 (0 peers libp2p)
+/folha           ⇔ sem inbound público  (pode ter peers de saída)
 ```
 
 ## Problema
 
-CGNAT ⇒ inbound = ∅ ⇒ sem `/esporocarp` ⇒ sem circuit relay ⇒ 0 peers.
-O operador Bellman `(Bφ)_i = sup_j(b_ij + φ_j)` fica em −∞. Ponto fixo estável.
+Uma folha atrás de CGNAT pode não receber conexões diretas. Sem um par
+alcançável ou outro caminho de descoberta e transporte, ela pode permanecer
+sem vizinhos. O modelo anterior descrevia esse caso como um ponto fixo do
+operador Bellman `(Bφ)_i = sup_j(b_ij + φ_j)`.
 
-Mailbox (`sow`/`recall --hybrid`, kind 31234) já funciona. **Mesh live** entre duas folhas CGNAT precisa de rendezvous — CandidateRelay.
+O mailbox (`sow`/`recall --hybrid`, kind 31234) permite troca assíncrona.
+Para uma conexão ativa entre duas folhas atrás de CGNAT, CandidateRelay oferece
+um mecanismo de encontro por relays Nostr.
 
 ## Algoritmo (P0)
 
@@ -42,14 +47,15 @@ mycelium candidate whoami
 # Terminal A — escuta + re-anuncia
 MYCELIUM_HOME=/tmp/cand-a mycelium candidate listen --loop
 
-# Terminal B — envia (usa o ghost impresso pelo whoami/listen de A)
-MYCELIUM_HOME=/tmp/cand-b mycelium candidate send --to <ghost_A> -m "ola da folha B"
+# Terminal B — substitua GHOST_A pela chave impressa no terminal A
+MYCELIUM_HOME=/tmp/cand-b mycelium candidate send --to GHOST_A -m "ola da folha B"
 
 # Novo GhostID
 mycelium candidate reset
 ```
 
-**Importante:** duas sessões no mesmo PC precisam de `MYCELIUM_HOME` diferentes (cada uma tem o seu `candidate.session`).
+Duas sessões no mesmo computador precisam de diretórios `MYCELIUM_HOME`
+distintos, pois cada uma mantém seu próprio `candidate.session`.
 
 Métrica: `candidate_peers > 0` **não** promove a membrana a esporocarp.
 
@@ -60,7 +66,7 @@ Métrica: `candidate_peers > 0` **não** promove a membrana a esporocarp.
 | 39400 | QEL_PRESENCE |
 | **39401** | **QEL_CANDIDATE_RELAY** (descoberta) |
 | **39406** | **QEL_BACKCHANNEL** (NIP-44, tag `#p`) |
-| 31234 | QEL_SHARD mailbox (já em produção) |
+| 31234 | QEL_SHARD mailbox |
 
 ## Roadmap
 
@@ -78,9 +84,9 @@ Doc do transporte: [`nostr-transport.md`](nostr-transport.md).
 
 ## Riscos
 
-1. **CGNAT simétrico UDP** — hole punching pode falhar; fallback = Nostr WS (~50 Kbps ok para texto/tx).
+1. **CGNAT simétrico UDP** — hole punching pode falhar; Nostr WSS é uma alternativa, com vazão dependente do relay.
 2. **Bootstrapping frio** — primeira folha sozinha mantém ponto fixo; precisa de ≥2 folhas ou “esporocarpo verde” (IP público a publicar 39401 **sem** fingir `/esporocarp`).
-3. **Latência relay** — 200–400 ms Europa; mitigar com hole punch ou relays LATAM.
+3. **Latência do relay** — varia conforme o relay e a rota; compare relays disponíveis na região.
 
 ## Relação com esporocarpo voluntário
 

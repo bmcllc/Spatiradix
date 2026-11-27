@@ -1,6 +1,8 @@
-# Live mesh vs DTN / store-and-forward
+# Rede em tempo real e armazenamento tolerante a atraso
 
-## LIVE MESH (tempo real)
+## Rede em tempo real
+
+Estas funções dependem de uma sessão ativa entre os nós:
 
 | Função | Live? | Motivo |
 |--------|-------|--------|
@@ -13,7 +15,9 @@
 | DHT query | sim/semi | lookup |
 | WebRTC ICE | sim | negociação |
 
-## DTN / STORE-AND-FORWARD
+## DTN e armazenamento para encaminhamento posterior
+
+Os itens abaixo podem ser armazenados para entrega ou sincronização posterior:
 
 | Função | DTN? | Motivo |
 |--------|------|--------|
@@ -25,11 +29,12 @@
 | mailbox DHT | ✅ | desenhado para isso |
 | Entropy secrets | ⚠️ | preferir meia-vida, não persistir |
 
-## Split
+## Separação
 
 ```text
 LIVE  = vizinhos, relay, dial, ICE, status, horizon
 DTN   = Plots, Signals, Isotope, artifacts, mailbox
 ```
 
-Sem terceiro peer alcançável: **só DTN físico** (encontros LAN) ou falha explícita de bootstrap WAN — sem milagre.
+Sem um terceiro par alcançável, a comunicação pode depender de encontros em
+rede local para troca posterior; o bootstrap pela WAN pode falhar.

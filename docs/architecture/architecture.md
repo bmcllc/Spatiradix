@@ -1,4 +1,8 @@
-# Arquitetura do Micélio
+# Arquitetura do Mycelium
+
+Este documento apresenta uma visão histórica dos componentes e inclui propostas
+que não necessariamente foram implementadas. Consulte [Validação](../VALIDACAO.md)
+para os resultados e limites registrados.
 
 ## Organismo (daemon)
 
@@ -51,27 +55,27 @@ Vacuum Chamber → Plasma Ion → Singularity Event Horizon
 ## Módulos adicionais
 
 ### Entropy (Shades)
-SSS sobre GF(256). CLI + organismo integrado. Pendente: distribuição
-via gossip. [`docs/entropy.md`](entropy.md)
+SSS sobre GF(256), com CLI e mensagens de gossip. O fluxo de fragmentação
+mantém as partes no cofre local; veja os limites em [Entropy](../pipeline/entropy.md).
 
 ### PQC (ML-KEM-1024)
 Handshake híbrido pós-Noise. Feature `pqc-transport`. Pendente:
-transporte real (Transport trait). [`docs/pqc.md`](pqc.md)
+transporte real (Transport trait). [PQC](../pipeline/pqc.md)
 
 ### Prometheus
 `GET /metrics` no Event Horizon com 15+ métricas. Tick a cada 30s.
-[`docs/prometheus.md`](prometheus.md)
+[Prometheus](../pipeline/prometheus.md)
 
 ### Nutrient Ledger Distribuído
-CRDT sobre gossip (planejado). [`docs/nutrient-ledger.md`](nutrient-ledger.md)
+CRDT sobre gossip (planejado). [Nutrient Ledger](../pipeline/nutrient-ledger.md)
 
 ### Plasma Ion Migration
 Gossip de oferta + handshake entre nós (planejado).
-[`docs/plasma-ion-migration.md`](plasma-ion-migration.md)
+[Plasma Ion Migration](../pipeline/plasma-ion-migration.md)
 
 ### Sporocarp CDN + Growth Zones
 Rotas HTTP para Plots/layers + zonas orgânicas (planejado).
-[`docs/sporocarp-cdn.md`](sporocarp-cdn.md)
+[Sporocarp CDN](../network/sporocarp-cdn.md)
 
 ## Substrato (crates `mycelium-*`)
 
@@ -90,7 +94,7 @@ Rotas HTTP para Plots/layers + zonas orgânicas (planejado).
 | CI/CD dispara | `thefield::Signal` → ressonância atinge quórum → `inertia::Vector` injetado em `plasma::Ion` |
 | App containerizada sobe | `plasma::Ion` solicita Void → `vacuum` suga dependências via hifas → `Chamber` nasce em nó com recursos |
 | Consulta a banco | App → `isotope::Decay` → propaga por hifas → Nuclei vizinhos respondem → fusão eventual |
-| Segredo é acessado | App → `entropy` Chaos Key → M de N `Shade`s coletadas por hifas → segredo existe por meia-vida |
+| Segredo é acessado | App → `entropy` Chaos Key → M de N `Shade`s reconstroem o segredo; o fluxo atual mantém as partes localmente |
 | Requisição externa chega | Internet → `singularity` Event Horizon → roteada por rizomorfos → chega ao Ion correto |
 
 ## Economia (Nutrient Cycling)

@@ -1,9 +1,10 @@
-# 🍄 Auditoria de segurança — o código que o Machine Hub reutiliza
+# Auditoria de segurança dos componentes previstos para o Machine Hub
 
 Data: 2026-10-22. Companheiro de [`MACHINE_HUB.md`](MACHINE_HUB.md).
 
-**Método:** leitura estática do código nesta data. Nenhum exploit foi executado;
-as cadeias abaixo foram montadas por leitura e estão marcadas assim.
+**Método:** leitura estática do código em 22 de outubro de 2026. Nenhum exploit
+foi executado; as cadeias abaixo foram construídas a partir da leitura. As
+referências de linha e o estado dos achados podem ter mudado desde então.
 **Escopo:** o que o Hub vai reutilizar ou expor — `mycelium-store`, os ions
 `store` e `vitrine` do `mycelium-node`, o Event Horizon (`singularity`), refs do
 `giggs`, `mycelium-nutrients`, `mycelium-bank` e a validação BOLT11 do

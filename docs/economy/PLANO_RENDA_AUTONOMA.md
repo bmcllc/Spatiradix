@@ -7,10 +7,13 @@ Base: auditoria de `crates/` (108k LOC), `crates/mycelium-economy/` (62k LOC),
 
 ---
 
-## 0. RESPOSTA CURTA
+## 0. Resultado dos testes
 
 **Pergunta testada:** como iniciar sem capital inicial?
-**Resposta medida:** você precisa de **US$ 0,0054 de ETH**. É isso.
+**Resultado da amostra:** o custo estimado de uma tentativa foi de cerca de
+**US$ 0,0054 em ETH** nas condições medidas em 3 de outubro de 2026. Taxas,
+preço do ETH, disponibilidade de serviços e execução mudam; esse valor não é
+uma garantia de custo ou de viabilidade futura.
 
 | Pedido | Veredito | Realidade medida |
 |---|---|---|
@@ -19,12 +22,13 @@ Base: auditoria de `crates/` (108k LOC), `crates/mycelium-economy/` (62k LOC),
 | **Escalável** | ⚠️ A estrutura sim, o MEV não | Arbitragem em mempool público decai para zero — todo searcher vê a mesma opportunity. |
 | **Soberana** | ✅ **Sim, e é vantagem** | Sem KYC, sem CEX. Na Base, soberania converte-se em vantagem de latência (blocos de 200ms). |
 
-**A frase honesta, corrigida:** a Revisão 1 deste plano dizia que capital zero exigia "~150 USDC de
-gas". **Errado por 1000×.** Gas na Base é **0,1 bps** de uma tentativa em notional workable.
-Capital é **zero**. Gas é **irrelevante**.
+**Correção da Revisão 1:** a estimativa anterior de cerca de 150 USDC para gas
+continha um erro de escala de 1000×. A amostra abaixo encontrou custos menores,
+mas transações ainda exigem pagamento de taxas ou um patrocinador.
 
-> **A viabilidade da estratégia é 100% uma questão de "existe edge?", não de capital, gas ou infraestrutura.**
-> E os testes de hoje responderam essa pergunta para as 3 classes que o scanner alcança: **não existe.**
+> Os testes registrados não encontraram oportunidade nas três classes que o
+> scanner avaliou. O resultado não prova ausência de oportunidades em todos
+> os mercados; custos, infraestrutura e riscos também afetam a viabilidade.
 
 ---
 
@@ -536,7 +540,7 @@ Um `git clean` destrói mais da metade do codebase e 100% do registro de valida�
 
 ## Revisão cbBTC / hooks v4 — 2026-10-04
 
-Esta revisão substitui interpretações anteriores de preço, validade dos hooks e descoberta Aero nesta investigação. A execução e a evidência reproduzível estão em [research/cbbtc/README.md](research/cbbtc/README.md), [research/cbbtc/latest.json](research/cbbtc/latest.json) e `scripts/audit_cbbtc.py`.
+Esta revisão substitui interpretações anteriores de preço, validade dos hooks e descoberta Aero nesta investigação. Os registros citados eram `research/cbbtc/README.md` e `research/cbbtc/latest.json`, que não estão na árvore atual, além de `scripts/audit_cbbtc.py`.
 
 1. USDC tem 6 decimais e cbBTC canônico tem 8; o tick −67461 representa aproximadamente US$85.044,75 por cbBTC. A interpretação próxima de US$117 era erro de escala, não evidência de token falso.
 2. Usar Aero `getPool` na fábrica correta, Slipstream com tick spacing e FactoryRegistry para fábricas aprovadas. Conferir token0/token1, factory e parâmetro. Uma fábrica extra exige quoter compatível; o quoter principal não representa automaticamente seus pools.

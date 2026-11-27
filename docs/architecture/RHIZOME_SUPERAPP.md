@@ -1,14 +1,17 @@
-# Mycelium Rhizome — Super-App Social Soberano P2P (`/rhizome/`)
+# Mycelium Rhizome: aplicação social P2P (`/rhizome/`)
 
 Status: implementação Fase 1 em `crates/mycelium-rhizome`, integrado ao daemon `mycelium-node` (`rhizome_ion`), ao Event Horizon `singularity` (`/rhizome/`), à interface web (`deploy/store-ui/rhizome.html`) e à CLI (`mycelium rhizome ...`).
 
-Este documento descreve **exatamente o que o código executa hoje**, incluindo suas garantias criptográficas e seus limites explícitos.
+Este documento descreve os componentes, mecanismos criptográficos e limites
+registrados para a integração. Para o estado de validação do projeto, consulte
+[Validação](../VALIDACAO.md).
 
 ---
 
 ## Arquitetura sobre a Infraestrutura do Mycelium Network
 
-O **Mycelium Rhizome** unifica vídeo longo/curto (YouTube + Reels/Shorts), feed visual/stories (Instagram), mural/comunidades (Facebook), microblog/threads (X) e mensageria E2EE (WhatsApp) reutilizando integralmente o substrato existente do monorepo:
+O Rhizome reúne vídeo, publicações, stories, comunidades e mensagens cifradas.
+Ele usa os seguintes componentes do Mycelium:
 
 | Experiência | Primitivos Rhizome | Substrato Mycelium Utilizado |
 |---|---|---|
@@ -86,7 +89,7 @@ Além da Fase 1 completa acima, o Super-App nativo em `/rhizome/` e a CLI fundir
 - **MEP, Enxame & Carteira Viva**:
   - Ponte direta por canal `oneshot` entre `rhizome_ion` e `Organism` expondo saldos reais do `Ledger`, transferências Schnorr (`GET /rhizome/api/wallet`, `POST /rhizome/api/wallet/transfer`), telemetria viva libp2p/Physarum + chunks/bytes retransmitidos (`GET /rhizome/api/swarm`, `POST /rhizome/api/swarm/config`), Lentes customizáveis (`GET/POST /rhizome/api/lenses`) e moderação local (`GET/POST /rhizome/api/moderation`).
   - CLI estendida: `mycelium rhizome video --doc --commons <id> --thumbnail <img.png> --replicas 3`, `commons-create`, `commons-list`, `commons-contribute`, `lens-list`, `lens-create`, `swarm`, `wallet`.
-- **Android 100% Soberano**: ver [docs/architecture/ANDROID_SOVEREIGN_BUILD.md](ANDROID_SOVEREIGN_BUILD.md) e `scripts/build-android-sovereign.sh`.
+- **Android**: veja [ANDROID_SOVEREIGN_BUILD.md](ANDROID_SOVEREIGN_BUILD.md) e `scripts/build-android-sovereign.sh`.
 
 ---
 
@@ -116,6 +119,6 @@ Integrado diretamente ao ion `/rhizome/api/` (`crates/mycelium-node/src/ecosyste
    - `GET/POST /rhizome/api/finance/reserve-policy` e `POST /rhizome/api/finance/mint-claim` permitem operar a reserva `mycelium-mint` em quórum real multi-esporocarpo (`min_quorum >= 2`) via Gossipsub (`WorkClaim` → `SporocarpAttestation` → `MintEpochSettled`), drenando automaticamente os recibos liquidados para `8× CPX` no `mycelium-bank`.
    - **TheField** (`/field/`, `crates/mycelium-node/src/field_ion.rs`, `deploy/store-ui/field.html`, `mycelium field`) substituiu definitivamente o antigo Code Hub, unificando repositórios Git P2P (`RefStore`/`SporeBank` + Vacuum CI) e sinais vivos de ressonância (`thefield::Field` em `/field/api/signals`).
 
-### Verificação Honesta
+### Verificação registrada
 - Validado em host Linux `x86_64` via testes unitários (`thefield`, `singularity`, `mycelium-veil` incluindo `tun2socks`, `mycelium-mint`, `mycelium-royalty`, `mycelium-bank`, `mycelium-pay`, `mycelium-rhizome`, `mycelium-hyphae`, `mycelium-android-forge`), testes de aceitação ao vivo (`crates/mycelium-node/tests/rhizome_p2p_acceptance.rs` e `crates/mycelium-node/tests/ecosystem_acceptance.rs` incluindo quórum 2-de-2 P2P + VEIL Exit/Client remoto + TheField), e validação cruzada em CPU ARM64 via `qemu-aarch64-static` + OpenSSL CMS/PKCS#7.
 - Validado ao vivo em hardware físico **Moto G35 5G (Android 15 / API 35, `arm64-v8a`, `PAGESIZE=4096`)** na **`v0.3.0`** via `adb`: `adb install -r` (`Success`), `dex2oat64` (`dex2oat returned code 0`, 6 classes DEX verificadas), `dumpsys package` (`VeilVpnService`/`BIND_VPN_SERVICE`, `NDEF_DISCOVERED`, `ACTION_SEND`, `<queries>` das 9 redes, `NFC`, `READ_CONTACTS`), entrega ao vivo de `ACTION_SEND` via `singleTop`/`onNewIntent` com zero erros, e validação HTTP ao vivo de `/rhizome/`, `/field/`, `/field/api/signals`, `/hub/` (`404`), `/rhizome/api/finance/reserve-policy`, `/rhizome/api/veil/{start,test,stop}` (com `tun_bridge` L3 ativo) e `/rhizome/api/omnibridge/overview`.

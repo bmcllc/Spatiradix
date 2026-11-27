@@ -1,14 +1,14 @@
 # Seed Code — Distribuição de Código via Mycelium Network
 
-Guia completo para publicar e baixar código-fonte diretamente pela rede P2P,
-**sem git, sem GitHub, sem servidor central**.
+Este guia mostra como publicar e baixar código-fonte pela rede P2P usando
+`seed-code` e `recall-code`.
 
 ---
 
 ## O que é
 
 O Mycelium Network é capaz de distribuir código-fonte entre nós usando
-seu próprio protocolo P2P. Todo código é content-addressed (hash SHA-256),
+seu próprio protocolo P2P. O conteúdo é identificado por hash BLAKE3,
 armazenado no Spore Bank local e propagado via gossipsub.
 
 ```
@@ -20,7 +20,7 @@ armazenado no Spore Bank local e propagado via gossipsub.
 └──────────────────────┘          └──────────────────────┘
         sem git                           sem git
         sem GitHub                        sem GitHub
-        sem IP/chave                      sem IP/chave
+        conteúdo público                 pares conectados
 ```
 
 ---
@@ -36,11 +36,17 @@ cargo build -p mycelium-cli
 
 ### 2. Inicia um nó (se ainda não tem)
 
+O exemplo abaixo usa `--sporocarp` para um nó que atuará como relay público.
+Antes de ativá-lo, verifique a conectividade de entrada a partir de outra rede,
+conforme o [guia de esporocarpo voluntário](../network/volunteer-sporocarp.md).
+Para uma demonstração local sem relay público, omita essa opção.
+Mantenha o daemon em execução e use outro terminal para os próximos comandos.
+
 ```bash
 # Sprout (gera identidade)
 ./target/debug/mycelium sprout --contribute 2cpu,4gb,50gb
 
-# Daemon (fica rodando em background)
+# Inicia o daemon neste terminal
 RUST_LOG=info ./target/debug/mycelium daemon \
   --contribute 2cpu,4gb,50gb \
   --sporocarp \
@@ -80,6 +86,9 @@ RUST_LOG=info ./target/debug/mycelium daemon \
 
 ## Passo a passo: Baixar código
 
+Substitua `QmXXX...`, `PEER_ID` e os endereços de exemplo pelos valores reais
+do publicador antes de executar os comandos.
+
 ### 1. Inicia um nó receptor
 
 ```bash
@@ -113,7 +122,7 @@ RUST_LOG=info ./target/debug/mycelium daemon \
 # 📦 12 arquivos extraídos em meu-projeto/
 
 # Opção B: download via HTTP (Event Horizon)
-curl http://127.0.0.1:7474/code/QmXXX.../main.rs
+curl http://127.0.0.1:7474/src/QmXXX.../main.rs
 ```
 
 ### 4. Verifica o conteúdo
@@ -187,10 +196,10 @@ RUST_LOG=info ./target/debug/mycelium daemon --sporocarp --horizon-port 7474 &
 
 | Aspecto | Como funciona |
 |---------|---------------|
-| **Integridade** | Content-addressed (hash SHA-256) — qualquer alteração muda o ContentId |
-| **Imutabilidade** | Plot é append-only, não pode ser modificado depois de semeado |
-| **Privacidade** | Sem dados sensíveis trafegam (IPs, chaves, senhas) |
-| **Distribuição** | Gossipsub propaga automaticamente entre peers conectados |
+| **Integridade** | O `ContentId` usa BLAKE3 para identificar o conteúdo; confira o identificador recebido. |
+| **Versões** | Uma alteração produz outro conteúdo e outro identificador. |
+| **Privacidade** | A visibilidade padrão é `public`. Não publique credenciais, chaves ou arquivos privados; visibilidade restrita não substitui criptografia. |
+| **Distribuição** | Gossip e DHT dependem de conectividade; um anúncio não prova custódia remota ou disponibilidade. |
 
 ---
 
@@ -198,13 +207,11 @@ RUST_LOG=info ./target/debug/mycelium daemon --sporocarp --horizon-port 7474 &
 
 | | Git | Mycelium |
 |---|-----|----------|
-| **Requer servidor** | GitHub, GitLab, etc. | Nenhum (P2P) |
-| **Requer auth** | Token, SSH key | Nenhum |
-| **Requer internet** | Sim | Sim (mas via relay se NAT) |
-| **Content-addressed** | Sim (SHA-1) | Sim (SHA-256) |
-| **Distribuído** | Parcialmente | Totalmente |
-| **Propagação manual** | `git push` | Automático (gossipsub) |
-| **Ponto central** | GitHub | Nenhum |
+| **Armazenamento** | Repositórios locais e remotos opcionais | Plots locais e em nós participantes |
+| **Conexão** | Transporte local ou de rede, conforme o remoto | LAN ou rede entre nós, conforme a configuração |
+| **Identificador de conteúdo** | SHA-1 ou SHA-256, conforme o formato do repositório | BLAKE3 no `ContentId` |
+| **Publicação** | `git push` para um remoto configurado | `seed-code` e anúncios na malha |
+| **Disponibilidade** | Depende de cópias e remotos acessíveis | Depende de pares com o conteúdo e conectividade |
 
 ---
 
@@ -212,10 +219,10 @@ RUST_LOG=info ./target/debug/mycelium daemon --sporocarp --horizon-port 7474 &
 
 ```bash
 # Publicar código (sem git):
-mycelium seed-code --path ./projeto --name "nome" --desc "descrição"
+mycelium seed-code --path ./projeto --name "nome" --description "descrição"
 
 # Anunciar repo git (opcional):
-mycelium seed-repo --name "repo" --url "https://..." --commit "abc123" --desc "desc"
+mycelium seed-repo --name "repo" --url "https://..." --commit "abc123" --description "desc"
 
 # Listar repos anunciados:
 mycelium repos
@@ -224,5 +231,5 @@ mycelium repos
 mycelium recall-code --plot QmXXX...
 
 # Download via HTTP:
-curl http://127.0.0.1:7474/code/QmXXX.../arquivo.rs
+curl http://127.0.0.1:7474/src/QmXXX.../arquivo.rs
 ```

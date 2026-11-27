@@ -2,7 +2,9 @@
 
 ## Objective
 
-Build a machine-to-machine economy in which autonomous agents buy bounded Mycelium work to pursue opportunities in external systems. Internal bot spending is activity, never new revenue. Only externally verified realized value can promote Autonomous Revenue Validation (ARV).
+This design lets autonomous agents buy bounded Mycelium work while pursuing
+opportunities in external systems. Spending between bots is internal activity,
+not new revenue. ARV advances only when realized external value is verified.
 
 A proposed offline service economy is described in [Mycelium-ECO soberano](MYCELIUM_ECO_SOBERANO.md). It separates local service credits and measured resource benefits from external revenue; that local circuit is not implemented and does not change the ARV/NEV invariants below.
 

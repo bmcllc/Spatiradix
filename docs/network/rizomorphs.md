@@ -1,6 +1,8 @@
 # Política de Membrana (Rizomorfos sem VPS)
 
-Regra de ouro: **IPv6 é floresta** quando a hifa directa funciona. **IPv4 é solo compactado** — ou raiz com port-forward explícito, ou folha outbound-only.
+Na política de membrana, um nó com IPv6 global pode ser classificado como
+floresta. Em IPv4, o nó pode ser raiz com port-forward declarado ou folha com
+conexões de saída. A classificação, por si só, não comprova acesso pela WAN.
 
 O Mycelium **não** faz UPnP. STUN **público** (como DNS) e DCUtR **só sobre circuito já estabelecido** com um peer `/esporocarp` do mesh são opcionais/experimentais — **não** substituem um peer já alcançável no bootstrap.
 

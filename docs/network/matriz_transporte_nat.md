@@ -1,6 +1,8 @@
 # Matriz transporte × NAT × sucesso
 
-Ordem recomendada: TCP → QUIC → WebRTC-direct → circuit → mailbox.
+Ordem de tentativa proposta: TCP, QUIC, WebRTC-direct, circuit relay e mailbox.
+As células descrevem expectativas por cenário; consulte os experimentos abaixo
+para distinguir essas expectativas de resultados observados.
 
 | Transporte | Alvo TCP aberto | Alvo UDP aberto | Folha cone | Folha simétrica | Sem 3º peer |
 |------------|-----------------|-----------------|------------|-----------------|-------------|

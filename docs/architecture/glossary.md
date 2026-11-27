@@ -26,7 +26,7 @@
 | **Spore Bank** | Banco de esporos | DHT/seed de estado do micélio |
 | **Zona de Crescimento** | Região de expansão fúngica | "Região" orgânica que expande/contrai conforme densidade de nós |
 | **Shade** | Sombra | Fatia de segredo via Shamir SSS (GF(256)) |
-| **ChaosKey** | Chave do caos | Segredo materializado com meia-vida (evapora após TTL) |
+| **ChaosKey** | Chave do caos | Segredo reconstruído cuja leitura expira; `evaporate()` zera o buffer explicitamente |
 | **Vault** | Cofre | Custódia local de Shades |
 | **Prometheus** | — | Endpoint `/metrics` no Event Horizon (15+ métricas) |
 | **HybridSecret** | — | Segredo combinado `blake3(noise_secret \|\| pqc_secret)` |

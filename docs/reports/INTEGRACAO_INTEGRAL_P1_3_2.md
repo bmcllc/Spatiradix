@@ -1,8 +1,10 @@
-# 🍄 Mycelium Network — Integração Integral (P1.3.2, Malha Nativa e Serviços Comunitários)
+# Mycelium Network: integração P1.3.2
 
-## 1. Visão Geral e Princípio de Soberania
+## 1. Visão geral
 
-Este documento consolida a revisão técnica, organização e documentação das entregas executadas do **Plano de Integração Integral** da Mycelium Network.
+Este relatório reúne as entregas e os testes registrados no Plano de
+Integração Integral. A seção seguinte distingue o código existente, os testes
+locais e as próximas fases; consulte também [Validação](../VALIDACAO.md).
 
 A arquitetura orienta-se pela **regra central de soberania**:
 > **A rede nativa deve operar plenamente sem internet convencional, sem carteira cripto, sem gateway público e sem circuito VEIL obrigatório.**
@@ -13,7 +15,7 @@ A arquitetura orienta-se pela **regra central de soberania**:
 
 ## 2. Três Estados do Sistema
 
-Para manter fidelidade absoluta entre o código real e as capacidades em campo, distinguimos três estados:
+Para distinguir implementação, testes e planos, o relatório apresenta três estados:
 
 1. **Código existente no repositório (base `407582f`)**:
    - Primitivas criptográficas pós-quânticas (`mycelium-pqc`, ML-KEM-1024), identidades determinísticas (`mycelium-pheromones`), roteamento Libp2p/Gossipsub (`mycelium-hyphae`), armazenamento content-addressed (`mycelium-sporebank`), circuitos de 3 saltos (`mycelium-veil`) e orquestração (`mycelium-node`).

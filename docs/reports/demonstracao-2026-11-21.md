@@ -29,8 +29,9 @@ bash scripts/prova-root.sh
 ```
 
 A prova do Root usa `fusermount3` e requer acesso a `/dev/fuse`. Os processos
-da prova P2P usam loopback em uma só máquina. Uma versão anterior trocou dados
-via Nostr entre CGNAT e 5G em julho de 2026. [Histórico de campo](testes-realidade.md)
+da prova P2P usam loopback em uma só máquina. O [histórico de campo](testes-realidade.md)
+registra um ensaio anterior com Nostr em julho de 2026; consulte também
+[Validação](../VALIDACAO.md) para os limites desse ensaio.
 
 ## Escopo do lançamento
 

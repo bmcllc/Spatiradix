@@ -1,35 +1,28 @@
-# COSMIC — Compute + Storage pós-quânticos sobre o Mycelium
+# COSMIC: computação e armazenamento sobre o Mycelium
 
-> Rede **de** substância, não rede **de** servidores. Troca o tríplice
-> *VPS = compute confiável + storage + uptime* por **contratos criptográficos**
-> que sobrevivem à destruição de qualquer hardware individual.
-
-Princípio de ouro: **confiança sai do hardware e vai pra criptografia.**
-Você não pede a um dono de máquina para "não olhar seu dado" — você
-fragmenta com QEL (Shamir) e exige identidade GhostID + licença VOID-00
-pós-quântica. Nenhum vértice isolado detém segredo ou autoridade suficiente.
+O COSMIC propõe usar fragmentação, identidades criptográficas e verificação de
+resultados para distribuir armazenamento e computação entre nós. A segurança
+e a disponibilidade dependem da implementação, da distribuição dos fragmentos
+e dos nós acessíveis. Algumas etapas deste desenho ainda são propostas;
+consulte [Validação](../VALIDACAO.md) para os resultados registrados.
 
 Guia espelho conceptual: ET-COSMIC `void_core` · marcador vivo:
-[`status.md`](status.md) Fase 9+.
+[`status.md`](../reports/status.md) Fase 9+.
 
 ---
 
-## O framing correto
+## Componentes do desenho
 
-**Errado:** "a rede vira 1 VPS" → a rede não é 1 máquina, é **N máquinas
-não-confiáveis que você não controla**.
-
-**Certo:** a rede vira o **substrato**, e cada capacidade (storage, compute,
-identidade) vira um **contrato criptográfico**. A métrica de confiança deixa
-de ser "uptime de datacenter" e vira **redundância de shards** e **proof de
-resultado**.
+O desenho distribui as capacidades que uma VPS pode reunir em uma única
+máquina. Redundância de shards e verificação de resultados ajudam a avaliar o
+sistema, mas não substituem a medição de disponibilidade ou uma auditoria.
 
 | Tríplice legado | Remodelagem COSMIC | Mecanismo existente |
 |---|---|---|
 | Storage = um disco confiável | **Shards pós-quânticos K/N** multicanal | `mycelium-qel::fragment` + `reconstruct` + `assign_hybrid_transports` |
 | Compute = rodar numa VM | **Compute verificável** (recipe → proof) | `lattice build` (B.A.S.E. prova por SMT), Signal/Inertia |
 | Identity = IP / SSH key / root | **GhostID portátil + VOID-00** | `mycelium-ghostid`, `mycelium-zkp::license` (ML-DSA-87) |
-| Uptime = 1 máquina 24/7 | **K/N canais + transporte híbrido** | `TransportHint` (Nostr/Ipfs/RelayMesh/LoRa/Sms/Proximity) |
+| Uptime = 1 máquina 24/7 | **K/N partes + transporte híbrido** | `TransportHint` lista opções; nem todos os transportes estão implementados |
 | Quota/billing | **Ledger de nutrientes** | `mycelium-nutrients::Ledger`, `isotope` |
 
 ---
@@ -63,30 +56,31 @@ resultado**.
 ## 1 · `cosmic put` / `cosmic get` — Storage QEL
 
 ### Modelo de ameaça
-Adversário pode comprometer **até `N-K` vértices** (dono que olha, máquina
-confiscada, canal bisbilhotado) sem revelar o segredo. Grupos de `K` vértices
-comprometidos reconstroem.
+O limiar de reconstrução é `K`: um conjunto com `K` partes suficientes pode
+reconstruir o segredo. A perda de até `N-K` partes pode ser tolerada para
+disponibilidade, enquanto a confidencialidade depende de o adversário não obter
+`K` partes. Distribuir partes a nós distintos não garante, por si só, que eles
+sejam independentes.
 
 ### Fluxo (usa `mycelium-qel` real)
 1. **Cliente** com GhostID chama `QelConfig { threshold: K, total: N }`.
 2. `fragment(data, config, seed)` → `Vec<QelShard>` (Shamir shares + blake3
    hash do conteúdo → `HashMismatch` protege integridade na reconstrução).
-3. `assign_hybrid_transports(K, N)` → cada shard recebe um `TransportHint`
-   (Nostr, Ipfs, RelayMesh, LoRa, Sms, Proximity) para **nenhum canal único**
-   possuir a maioria.
-4. Shards são publicados via `mycelium daemon isotope-put` / SporeBank com
-   chave `cosmic/<content_id>/<i>`, assinados pelo GhostID do cliente.
-5. **`get`**: o cliente pede por content_id; ao juntar `K` shards (dos `N`
-   canais), `reconstruct(shards)` devolve os bytes e **verifica o hash**.
+3. `assign_hybrid_transports` associa um `TransportHint` a cada shard. Um hint
+   é uma indicação, não prova que o transporte foi usado ou que as partes
+   estejam em locais independentes.
+4. A CLI mantém shards localmente. Com `--home`, ela também tenta publicá-los
+   pela rede usando `isotope-put` e a chave `cosmic/<content_id>/<i>`.
+5. **`get`**: o cliente reúne shards disponíveis e, com `K` partes válidas,
+   `reconstruct` devolve os bytes e verifica o hash.
 
-### Garantias
-- **Integridade**: `reconstruct` retorna `HashMismatch` se qualquer shard foi
-  corrompido/adulterado.
-- **Confidencialidade pós-quântica**: Shamir não gasta tanta máquina quanto
-  simetria, e a identidade de assinatura é ML-DSA-87 (FIPS 204) — não depende
-  de RSA/ECDH que QCs partem.
-- **Disponibilidade calculável**: `K/N` é o teu SLA. Sobrevive à perda de
-  `N-K` shards/canais — uptime **cósmico**, não de datacenter.
+### Propriedades e limites
+- **Integridade**: `reconstruct` verifica o hash do conteúdo reconstruído e
+  retorna `HashMismatch` quando ele não confere.
+- **Confidencialidade**: o desenho usa partes Shamir; a proteção também depende
+  da custódia das partes e dos metadados expostos.
+- **Disponibilidade**: são necessárias `K` partes válidas e acessíveis. O
+  parâmetro `K/N` não é, por si só, uma garantia de disponibilidade ou SLA.
 
 ---
 
@@ -109,19 +103,19 @@ Um vértice pode **maliciosamente** (ou por falha) executar errado. Não basta
    verificável a qualquer momento, sem confiar em quem executou.
 4. Quota de execução debita no **ledger de nutrientes** do requisitante.
 
-### Garantias
-- **Correção independente do executor**: resultado é verificável por re-provm,
-  não pela reputação de 1 VM.
-- **Heterogeneidade de poder**: capacidade agrega de N máquinas de qualquer
-  os/arch — é o "poder de computação" da rede.
+### Verificação e limites
+- Uma reexecução independente pode comparar o resultado com a prova registrada;
+  sua utilidade depende da receita, do ambiente e da independência do verificador.
+- A execução em máquinas e arquiteturas diferentes precisa ser testada para
+  cada receita; o desenho não garante portabilidade universal.
 
 ---
 
 ## 3 · `cosmic auth` — Identidade portátil
 
 ### Modelo de ameaça
-Trocar de máquina/OS não pode quebrar a identidade; e "a identidade" não pode
-ser roubada por quem rouba 1 máquina.
+A identidade deve poder ser restaurada em outra máquina a partir da seed. A
+proteção contra roubo depende de como essa seed é guardada.
 
 ### Fluxo
 1. `EntropyCollector` (keystroke timing, gyro, touch pressure, system entropy)
@@ -134,11 +128,11 @@ ser roubada por quem rouba 1 máquina.
    amarra a licença ML-DSA-87 ao `device_entropy` do aparelho atual + GhostID.
 4. `verify_nostr_event` / `sign` autenticam cada ação.
 
-### Garantias
-- **Identidade ≠ host**: não é IP nem SSH key; sobrevive à troca de máquina.
-- **"Qualquer OS/arch"**: a identidade é separada do runtime; portar = carregar
-  seed + GhostID, não portar o SO.
-- **Pós-quântico**: assinatura ML-DSA-87 + bearer GhostID TTL, não só ed25519.
+### Portabilidade e limites
+- A identidade pode ser derivada novamente a partir da mesma seed em uma
+  implementação compatível. A seed precisa de backup e proteção contra roubo.
+- GhostID e licenças VOID-00 têm funções e algoritmos próprios; consulte os
+  crates correspondentes antes de atribuir propriedades a uma integração.
 
 ---
 
@@ -153,10 +147,9 @@ ser roubada por quem rouba 1 máquina.
 
 \* ✅ = primitiva existe e testada · 🟡 = proto · ❌ = falta a camada semântica.
 
-> **Honestidade:** COSMIC **não** é uma VPS hoje. É o desenho em que confiança
-> e disponibilidade são **criptográficas e distributivas**, não de datacenter.
-> O caminho de utilização real começa pela camada de storage (`put/get`), a
-> mais perto de pronto porque QEL já está implementado.
+> Este quadro registra a maturidade estimada quando o plano foi escrito.
+> Consulte a CLI e os testes atuais para verificar quais operações estão
+> disponíveis; o desenho, por si só, não garante disponibilidade de serviço.
 
 ---
 
@@ -169,4 +162,4 @@ ser roubada por quem rouba 1 máquina.
 3. **`cosmic auth`** (identidade portátil) — CLI para spawn/verificar GhostID
    + VOID-00 binding "qualquer OS".
 
-Documento vivo: status/evolução em [`status.md`](status.md).
+Histórico de status em [`status.md`](../reports/status.md).

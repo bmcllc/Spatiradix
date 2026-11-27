@@ -1,10 +1,10 @@
-# 🍄 Mycelium Machine Hub — núcleo nativo, SDK, integração, economia e compatibilidade
+# Mycelium Machine Hub: núcleo, SDK e integração
 
-Data: 2026-10-22. Status: **desenho de arquitetura**. Nada daqui está
-implementado. Tudo o que este documento afirma sobre o código existente foi
-conferido por leitura nesta data, com `arquivo:linha`. O contrato do §2.2 foi
-compilado e testado num projeto descartável (§2.7). A auditoria de segurança do
-código que o Hub reutiliza está em
+Data: 2026-10-22. Este é um **desenho de arquitetura**, não uma implementação
+concluída. As referências ao código existente foram examinadas nessa data e
+identificadas por `arquivo:linha`. O contrato do §2.2 foi compilado e testado
+em um projeto descartável (§2.7). A auditoria do código que o Hub pretende
+reutilizar está em
 [`MACHINE_HUB_AUDITORIA.md`](MACHINE_HUB_AUDITORIA.md).
 
 Entrada: o plano "Mycelium Machine Hub" (máquinas fictícias, simuladores

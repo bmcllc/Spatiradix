@@ -7,7 +7,10 @@
 
 ## 1. Definição do projeto
 
-O Mycelium será, nesta etapa, uma infraestrutura privada de automação e serviços locais, controlada por um único operador e executada no TushiBook. O Laya será a interface de gerenciamento dos agentes; os componentes Rust/Python já existentes no Mycelium continuarão responsáveis por identidade, armazenamento, fila, execução, validação e registros.
+O plano prevê uma instalação privada de automação e serviços locais, controlada
+por um único operador no TushiBook. O Laya seria a interface de gerenciamento
+dos agentes; os componentes Rust e Python do Mycelium cuidariam de identidade,
+armazenamento, fila, execução, validação e registros.
 
 O objetivo não é criar uma rede pública, vender capacidade de terceiros ou simular mineração. É fazer o computador executar trabalho útil sobre dados e arquivos autorizados pelo proprietário, registrar resultados verificáveis e distribuir créditos internos entre os agentes que contribuíram.
 

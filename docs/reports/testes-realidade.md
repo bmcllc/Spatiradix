@@ -1,4 +1,4 @@
-# Testes de Realidade — Mycelium Network
+# Testes em ambientes reais e locais
 
 ## ✅ 19 Out 2026 — nó anônimo troca dados com um par via Tor
 
@@ -26,7 +26,7 @@ Limite: uma máquina, então não conta para o nível (b). O damus registrou 1 `
 
 ## ✅ 19 Out 2026 — `daemon --anonymous`: nenhuma conexão fora do Tor
 
-**Resultado:** anonimato de rede PASSOU; troca de dados entre pares NÃO (defeito anterior do transporte Nostr).
+**Resultado:** conexões observadas passaram nas verificações; troca entre pares falhou (defeito anterior do transporte). As amostras não provam anonimato completo.
 
 | # | Passo | Resultado |
 |---|---|---|

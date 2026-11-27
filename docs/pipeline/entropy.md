@@ -2,10 +2,16 @@
 
 ## Conceito
 
-Um segredo nunca existe inteiro em um só lugar. É fatiado em **Shades**
-(sombras) via **Shamir Secret Sharing** sobre GF(256). Só quando M de N
-Shades são coletadas pelas hifas o segredo materializa — e só existe
-por uma meia-vida curta antes de evaporar da memória.
+O cofre divide um segredo em **Shades** usando Shamir Secret Sharing sobre
+GF(256). São necessárias M das N partes para reconstruí-lo. O daemon possui
+mensagens de oferta e solicitação por gossip, mas o fluxo atual de `shatter`
+mantém todas as partes no cofre local e anuncia ofertas com o próprio nó como
+custodiante. Isso não comprova custódia independente em nós remotos.
+
+Ao reconstruir o segredo, `ChaosKey` mantém os bytes em memória e limita por
+quanto tempo `reveal()` permite lê-los. O prazo padrão é de 30 segundos.
+Expirar não apaga os bytes automaticamente: `evaporate()` precisa ser chamado
+para zerar o buffer mantido pela chave.
 
 ## Implementação
 
@@ -33,7 +39,7 @@ pub struct Vault {
 }
 ```
 
-### Funcionalidades existentes (✅)
+### Funcionalidades existentes
 
 - `Vault::shatter(secret, m, n)` — divide segredo em N shades (M necessárias)
 - `ChaosKey::materialize(shades, threshold)` — reconstrói o segredo
@@ -44,13 +50,18 @@ pub struct Vault {
 - CLI: `mycelium entropy shatter|reconstruct|status`
 - Organismo: `Vault` integrado, comandos no controle socket
 
-### O que falta (🟡)
+### Limites do fluxo atual
 
-- **Distribuição via gossip:** enviar shades para peers usando Envelope
-- **Coleta remota:** pedir shades por DecayQuery/DecayReply-like protocol
-- **Persistência do Vault** no NodeStore
+- As mensagens `ShadeOffer` e `ShadeRequest` existem, mas a atribuição de
+  custodiantes remotos e a coleta confiável exigem validação adicional.
+- A custódia local de todas as partes significa que o limiar não protege o
+  segredo contra comprometimento desse nó.
+- Verifique proteção em trânsito e persistência antes de usar dados sensíveis.
 
 ## CLI
+
+O exemplo usa um texto fictício. Argumentos de linha de comando podem aparecer
+no histórico do shell e na lista de processos; não passe segredos reais assim.
 
 ```bash
 # Fragmenta um segredo em 5 shades (precisa de 3 pra reconstruir)
@@ -72,7 +83,10 @@ cargo test -p entropy
 Testes cobrem: roundtrip, threshold insuficiente, half-life evaporação,
 bad threshold, vault hold+gather.
 
-## Design da integração com hifas (planejado)
+## Esboço histórico da integração com hifas
+
+O formato abaixo é um esboço, não o `Envelope` atual. Veja
+`crates/mycelium-node/src/protocol.rs` e `organism.rs` para a implementação.
 
 ```rust
 // Envelope (protocol.rs)

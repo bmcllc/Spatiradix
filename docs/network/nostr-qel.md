@@ -1,13 +1,15 @@
 # Nostr + QEL + GhostID (Fases 1–3) + Hybrid Theory
 
-Desbloqueia o TushiBook / CGNAT **sem** inbound TCP e **sem** anunciar `/esporocarp` sem proof.
+Esta integração usa conexões de saída para trocar dados quando um nó está atrás
+de CGNAT. Ela não exige TCP de entrada nem justifica anunciar `/esporocarp`
+sem prova de conectividade externa.
 
 ## Ideia
 
 | Camada | Papel |
 |--------|--------|
 | **Nostr** (`wss://` outbound :443) | Mailbox + discovery — funciona atrás da Vivo |
-| **QEL** (Shamir k-of-n) | Fragmenta o spore print; relays vêem no máximo 1 shard |
+| **QEL** (Shamir k-of-n) | Fragmenta o spore print; a proteção depende de como os shards são distribuídos e armazenados |
 | **GhostID** (secp256k1 Schnorr) | Assina eventos Nostr; zero-fill no drop |
 | **ipfs-blocks** (Fase 4 local) | Blockstore Blake3 no disco — sem bitswap WAN |
 
@@ -31,13 +33,13 @@ mycelium --home /tmp/folha-b recall --plot Qm… --hybrid
 ```
 
 `--hybrid` implica QEL 3,7 + Nostr + GhostID + blockstore. A paisagem
-[`mycelium-distancebridge`](../crates/mycelium-distancebridge) escolhe hints
+[`mycelium-distancebridge`](../../crates/mycelium-distancebridge) escolhe hints
 (`select_transports` → `hybrid_hints_from_landscape`). O daemon corre um tick
 Physarum a cada 5s (`status` → `physarum`).
 
 **Fora de âmbito neste sprint:** bitswap WAN, DistanceBridge físico, LoRa/SMS, rewrite completo Godunov.
 
-Demo: [`../scripts/hybrid-demo.sh`](../scripts/hybrid-demo.sh) · Social: [`candidatos.md`](candidatos.md) · Pitch: [`pitch_voluntario.txt`](pitch_voluntario.txt)
+Demo: [`scripts/hybrid-demo.sh`](../../scripts/hybrid-demo.sh) · Candidatos: [`candidatos.md`](candidatos.md) · Mensagem: [`pitch_voluntario.txt`](pitch_voluntario.txt)
 
 ## Correções importantes
 
@@ -103,7 +105,7 @@ Integração contra relays reais: usar `mycelium sow --hybrid` com rede; CI não
 | daemon-rsa | Loop Godunov no organism | só doc |
 | candidate | CandidateRelay kind 39401 | ✅ CLI `mycelium candidate` |
 
-Ponte ET-COSMIC: [`et-cosmic-bridge.md`](et-cosmic-bridge.md).
+Ponte ET-COSMIC: [`et-cosmic-bridge.md`](../cosmic/et-cosmic-bridge.md).
 
 ## Matriz vs esporocarpo
 

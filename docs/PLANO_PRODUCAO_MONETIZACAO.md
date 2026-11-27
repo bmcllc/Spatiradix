@@ -9,7 +9,8 @@
 > trilhos — nunca de fechar o core. Este documento é um roteiro; não é uma
 > declaração de prontidão. Onde não há evidência, está escrito "não medido".
 
-Estado de validação atual (fonte única: [`docs/VALIDACAO.md`](VALIDACAO.md)):
+Estado registrado no plano (consulte [`docs/VALIDACAO.md`](VALIDACAO.md) para
+os detalhes e atualizações):
 nível **(a)** cumprido (compila + testes locais, **loopback**); **(b)** multi-host,
 **(c)** terceiro e **(d)** produção **não cumpridos**; **E6 = 0/9**.
 
@@ -23,8 +24,8 @@ nível **(a)** cumprido (compila + testes locais, **loopback**); **(b)** multi-h
    for "1 máquina, 0 redes", nenhum critério de produção é atingível por mais
    código que se escreva.
 
-Consequência: **produção = sair do loopback.** E isso é exatamente o que casa
-com "a comunidade mantém": o comum precisa rodar em máquinas de terceiros.
+Testar fora do loopback é necessário para avaliar a operação entre máquinas.
+Isso, por si só, não comprova prontidão para produção.
 
 ## 2. Gates de teste para produção (T0–T7)
 

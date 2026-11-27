@@ -1,13 +1,14 @@
 # Homologação WAN — VEIL Ω (P1.2 em campo)
 
-Procedimento de homologação física para validar o circuito distribuído
+Este é um procedimento proposto para validar o circuito distribuído
 `cliente → Guard → Middle → Exit` entre **máquinas e redes distintas**, com
 descritores assinados e identidades persistentes. Os testes de loopback
 (`127.0.0.2/3/4`) validam os caminhos de código; esta homologação valida a
-separação real entre operadores, redes e a observabilidade de rede.
+separação real entre operadores, redes e a observabilidade de rede, caso seja
+executada e os critérios sejam atendidos.
 
 > Complementa o roteiro de validação de campo em
-> `docs/VEIL_P12_WAN_FIELD_VALIDATION.md` (critérios `WAN_PHYSICAL`,
+> [`VEIL_P12_WAN_FIELD_VALIDATION.md`](VEIL_P12_WAN_FIELD_VALIDATION.md) (critérios `WAN_PHYSICAL`,
 > `FAIL_CLOSED`, `IDENTITY_RESTART`, `DNS_AND_EXIT_POLICY`,
 > `TRANSPORT_CONFIDENTIALITY`). Este documento detalha os comandos e as
 > capturas; aquele fixa as evidências e os critérios de aprovação.

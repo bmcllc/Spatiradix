@@ -1,6 +1,7 @@
 # Issue: migrar pins exatos (`=`) de crates criptográficas
 
-Spec Sovereign Finance §12: pins exatos só em crates criptográficas, com issue de migração por pin.
+A especificação Sovereign Finance §12 limita versões fixadas exatamente a
+crates criptográficos e pede um plano para atualizar cada dependência.
 
 | Pin | Onde | Por que fixo | Condição para soltar |
 |---|---|---|---|

@@ -9,7 +9,7 @@
 Mensagens novas saem como:
 
 ```json
-{"v":1,"msg":{"LayerNeed":{"id":"Qm…}}}
+{"v":1,"msg":{"LayerNeed":{"id":"Qm0000000000000000000000000000000000000000000000000000000000000000","hop":0}}}
 ```
 
 | Campo | Significado |
@@ -19,7 +19,8 @@ Mensagens novas saem como:
 
 **Compatibilidade:** nós atuais ainda aceitam Envelope nu (sem `v`/`msg`) como legado v1.
 
-**Versões futuras:** se `v > 1` e o binário não conhece, o decode falha e o nó **ignora** a mensagem (log `envelope inválido`) — sem panic.
+**Versões futuras:** se `v > 1` e o binário não conhece essa versão, a
+decodificação falha e o nó ignora a mensagem, registrando `envelope inválido`.
 
 ## Variantes (`msg`)
 
@@ -33,10 +34,10 @@ Mensagens novas saem como:
 | `AtomSync` | Estado Isotope LWW (dono do shard persiste) |
 | `DecayQuery` / `DecayReply` | Consulta Isotope pelas hifas (miss local) |
 | `LayerOffer` / `LayerNeed` | Layers Vacuum |
-| `ShadeOffer` | Oferta de Shade Entropy (planejado) |
-| `ShadeRequest` | Pedido de Shade Entropy (planejado) |
-| `BalanceSync` | Sincronia de ledger Nutrient (planejado) |
-| `IonOffer` / `IonAccept` / `IonMigrate` / `IonReady` | Migração de Plasma Ion (planejado) |
+| `ShadeOffer` | Oferta de Shade Entropy; consulte os [limites de custódia](../pipeline/entropy.md) |
+| `ShadeRequest` | Pedido de Shade Entropy |
+| `BalanceSync` | Sincronia de ledger Nutrient |
+| `IonOffer` / `IonAccept` / `IonMigrate` / `IonReady` | Mensagens de migração de Plasma Ion |
 | `PlotServe` | Anúncio de Plot servível via HTTP (planejado) |
 
 ## Isotope

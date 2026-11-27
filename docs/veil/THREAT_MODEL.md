@@ -1,4 +1,4 @@
-# Modelo de Ameaças — Mycelium VEIL Ω
+# Modelo de ameaças do Mycelium VEIL Ω
 
 **Versão**: 0.1.0-draft  
 **Data**: Setembro de 2026  
@@ -6,11 +6,17 @@
 
 ---
 
-## 1. Visão Geral e Filosofia
+## 1. Escopo
 
-O **Mycelium VEIL Ω** é uma infraestrutura comunitária e descentralizada de privacidade, comunicação e anonimato sobre a rede P2P Mycelium Network, fundindo as primitivas criptográficas pós-quânticas (ML-KEM-1024, ML-DSA-87), o particionamento de segredos QEL, identidades efêmeras GhostID, consenso causal, execução verificável COSMIC/Planck e os conceitos aperfeiçoados do protótipo legado `ET-COSMIC-OLD` (GhostVPN).
+Este documento apresenta o modelo de ameaças proposto para o VEIL Ω e os
+mecanismos considerados no desenho. Ele inclui ideias de QEL, GhostID e
+COSMIC, além de conceitos do protótipo `ET-COSMIC-OLD` (GhostVPN). A presença
+de um mecanismo neste modelo não demonstra que ele esteja implantado ou tenha
+sido auditado. Consulte [Validação](../VALIDACAO.md) e o
+[roteiro de testes WAN](VEIL_P12_WAN_FIELD_VALIDATION.md) para os limites
+registrados.
 
-### 1.1 Princípio da Honestidade Criptográfica
+### 1.1 Limites do modelo
 Nenhum sistema pode prometer *anonimato absoluto*. Promessas de anonimato irrestrito ignoram vetores como ataques de canal lateral, correlação temporal fim a fim por adversários globais, fingerprinting de navegador e comprometimento de dispositivos.
 
 O Mycelium VEIL Ω adota o princípio de **privacidade mensurável por construção**:
@@ -33,7 +39,7 @@ O Mycelium VEIL Ω adota o princípio de **privacidade mensurável por construç
 
 ---
 
-## 3. Garantias de Segurança por Camada
+## 3. Proteções propostas por camada
 
 ### 3.1 Camada 0: Identidade Efêmera & Isolamento Físico
 * **O que protege**: Desassocia a identidade permanente do nó (`gland.seed`, NodeId da DHT, chaves Ed25519 persistentes) da sessão anônima.
@@ -87,8 +93,8 @@ O Mycelium VEIL Ω adota o princípio de **privacidade mensurável por construç
 | Modo | Saltos | Criptografia | Latência | Nível de Proteção | Caso de Uso |
 |---|---|---|---|---|---|
 | **Geo Mode** | 1 salto (Exit) | ML-KEM + AEAD | Mínima (< 30ms) | Conectividade cifrada e geolocalização aparente. O Exit conhece seu IP real! | Streaming, downloads de alta velocidade |
-| **Veil Mode (LIVE)** | 3 saltos (Guard-Middle-Exit) | Onion PQC 3 camadas | Baixa (60-180ms) | Anonimato robusto contra nós intermediários e observadores locais | Navegação web interativa, SOCKS5, mensagens |
-| **Mix Mode (MIX)** | Multi-hop com delays | Onion PQC + Poisson Mix | Alta (segundos a minutos) | Resistência elevada contra adversários globais passivos (GPA) | Mensagens ultrasseguras, transferências assíncronas |
+| **Veil Mode (LIVE)** | 3 saltos (Guard-Middle-Exit) | Onion PQC 3 camadas | Depende da rota | Busca limitar o conhecimento de cada salto; há riscos de correlação | Navegação web interativa, SOCKS5, mensagens |
+| **Mix Mode (MIX)** | Multi-hop com atrasos | Onion PQC + Poisson Mix | Depende da configuração | Busca dificultar a correlação; não garante proteção contra observadores globais | Mensagens e transferências assíncronas |
 
 ---
 

@@ -1,7 +1,7 @@
 # Esporocarpo voluntário (zero VPS)
 
-Premissa: **nenhum nó é servidor central**. Casa atrás de CGNAT/firewall
-(ex. Vivo / TushiBook) é **folha/sensor** — nunca `/esporocarp` sem prova.
+Um nó doméstico atrás de CGNAT ou firewall pode atuar como folha e sensor.
+Não o anuncie como `/esporocarp` sem verificar a conectividade externa.
 
 **Hybrid Theory (A + B):**
 
@@ -87,5 +87,5 @@ Sem `--hybrid`, sow/recall locais (LAN / mesh) continuam a funcionar quando há 
 
 Pitch: [`pitch_voluntario.txt`](pitch_voluntario.txt) · Lista: [`candidatos.md`](candidatos.md)
 
-**Pipeline automático:** [`../scripts/volunteer-pipeline.sh`](../scripts/volunteer-pipeline.sh)
+**Pipeline:** [`scripts/volunteer-pipeline.sh`](../../scripts/volunteer-pipeline.sh)
 (`cgnat-check` → `pitch` → `prep-listen` → `probe` → `onboard` → `folha-attach`).

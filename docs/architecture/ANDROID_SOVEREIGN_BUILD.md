@@ -1,6 +1,9 @@
-# Build 100% Soberano para Android ARM64 (Zero Google, Zero Termux, Zero SDK/NDK/Gradle)
+# Build Android ARM64 sem SDK Android
 
-Este documento descreve a adaptação nativa do **Mycelium Network / Rhizome** para Android `arm64-v8a` executável diretamente via APK assinado, sem Termux, sem Google Play Services, sem Android SDK/NDK/Gradle e sem DNS/STUN da Google.
+Este guia descreve como o Mycelium Network e o Rhizome são empacotados em um
+APK assinado para Android `arm64-v8a`, sem Termux, Google Play Services,
+Android SDK, NDK ou Gradle. A configuração descrita também não usa DNS ou
+STUN da Google.
 
 ---
 
@@ -50,7 +53,7 @@ cargo run --release -p mycelium-android-forge -- verify \
 
 ---
 
-## 3. Limites Honestos de Verificação (Doutrina da Honestidade)
+## 3. Verificação e limites
 
 | Camada Verificada | Ambiente de Execução | Escopo |
 |---|---|---|

@@ -1,7 +1,8 @@
 # Ponte ET-COSMIC → Mycelium (fase tropical / PQC / DistanceBridge)
 
-O que foi portado do stack ETΞRNET / VOID-COSMIC **para o Mycelium Network**,
-sem Tampermonkey, SOV, Hardhat, WebGPU nem claim de hardware quântico.
+Esta página registra a adaptação de componentes do ETΞRNET / VOID-COSMIC para
+o Mycelium. Tampermonkey, SOV, Hardhat e WebGPU ficaram fora desse trabalho;
+ele não depende de hardware quântico.
 
 ## Mapa de camadas
 
@@ -26,7 +27,7 @@ crates/mycelium-pqc/            # ML-KEM-1024 (port void_core/pqc.rs)
 crates/mycelium-distancebridge/ # select_transports / fallback_order / anderson_cage
 ```
 
-## Honestidade
+## Limites desta etapa
 
 - **Não** alegamos vantagem quântica de hardware.
 - ML-DSA completo fica para quando a crate estabilizar; neste sprint só KEM real.
@@ -48,4 +49,4 @@ use mycelium_distancebridge::{select_transports, TransportContext};
 use mycelium_pqc::{mlkem_keygen, mlkem_encapsulate, mlkem_decapsulate};
 ```
 
-Ver também: [`nostr-qel.md`](nostr-qel.md) (Hybrid Theory A+B).
+Veja também: [`nostr-qel.md`](../network/nostr-qel.md) (Hybrid Theory A+B).

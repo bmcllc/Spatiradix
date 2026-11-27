@@ -2,8 +2,9 @@
 
 ## Objetivo
 
-Comprovar, em uma rede privada de dois nós, que Giggs, SporeBank e Inertia
-funcionam em conjunto para versionar, replicar e validar código.
+Verificar, com dois nós privados em loopback, a integração de Giggs, SporeBank
+e Inertia para versionar, replicar e validar código. Esse procedimento não
+comprova funcionamento entre máquinas ou redes distintas.
 
 O P4 não adiciona funcionalidades. Ele não altera a `main`, o PR #4 ou o
 commit de recuperação `749106c`, não usa bootstrap público e não publica

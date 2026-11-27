@@ -1,10 +1,14 @@
 # Nostr Transport — libp2p sobre CandidateRelay
 
-Faz uma folha CGNAT obter `vizinhos >= 1` **sem** esporocarpo, usando relays Nostr públicos como transporte.
+O transporte Nostr permite que uma folha atrás de CGNAT se conecte a pares
+por relays Nostr públicos, sem anunciar um esporocarpo. A conexão depende de
+relays disponíveis e de outros pares acessíveis.
 
 ## Princípio
 
-O backchannel (kind 39406) é um canal bidirecional outbound (WSS). O crate `mycelium-nostr-transport` expõe-o como `Transport` libp2p; o Swarm aplica Noise + Yamux em cima (como TCP).
+O backchannel (kind 39406) é um canal bidirecional sobre conexões WSS de saída.
+O crate `mycelium-nostr-transport` o expõe como um `Transport` libp2p; o
+Swarm usa Noise e Yamux sobre esse transporte.
 
 ```text
 Aplicação / Kademlia / GossipSub
@@ -24,7 +28,7 @@ Aplicação / Kademlia / GossipSub
 
 Forma lógica: `/nostr/<relay>/<ghost_hex>`
 
-Codificação actual (multicodec `/nostr` ainda não existe):
+Codificação usada aqui (não há multicodec `/nostr`):
 
 ```text
 /unix/mycelium-nostr/<relay_url_hex>/<ghost_hex64>
@@ -51,8 +55,9 @@ mycelium daemon --no-nostr-transport
 
 Env: `MYCELIUM_NOSTR_TRANSPORT=1` (força ON), `MYCELIUM_NOSTR_RELAY=wss://nos.lol`.
 
-GhostID estável em `{home}/candidate.session` (TTL ~1h). Re-announce a cada ~60s;
-discovery filtra peers stale e prefere anúncios `listen:`.
+O GhostID é mantido em `{home}/candidate.session` (TTL de aproximadamente uma
+hora). O nó anuncia novamente a cada 60 segundos; a descoberta descarta anúncios
+expirados e prefere os que usam `listen:`.
 
 ## Limitações (MVP)
 

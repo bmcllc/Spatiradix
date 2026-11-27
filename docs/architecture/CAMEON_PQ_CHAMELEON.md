@@ -1,13 +1,13 @@
-# CAMEON — Arquitetura da moeda camaleão da Mycelium Network
+# Cameon: arquitetura e limites do experimento
 
 Data-base: 2026-11-21
 
 ## CUPP — Cameon Universal Purchasing Power (P0.3, somente simulação)
 
-**Decisão do produto:** o COMPRADOR escolhe pagar com Cameon e indica
-quantas unidades consumir (ex.: 1). A nota fiscal ou invoice do vendedor
-determina o valor e a moeda EXATOS a serem recebidos pelo vendedor.
-O vendedor não precisa possuir nem aceitar Cameon.
+Na proposta CUPP, o comprador escolhe pagar com Cameon e informa quantas
+unidades deseja usar. A nota fiscal ou invoice define o valor e a moeda que o
+vendedor deve receber; o desenho não exige que ele possua Cameon. Esse fluxo
+está em simulação e ainda não efetua o pagamento.
 
 O valor externo de Cameon não é definido por preço de mercado, mas isso NÃO
 confere poder de compra ilimitado. A diferença entre qualquer valor recebido

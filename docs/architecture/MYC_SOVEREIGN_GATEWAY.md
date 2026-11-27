@@ -2,10 +2,10 @@
 
 ## Objetivo
 
-Fortalecer **a utilidade econômica verificável** do MYC (com o motor PoUW e
-a rede de serviços existente), sem confundir política de referência com preço
-de mercado, reserva real ou direito de resgate. Valor de referência configurado
-no motor monetário: **1 MYC = 8 USDC**. Não há aqui garantia de resgate.
+Esta etapa propõe integrar o MYC ao Meta-Gateway com proteção dos dados e
+consentimento para divulgação externa. O motor monetário configura a referência
+**1 MYC = 8 USDC**; isso não representa preço de mercado, reserva real nem
+garantia de resgate.
 
 Integrar o sistema financeiro ao substrato soberano requer distinguir
 **dados**, **identidade**, **transporte**, **autorização**, **execução**
@@ -54,7 +54,7 @@ de segredos ou terminal seguro. A chave deve sobreviver ao reinício:
 **perdê-la significa perder o acesso aos registros cifrados**. Não
 publique a chave em Git, logs ou histórico de shell.
 
-Uma alternativa para aplicações que utilizem `mycelium-keyring` é chamar
+Uma alternativa para aplicações que usam `mycelium-keyring` é chamar
 `SporebankIntentStore::open_with_keyring(home, node_id, &keyring)`.
 O daemon ainda não liga automaticamente essa API ao desbloqueio BIP-39.
 
@@ -117,4 +117,4 @@ conversão garantida, lastro bancário, execução de Pix ou finalização banc�
 - Instanciar o transporte opt-in via VEIL/QUIC/Nostr e medir ausência de DNS/IP
   leaks, incluindo falhas de relay. **Não habilitar rede anônima por suposição**.
 
-As alterações são locais. Nenhum commit ou push foi solicitado.
+O registro acima descreve as alterações locais e os limites observados nesta etapa.

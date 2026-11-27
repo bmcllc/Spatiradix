@@ -1,8 +1,9 @@
 # Prova em 2 máquinas reais
 
 Script: [`scripts/prova-2-maquinas.sh`](../../scripts/prova-2-maquinas.sh).
-Fecha a lacuna "tudo rodou numa máquina só". Ensaiado nesta máquina em
-2026-10-21 (os dois papéis passaram); falta rodar em **duas máquinas**.
+O procedimento foi ensaiado em uma máquina em 21 de outubro de 2026, com os
+dois papéis aprovados. Ainda falta executá-lo em **duas máquinas** para testar
+a conexão entre redes distintas.
 
 ## Pré-requisitos
 
@@ -12,9 +13,11 @@ Fecha a lacuna "tudo rodou numa máquina só". Ensaiado nesta máquina em
 | Tor | obrigatório (`sudo apt install tor`) | opcional |
 | Binário | `cargo build -p mycelium-cli` | mesmo binário (copie `target/debug/mycelium` ou compile) |
 
-Android: o `dist/mycelium-android-arm64` é de julho e **não** tem `pkarr`,
-`--anonymous` nem o gateway. No Termux: `pkg install rust tor git`, clone o repo e
-`cargo build --release -p mycelium-cli` (demora). Ou use um segundo PC/notebook.
+Na data do ensaio, o binário `dist/mycelium-android-arm64` disponível era de
+julho e não tinha `pkarr`, `--anonymous` nem o gateway. No Termux, instale
+`rust`, `tor` e `git`, clone o repositório e execute
+`cargo build --release -p mycelium-cli`. A compilação pode demorar; outra
+opção é usar um segundo computador.
 
 ## Passos
 

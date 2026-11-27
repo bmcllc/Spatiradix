@@ -1,22 +1,22 @@
-# 🌌 COSMIC — Compute & Storage Pós-Quânticos sobre o Mycelium
+# COSMIC: computação e armazenamento sobre o Mycelium
 
-> **Crates**: [`cosmic-cli`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/cosmic-cli), [`platforms/cosmoplanck`](file:///media/bruno/SAMBOOK/Mycelium%20Network/platforms/cosmoplanck), [`mycelium-qel`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-qel), [`mycelium-zkp`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-zkp)  
+> **Crates**: [`cosmic-cli`](../../crates/cosmic-cli), [`platforms/cosmoplanck`](../../platforms/cosmoplanck), [`mycelium-qel`](../../crates/mycelium-qel), [`mycelium-zkp`](../../crates/mycelium-zkp)
 > **Camada**: L3 / L4 — Computação Verificável e Armazenamento em Shards  
 > **Status**: Ativo  
 
 ---
 
-## 1. O Princípio de Ouro do COSMIC
+## 1. Visão geral
 
-> *"A confiança sai do hardware e vai para a criptografia."*
+O COSMIC explora armazenamento fragmentado, computação verificável e identidade
+portátil sobre o Mycelium. O QEL divide dados em N partes com limiar K; a
+recuperação depende de partes suficientes estarem disponíveis. Uma atestação
+assinada ajuda a verificar sua autoria e integridade, mas não prova, por si
+só, que o executor foi honesto. O projeto também inclui licenças digitais
+VOID-00 baseadas em ML-DSA-87.
 
-No modelo de computação em nuvem tradicional, você confia na empresa dona do servidor (AWS, Google, Microsoft) para não bisbilhotar seus dados, não censurar suas rotinas e manter 99.9% de uptime. Se a máquina falhar ou o governo intimar a empresa, seu serviço morre.
-
-O **COSMIC** inverte essa equação:
-- Você **não confia em nenhuma máquina individual**.
-- O storage é fragmentado matematicamente em **Shards K/N** (se você escolher 3 de 7, o arquivo é reconstruível a partir de quaisquer 3 partes, mas mesmo que um invasor capture 2 partes ele obtém **zero bits** de informação).
-- O compute é **verificável**: você não confia no resultado de quem executou; a execução produz uma prova matemática de integridade (atestação criptográfica e provas formais).
-- A identidade e permissões são garantidas por licenças criptográficas pós-quânticas **VOID-00 (ML-DSA-87)**.
+Os mecanismos e canais descritos abaixo misturam implementação e propostas.
+Consulte [Validação](../VALIDACAO.md) para o estado dos testes.
 
 ---
 
@@ -57,24 +57,28 @@ O **COSMIC** inverte essa equação:
 
 ## 4. O Sistema de Fragmentação QEL (Quantum-resistant Erasure Layer)
 
-O crate [`mycelium-qel`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-qel) divide qualquer arquivo ou segredo em $N$ pedaços, exigindo no mínimo $K$ pedaços para reconstrução:
+O crate [`mycelium-qel`](../../crates/mycelium-qel) divide qualquer arquivo ou segredo em $N$ pedaços, exigindo no mínimo $K$ pedaços para reconstrução:
 
 $$\text{Arquivo Original} \xrightarrow{\text{QEL }(K, N)} \{ \text{Shard}_1, \text{Shard}_2, \dots, \text{Shard}_N \}$$
 
-### Canais de Dispersão Híbrida:
-Para que o dado sobreviva à destruição física de datacenters ou cortes de cabos submarinos, os shards são distribuídos por rotas heterogêneas:
+### Canais de dispersão híbrida
+
+A arquitetura considera rotas diferentes para distribuir shards. A lista abaixo
+ilustra a proposta; a disponibilidade de cada transporte depende da
+implementação e da configuração:
 1. **Shard 1 & 2**: Kademlia DHT e SporeBank de nós vizinhos locais (LAN/Wi-Fi).
 2. **Shard 3**: Criptografado e publicado como evento efémero em relays **Nostr** via WebSockets (`wss://`).
 3. **Shard 4**: Bloco content-addressed em gateways **IPFS** locais.
 4. **Shard 5**: Enlace de rádio **LoRa sub-GHz** ou transporte físico via encontros DTN.
 
-Mesmo que a internet convencional caia, bastam quaisquer $K$ fragmentos recuperados para remontar os dados intactos.
+A reconstrução exige que pelo menos $K$ fragmentos válidos sejam recuperados.
+Uma falha de rede pode impedir o acesso a eles.
 
 ---
 
 ## 5. A Licença Pós-Quântica VOID-00 (ML-DSA-87)
 
-O COSMIC integra no crate [`mycelium-zkp`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-zkp) a verificação de licenças digitais pós-quânticas:
+O COSMIC integra no crate [`mycelium-zkp`](../../crates/mycelium-zkp) a verificação de licenças digitais pós-quânticas:
 
 - **Algoritmo**: **ML-DSA-87** (FIPS 204 Dilithium nível 5 — segurança equivalente a 256 bits pós-quânticos).
 - **Tamanho da Chave Pública**: 2.592 bytes.
@@ -89,18 +93,21 @@ O COSMIC integra no crate [`mycelium-zkp`](file:///media/bruno/SAMBOOK/Mycelium%
 O binário `cosmic` (compilado a partir de `crates/cosmic-cli`) oferece a interface direta de usuário para a camada COSMIC:
 
 ```bash
-# Fragmenta e armazena um arquivo com redundância 3 de 5 shards
-cosmic put --file segredo.tar.gz --threshold 3 --total 5
+# Fragmenta um arquivo em cinco partes, com limiar de três
+cosmic put segredo.tar.gz --k 3 --n 5
 
-# Reconstrói o arquivo buscando os fragmentos na malha híbrida
-cosmic get --cid Qm... --output segredo-restaurado.tar.gz
+# Substitua Qm... pelo ContentId completo retornado pelo comando anterior
+cosmic get Qm... --out segredo-restaurado.tar.gz
 
-# Executa computação verificável no cluster
-cosmic run --recipe pipeline.json
+# Executa uma receita local e grava a prova
+cosmic run --recipe sha256 segredo.tar.gz --proof proof.json
 
-# Inspeciona o estado da carteira GhostID e licenças VOID-00
-cosmic status
+# Mostra a identidade GhostID local, se já tiver sido criada
+cosmic auth whoami
 
-# Valida uma licença pós-quântica ML-DSA-87
-mycelium license-verify --vendor-key <HEX_2592B> --sku "ENTERPRISE-PRO" --signature <HEX_4627B>
+# Mostra os argumentos necessários para verificar uma licença
+mycelium license-verify --help
 ```
+
+Por padrão, `put` e `get` usam o armazenamento local do COSMIC. A opção
+`--home` tenta publicar ou recuperar fragmentos por um daemon Mycelium.

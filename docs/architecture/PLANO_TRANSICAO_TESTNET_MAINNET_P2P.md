@@ -6,7 +6,11 @@
 
 ## 1. Decisão de terminologia
 
-A auditoria do workspace não encontrou um modo de rede formal chamado testnet, devnet ou localnet, nem uma opção CLI --testnet. As ocorrências de Testnet identificadas no código são do parser de invoices BOLT11/Lightning. As ocorrências de mainnet relevantes para a rede Mycelium referem-se ao catálogo público de seeds e aos scripts de bootstrap.
+Na auditoria de 10 de novembro de 2026, não foi encontrado no workspace um
+perfil formal chamado testnet, devnet ou localnet, nem uma opção `--testnet`.
+As referências a Testnet no código examinado pertenciam ao parser de invoices
+BOLT11/Lightning. As referências relevantes a mainnet tratavam do catálogo
+público de seeds e dos scripts de bootstrap.
 
 Logo, o estado atual é melhor descrito como **workspace e harness local de desenvolvimento, com recursos de rede implementados, mas sem mainnet P2P operacional comprovada**. A transição não é uma troca de flag: é uma sequência de gates de identidade, configuração, bootstrap, conectividade real, segurança e operação.
 

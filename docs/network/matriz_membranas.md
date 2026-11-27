@@ -1,6 +1,8 @@
 # Matriz de membranas — direct | circuit | mailbox
 
-Atualizar após cada experimento com esporocarpo voluntário.
+Esta tabela reúne observações e hipóteses para conexões entre nós. Atualize-a
+após cada experimento com um esporocarpo voluntário; as linhas sem evidência
+registrada não são resultados de teste.
 
 | Par | Direct | Circuit (esporocarpo) | Mailbox DTN | Evidência |
 |-----|--------|----------------------|-------------|-----------|
@@ -17,4 +19,5 @@ Atualizar após cada experimento com esporocarpo voluntário.
 
 - Bootstrap **sempre** precisa de um peer já alcançável (mDNS / seed / DNS TXT).
 - Circuit só depois de dial outbound ao `/esporocarp`.
-- `MYCELIUM_REACHABLE=1` sem `proof.json` → envenena esta matriz.
+- Não marque um nó como alcançável apenas por definir `MYCELIUM_REACHABLE=1`;
+  registre também a prova externa em `proof.json`.

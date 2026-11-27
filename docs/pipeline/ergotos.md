@@ -1,35 +1,33 @@
-# ErgotOS — o OS que a indústria não pode matar
+# ErgotOS
 
-> Nome fechado pelo Bruno. *Claviceps purpurea*: o fungo do centeio que fez
-> impérios tremerem sem CEO, servidor central ou licença.
+O nome vem de *Claviceps purpurea*, um fungo que cresce no centeio.
 
 ## Visão
 
-Um **OS que simula nativamente qualquer máquina** — computadores, consoles,
-mobile, pads — rodando jogos, software e SDKs de tudo, **e** dando controle
-total das suas máquinas físicas e dos softwares delas. O computador é a rede:
-o navegador é o terminal, o micélio é o ferro.
+O ErgotOS é uma proposta de ambiente acessível pelo navegador para executar
+serviços e software de diferentes máquinas, incluindo computadores, consoles
+e dispositivos móveis. O plano também inclui ferramentas para interagir com
+hardware físico. As metas abaixo não são garantias de compatibilidade ou de
+controle sobre qualquer dispositivo.
 
-## Pilares (mapeados no código)
+## Componentes relacionados
 
 | Pilar | Onde vive hoje |
 |---|---|
-| Qualquer app no navegador, zero instalação | Event Horizon `/{ion}/` → vira o shell do ErgotOS (`/console`) |
-| Máquinas legadas renascem | REVENANT: `lattice resurrect firmware.bin` + Forja |
-| Controle total do hardware | B.A.S.E.: descobrir, destravar, descrever (specterprobe na física) |
-| Rodar de graça, pagar em nutrientes | Vouchers ATP por hospedagem/janela; Inertia paga computação |
+| Interface no navegador | Event Horizon `/{ion}/`; o shell ErgotOS em `/console` é uma meta |
+| Software de máquinas legadas | REVENANT: `lattice resurrect firmware.bin` e Forja |
+| Análise de hardware | B.A.S.E. e specterprobe |
+| Uso de recursos | Vouchers ATP e Inertia |
 | Criptografia pós-quântica e fase tropical | ET-COSMIC: `mycelium-pqc`, `mycelium-tropical` |
 | Estado que te segue | GhostID + Nucleus + Spore Bank (sessão itinerante) |
 
 ## Constelação Mycelium Network
 
-- **ERGOT** — o OS universal sobre o micélio
-- **RIZOMORFO** = camada de transporte da rede: o stack que atravessa
-  CGNAT/5G/firewall sem pedir licença (Nostr transport, QEL, CandidateRelay,
-  DistanceBridge). *"A rede que não pede IP."*
-- **REVENANT** = pipeline de ressurreição de máquinas mortas: `resurrect`
-  firmware.bin/ROM/ISO → análise B.A.S.E. → Plot → Ion executável.
-  *"Nenhum hardware morre de verdade."*
+- **ERGOT** — proposta de ambiente sobre o Mycelium.
+- **RIZOMORFO** — camada de transporte que reúne Nostr transport, QEL,
+  CandidateRelay e DistanceBridge para conectar nós em diferentes redes.
+- **REVENANT** — fluxo proposto para analisar firmware, ROM ou ISO com
+  B.A.S.E. e produzir um Plot e um Ion executável.
 - **B.A.S.E.** = a Forja (Behavioral ASIC Synthesis Engine): descobrir,
   destravar e controlar hardware/software
 - **specterprobe** = instrumento de sondagem/destravamento físico da Forja
@@ -38,7 +36,7 @@ o navegador é o terminal, o micélio é o ferro.
 - **ET-COSMIC** = ponte PQC/tropical (ML-KEM-1024, max-plus) portada para os
   crates `mycelium-pqc` / `mycelium-tropical` / `mycelium-distancebridge`
 
-## Tecnologias novas a cultivar (roadmap ErgotOS)
+## Próximos passos propostos
 
 1. **Shell ErgotOS no `/console`**: desktop no navegador — Ions vivos de toda
    a rede (Growth Zones/Direct), terminal web → socket de controle, arquivos

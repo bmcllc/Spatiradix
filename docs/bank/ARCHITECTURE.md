@@ -1,12 +1,12 @@
-# Mycelium Bank — Banco/Corretora descentralizada e soberana
+# Mycelium Bank: arquitetura
 
 ## Visão
 
-Banco/corretora construído **por cima** do substrato Mycelium Network. Cada nó é
-soberano: identidade, razão, saldos e livro de ordens vivem localmente. A rede
-P2P (hifas libp2p, gossipsub, Kademlia DHT, VEIL Ω) transporta intenções,
-recibos e liquidações — nunca autoridade central. Pagamentos NFC acontecem em
-encontro físico (tap-to-pay) e são selados por recibos hash-encadeados.
+O Mycelium Bank reúne identidade, contas, razão, livro de ordens e estruturas
+de pagamento sobre o Mycelium Network. O estado do banco é mantido localmente;
+o transporte pode trocar mensagens com outros nós. O fluxo NFC descrito abaixo
+usa uma interface abstrata: a integração com hardware ainda estava pendente
+na etapa registrada ao final deste documento.
 
 ## Princípios
 

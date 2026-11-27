@@ -1,7 +1,7 @@
 # Prova zero-infra: site + serviço por assinatura sem hospedagem, sem domínio, sem VPS
 
-Data: 2026-10-08. Runnable: `bash scripts/prova-zero-infra.sh` (sai 0 só se todas as
-afirmações abaixo passarem).
+Data: 2026-10-08. Execute `bash scripts/prova-zero-infra.sh` para reproduzir a
+verificação local. O script retorna zero quando os critérios que ele testa passam.
 
 ## 1. Tese
 
@@ -15,7 +15,9 @@ registrado e sem VPS**. O que ocupa o lugar dos três:
 | Banco de usuários / sessões | lease de assinatura: JSON assinado ed25519 com `valid_until` | `crates/mycelium-sclerotium/src/lease.rs` |
 | Checkout próprio | pagamento fora do servidor (USDC na Base) + ledger anti double-spend | `mycelium sub issue`, `mycelium-economy verify-base-usdc` |
 
-Nada disso é anúncio: o script mede cada afirmação com HTTP status e exit codes.
+O script verifica os critérios listados abaixo por meio de respostas HTTP e
+códigos de saída. Os testes entre máquinas e os demais limites estão indicados
+nas seções seguintes.
 
 ## 2. O que foi construído
 
@@ -64,7 +66,7 @@ emissor                              assinante
 - [x] Lease com `valid_until` esticado sem re-quebrar a assinatura → **401**.
 - [ ] **Não provado aqui:** leitura a partir de outra máquina (2 hosts reais, CGNAT), queda
       de um relay, gateway voluntário com HTTPS para navegador fora da malha, revogação
-      parcial de lease. São os critérios da Etapa E6 em [`EVOLUCAO.md`](../EVOLUCAO.md);
+      parcial de lease. São critérios da Etapa E6 registrados em `EVOLUCAO.md`;
       nenhum deles é exigido para a tese "sem hospedagem/domínio/VPS", mas nenhum foi
       medido por este script.
 

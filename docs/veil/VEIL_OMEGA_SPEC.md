@@ -1,5 +1,10 @@
 # Especificação Técnica — Mycelium VEIL Ω
 
+Este documento descreve o desenho proposto para o VEIL Ω, incluindo mecanismos
+que podem não estar implementados ou validados. Ele não certifica segurança nem
+anonimato. Consulte [Validação](../VALIDACAO.md) e o
+[roteiro de homologação WAN](VEIL_P12_WAN_FIELD_VALIDATION.md).
+
 **Status**: Especificação Formal do Protocolo v0.1.0  
 **Autor**: The Lattice & Núcleo Mycelium  
 
@@ -84,10 +89,10 @@ O **Mycelium VEIL Ω** é composto por dois planos funcionais de comunicação, 
 
 ### Camada 5: Ofuscação Temporal & Shaping (QRC)
 - **Tamanho Fixo de Célula**: Todas as células no plano LIVE e MIX possuem exatamente 512 bytes. Cargas menores recebem padding estocástico autenticado.
-- **Delays de Poisson no Plano MIX**: Os nós do plano MIX introduzem atrasos exponenciais independentes $\mu \sim \text{Exp}(\lambda)$ antes de reenviar pacotes em lotes embaralhados (*batch shuffle*), tornando a correlação temporal inviável para observadores passivos.
+- **Delays de Poisson no Plano MIX**: O desenho prevê atrasos exponenciais independentes $\mu \sim \text{Exp}(\lambda)$ antes de reenviar pacotes em lotes embaralhados (*batch shuffle*), para dificultar a correlação temporal. Isso não a torna impossível.
 
 ### Camada 6: Zero-Trace em RAM & Auditabilidade ZKP
-- **Segurança em Memória**: Todos os buffers de chaves e dados decifrados implementam `ZeroizeOnDrop`. Não há gravação em disco rígido nem swap de dados de tráfego.
+- **Segurança em memória**: O desenho prevê limpar buffers de chaves e dados decifrados e evitar persistência de tráfego. `ZeroizeOnDrop`, por si só, não prova ausência de cópias em disco ou swap.
 - **Pedersen Commitments Corrigidos**: Utiliza gerador $H$ independente derivado via hash-to-curve auditado (onde $\log_G(H)$ é criptograficamente intratável), garantindo a propriedade de vinculação (*binding*).
 - **Defesa Anti-Sybil**: Verificação obrigatória de `HashcashProof` para registro de descritores de nós voluntários.
 
@@ -120,4 +125,4 @@ O operador do nó Exit deve contar com proteções ativas e configuráveis:
 1. **Controle de Banda e Conexões Simultâneas**: Limitação de conexões ativas por circuito e limites de taxa (token bucket).
 2. **Filtragem de Portas Sensíveis**: Bloqueio opcional de portas abusivas (ex.: SMTP 25 para evitar spam).
 3. **Isolamento de Redes Locais**: Bloqueio mandatário e irrestrito de IPs privados e interfaces de loopback.
-4. **Resolução Remota de DNS**: O cliente nunca resolve nomes de domínio localmente; o nome é transmitido cifrado dentro do circuito e resolvido pelo nó Exit, garantindo zero vazamento de consultas DNS (*Zero DNS Leak*).
+4. **Resolução remota de DNS**: O desenho prevê encaminhar o nome pelo circuito para resolução no Exit. A ausência de consultas locais ou vazamentos deve ser verificada no cliente e na rede.

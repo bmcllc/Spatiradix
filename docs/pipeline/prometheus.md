@@ -6,7 +6,7 @@
 GET /metrics  →  text/plain; version=0.0.4
 ```
 
-Disponível no Event Horizon (porta 7474 por default).
+O Event Horizon disponibiliza o endpoint na porta 7474 por padrão.
 
 O rate-limit da fronteira é configurável por ambiente (default **120
 req/min por IP**):
@@ -74,7 +74,7 @@ scrape_configs:
 
 ### Alertas (Alertmanager)
 
-Regras prontas em [`deploy/prometheus/alerts.yml`](../deploy/prometheus/alerts.yml):
+Regras prontas em [`deploy/prometheus/alerts.yml`](../../deploy/prometheus/alerts.yml):
 isolamento (`MyceliumSemVizinhos`), ATP esgotado, demanda de réplicas não
 satisfeita (`MyceliumIonSemReplicas`), réplica perdida, exportador morto e
 gossip congelado. Instale com:
@@ -98,7 +98,8 @@ O ciclo completo roda sem operador humano:
    anunciando `IonReady` (rota extra no Horizon, gravidade distribui).
 4. **Recombinar** — três janelas seguidas de carga zero **e** uma réplica
    remota viva cobrindo → a Chamber local é recombinada (processo morto,
-   rota removida). A última réplica viva nunca morre.
+   rota removida). A regra tenta preservar a última réplica conhecida; ela não
+   impede falhas do nó ou perda de conectividade.
 
 ## Código
 
@@ -106,12 +107,11 @@ O ciclo completo roda sem operador humano:
 - **Endpoint:** `singularity/src/proxy.rs` → rota `/metrics` + `note_request`
 - **Armazenamento:** `singularity/src/lib.rs` → `EventHorizon.metrics` + `ion_requests`
 
-## AlertManager + webhook do seed book (produção)
+## Alertmanager e webhook do seed book
 
-O exportador Prometheus (`/metrics`) é a metade de observação. A outra metade —
-**ação corretiva descentralizada** — vem do AlertManager rebobinando o *seed book*:
-um alerta de isolamento/exportador-morto faz o peer ser marcado como saudável
-falho e descoberto novamente.
+O endpoint `/metrics` fornece os dados de observação. O Alertmanager pode
+enviar alertas ao webhook do nó, que atualiza os registros de saúde das seeds.
+Esse fluxo deve ser configurado e testado no ambiente de operação.
 
 ### Como funciona
 

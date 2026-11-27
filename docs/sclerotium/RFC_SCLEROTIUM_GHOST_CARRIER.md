@@ -1,27 +1,28 @@
-# RFC: Protocolo Sclerotium & Ghost Carrier
+# RFC: Sclerotium e Ghost Carrier
 
 > **Status**: Proposto & Prototipado  
-> **Crate**: [`mycelium-sclerotium`](file:///media/bruno/SAMBOOK/Mycelium%20Network/crates/mycelium-sclerotium)  
+> **Crate**: [`mycelium-sclerotium`](../../crates/mycelium-sclerotium)
 > **Camada**: Substrato L0 (Fisiologia & Portadora Física) / L1 (Delegação Criptográfica)  
 > **Data**: Setembro de 2026  
 
 ---
 
-## 1. Sumário Executivo: "Vale a pena a implementação disto?"
+## 1. Objetivo
 
-**Sim, absolutamente.** A introdução da dobradinha **Ghost Carrier** e **Protocolo Sclerotium** resolve o maior gargalo existencial de redes P2P descentralizadas: o **Dilema da Disponibilidade 24/7**.
+O Sclerotium e o Ghost Carrier propõem manter uma presença delegada para nós
+que entram em dormência e oferecer meios de despertá-los quando necessário.
+O resultado depende de réplicas, proxies e hardware compatíveis disponíveis.
 
-Historicamente, redes como IPFS, BitTorrent e overlays DHT assumem tacitamente uma de duas realidades falhas:
-1. *Ou os nós rodam em data centers (VPSs caros e centralizados) para manter 99.9% de uptime;*
-2. *Ou nós residenciais (desktops, notebooks) que dormem ou desligam são marcados como "mortos/evaporados", degradando rotas DHT, perdendo pontuação de reputação (`Resilience`), e tornando seus conteúdos inacessíveis.*
-
-No Mycelium Network, o **Sclerotium (Escleródio)** traduz com exatidão a estratégia biológica dos fungos reais: perante a escassez de recursos ou necessidade de repouso, o micélio condensa biomassa em estruturas endurecidas e dormentes (escleródios), preservando água, nutrientes e integridade genética sem consumir energia contínua. Quando um estímulo químico ou elétrico (**Impulse**) é detectado, o organismo desperta e retoma seu metabolismo completo.
+Um nó doméstico pode ficar indisponível quando o computador suspende ou
+desliga. O desenho procura permitir que outros nós guardem conteúdo e
+mensagens durante esse intervalo. O nome Sclerotium vem do escleródio, uma
+estrutura de resistência encontrada em alguns fungos.
 
 ---
 
 ## 2. Taxonomia Biológica Unificada
 
-O ecossistema Mycelium consolida seus conceitos com total fidelidade biológica:
+O projeto usa termos da micologia como nomes para funções de rede:
 
 | Termo Fisiológico | Papel no Mycelium Network | Implementação Técnica |
 |---|---|---|
@@ -66,7 +67,9 @@ O ecossistema Mycelium consolida seus conceitos com total fidelidade biológica:
    - Execução de Chambers do Vacuum e computação do Inertia.
 2. **DORMANT (Dormente / Sclerotium)**:
    - CPU/GPU principal suspensa (Linux ACPI S3/suspend-to-RAM ou S4/suspend-to-disk).
-   - O consumo cai de 150W para **1W a 3W** (standby da NIC Ethernet / Wi-Fi WoWLAN) ou **~50µW** (MCU sidecar LoRa/sub-GHz).
+   - O consumo depende da máquina e do receptor. As estimativas originais eram
+     de **1 W a 3 W** para standby de rede ou **~50 µW** para um MCU auxiliar;
+     elas não substituem medição no hardware escolhido.
    - Receptor de wake ativo escutando a portadora Ghost Carrier.
    - Desperta sob demanda mediante recepção de um `ImpulsePacket` com `WakeToken` válido.
 3. **GHOST (Fantasma)**:
@@ -82,7 +85,9 @@ O ecossistema Mycelium consolida seus conceitos com total fidelidade biológica:
 
 ## 4. Engenharia Criptográfica: `GhostLease`
 
-A delegação é segura porque **não compartilha chaves privadas**. O nó original assina com sua `Gland` ed25519 uma declaração canônica delimitada por escopo e tempo:
+A delegação proposta não compartilha a chave privada. O nó de origem assina com
+sua `Gland` Ed25519 uma declaração limitada por escopo e tempo; o uso seguro
+também depende da verificação da assinatura e do cumprimento dessas restrições:
 
 ```rust
 pub struct GhostLease {
@@ -110,7 +115,9 @@ pub struct GhostLease {
 ## 5. Proteção Anti-DoS: Despertar Seletivo com `WakeToken`
 
 ### O Perigo dos *Vampire Attacks* (Ataques de Negação de Sono)
-Se qualquer pacote de rede acordasse o computador principal, um atacante poderia inundar o nó com transmissões contínuas, mantendo a CPU em pico de consumo e esgotando a bateria de um notebook em 40 minutos.
+Se qualquer pacote pudesse acordar o computador, um atacante poderia enviar
+requisições repetidas e aumentar o consumo de energia. O impacto depende do
+hardware e da frequência dos despertares.
 
 ### O Modelo do `WakeToken`
 Para acordar o nó, o requisitante precisa apresentar um token assinado/chaveado:
@@ -179,4 +186,6 @@ Para operar sobre portadoras analógicas, FSK, AFSK, LoRa ou sub-GHz com largura
 
 ## 8. Conclusão da Avaliação
 
-A implementação do **Sclerotium + Ghost Carrier** não é apenas vantajosa; ela é o diferencial que posiciona o Mycelium Network como uma verdadeira **rede viva e adaptativa**, onde o nó computacional imita a eficiência energética da natureza, sem sacrificar a identidade criptográfica nem a persistência distribuída de dados.
+O desenho combina delegação de presença e despertar seletivo. A economia de
+energia e a disponibilidade dos dados precisam ser medidas com os proxies,
+as réplicas e o hardware usados em cada implantação.

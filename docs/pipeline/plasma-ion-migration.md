@@ -1,9 +1,12 @@
 # Plasma Ion Migration
 
-## Problema
+## Contexto histórico
 
-Hoje `Ion` tem campo `host: NodeId` mas o `Cloud` (Plasma) é estritamente
-local — não há como migrar um Ion de um nó para outro.
+Esta página registra a proposta original para migrar um Ion entre nós. As
+variantes `IonOffer`, `IonAccept`, `IonMigrate` e `IonReady` já constam do
+protocolo; consulte `crates/mycelium-node/src/protocol.rs` e `organism.rs` para
+o estado atual. Os passos ao fim da página são o roteiro histórico, não uma
+lista verificada de tarefas ainda pendentes.
 
 ## Solução proposta: gossip de oferta + handshake
 
@@ -56,7 +59,7 @@ enum Envelope {
 }
 ```
 
-### Implementação
+### Etapas propostas
 
 1. **IonOffer publish** — quando `cloud.hungry()` retorna ions com carga positiva, publica `IonOffer` no gossip
 2. **IonAccept** — nó ocioso (`resources.cpu_cores > 0 && flywheel.pending() == 0`) aceita
@@ -64,7 +67,7 @@ enum Envelope {
 4. **IonReady** — destino frutifica Chamber + expõe no Horizon + avisa origem
 5. **Redirect** — origem adiciona rota no Horizon para o novo upstream (gravity routing)
 
-### CLI
+### CLI proposta
 
 ```bash
 mycelium ion migrate --ion webapp --to <peer_id>

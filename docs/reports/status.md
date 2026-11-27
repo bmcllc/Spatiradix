@@ -1,6 +1,6 @@
-# Status do Substrato
+# Histórico de status do Mycelium
 
-> ### 📌 Contagem canônica de testes
+> ### Como ler as contagens de testes
 >
 > Este arquivo reúne relatórios de sessões distintas e **cada um reporta um total próprio**; as contagens divergem entre si porque **não são a mesma medição**:
 >

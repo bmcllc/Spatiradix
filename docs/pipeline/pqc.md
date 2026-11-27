@@ -1,8 +1,9 @@
-# PQC — Pós-Quantum Cryptography
+# Criptografia pós-quântica (PQC)
 
 ## ML-KEM-1024 (FIPS 203)
 
-Implementação puramente em Rust (port do ET-COSMIC `void_core/pqc.rs` sem WASM).
+O crate oferece operações ML-KEM-1024 em Rust, sem dependência de WASM. A API
+usa a biblioteca `ml-kem` para gerar chaves, encapsular e decapsular segredos.
 
 **Crate:** `mycelium-pqc` em `crates/mycelium-pqc/`
 
@@ -13,16 +14,15 @@ pub fn mlkem_decapsulate(private_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8
 ```
 
 - Chave pública: 1568 bytes
-- Chave privada: 1568 bytes
 - Ciphertext: 1568 bytes
 - Shared secret: 32 bytes
 
-## Handshake híbrido (🟡 existente)
+## Funções de handshake híbrido
 
 **Módulo:** `mycelium-hyphae/src/pqc.rs` (feature `pqc-transport`)
 
-Após o handshake Noise padrão, peers trocam chaves ML-KEM sobre o
-canal seguro e derivam um **segredo combinado**:
+O módulo também fornece funções que combinam um segredo Noise fornecido pelo
+chamador com um segredo ML-KEM:
 
 ```
 combined = blake3(noise_secret || pqc_shared_secret)
@@ -30,22 +30,24 @@ combined = blake3(noise_secret || pqc_shared_secret)
 
 ```rust
 // Cliente: encapsula para a chave pública do servidor
-let (hybrid, ciphertext) = pqc::client_handshake(&server_pk, &noise_secret)?;
+let (client_hybrid, ciphertext) = pqc::client_handshake(&server_pk, &noise_secret)?;
 
 // Servidor: decapsula o ciphertext do cliente
-let hybrid = pqc::server_handshake(&private_key, &ciphertext, &noise_secret)?;
+let server_hybrid = pqc::server_handshake(&private_key, &ciphertext, &noise_secret)?;
 
-assert_eq!(hybrid.combined, client_hybrid.combined);
+assert_eq!(server_hybrid.combined, client_hybrid.combined);
 ```
 
 ### Multiaddr
 
-`/unix/mycelium-pqc/<pk_hex>` — mesmo padrão do Nostr transport.
+O endereço de escuta codificado pelo transporte usa
+`/tcp/<porta>/unix/mycelium-pqc-<pk_hex>`. Para discagem, o parser também
+aceita endereço IP ou DNS no multiaddr.
 
 ### PeerId
 
-Derivado deterministicamente da chave pública ML-KEM via
-ed25519 seed (BLAKE3 → seed → Keypair → PeerId).
+O transporte usa Noise com o par de chaves de identidade libp2p fornecido ao
+construtor. A chave pública ML-KEM no endereço tem outra função: o handshake KEM.
 
 ### Testes
 
@@ -57,29 +59,13 @@ cargo test --features pqc-transport -p mycelium-hyphae
 - `different_noise_gives_different_combined` — noise_secret diferente → combined diferente
 - `pqc_multiaddr_roundtrip` — encode/decode de multiaddr
 
-## Transporte real (❌ falta)
+## Transporte libp2p
 
-O que **não** foi implementado ainda:
+O módulo `pqc.rs` também implementa `PqcTransport` para TCP e KEM. Com a
+feature `pqc-transport`, o construtor da malha registra esse transporte no
+swarm e usa Noise e Yamux. Essa implementação é distinta das funções auxiliares
+de handshake mostradas acima.
 
-1. **Implementar `Transport` trait completo** (igual `NostrTransport`)
-   - TCP listen/dial
-   - Handshake KEM (cliente encapsula, servidor decapsula)
-   - Yamux multiplexing
-   - Retornar `(PeerId, StreamMuxerBox)`
-2. **Registrar com `with_other_transport`** na germinação das hifas
-3. **Rota de dial/listen funcional**
-
-```rust
-// Planejado:
-let addr = "/tcp/4004/pqc/<pk_hex>";
-builder
-    .with_other_transport(|key| pqc::build(key))
-    .map_err(|e| ...)?;
-```
-
-## Próximos passos
-
-1. Completar `PqcTransport` struct com `Transport` trait
-2. Adicionar `build()` function que retorna `Boxed<(PeerId, StreamMuxerBox)>`
-3. Wire no `germinate_with()` do `mycelium-hyphae`
-4. Teste de integração: dois nós se conectam via PQC-only
+O registro da feature e os testes locais não comprovam segurança ou
+interoperabilidade em redes reais. Consulte [Validação](../VALIDACAO.md) para
+os limites de testes do projeto.

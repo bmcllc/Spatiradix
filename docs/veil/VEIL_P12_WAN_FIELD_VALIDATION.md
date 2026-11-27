@@ -1,6 +1,9 @@
 # VEIL Ω P1.2 — Homologação WAN física (pendente)
 
-Base auditada: `e85639d8ee33b62912a04cf07854ef2956d405fe`. Este documento é um roteiro de execução, **não** um certificado de segurança nem um resultado de campo. Os testes existentes com `127.0.0.2/3/4` são uma prova em loopback de processos distintos, não de redes distintas. Não repetir a homologação de QEL/MicroEasy/P4.
+Base auditada: `e85639d8ee33b62912a04cf07854ef2956d405fe`. Este roteiro não é
+um certificado de segurança nem um resultado de campo. Os testes com
+`127.0.0.2/3/4` exercitam processos distintos em loopback, não redes distintas.
+A homologação de QEL, MicroEasy e P4 está fora deste roteiro.
 
 ## Bloqueadores observados na base
 

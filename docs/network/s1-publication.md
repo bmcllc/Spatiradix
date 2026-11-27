@@ -1,11 +1,9 @@
 # Portal S1 como artefato Mycelium
 
-O portal pode ser distribuído como um `giggs::Plot` público, identificado por
-`ContentId`, armazenado no SporeBank e servido pela ion SRC do Event Horizon.
-Esse caminho reutiliza a rede existente: a identidade do conteúdo não depende
-de registrar um domínio DNS nem de contratar um host central. Ainda exige nós
-ativos que guardem e sirvam os arquivos, conectividade entre os pares e um
-cliente Mycelium para resolver `src.mycelium`.
+O portal pode ser empacotado como um `giggs::Plot` público, identificado por
+`ContentId`, guardado no SporeBank e servido pela ion SRC do Event Horizon.
+O conteúdo não precisa de um domínio DNS registrado, mas sua distribuição
+exige nós ativos, conectividade e um cliente Mycelium que resolva `src.mycelium`.
 
 ## Preparar um build público
 

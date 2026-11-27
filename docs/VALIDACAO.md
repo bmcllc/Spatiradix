@@ -1,8 +1,8 @@
 # Validação — Mycelium Network
 
-Este documento é o placar de validação do projeto. Responde a uma pergunta
-apenas: **o que foi provado, e o que não foi**. Ele é deliberadamente
-desfavorável onde a evidência é ausente.
+Este documento registra o que foi validado no projeto e quais evidências
+ainda faltam. Os resultados pertencem às versões e aos ambientes identificados
+em cada seção; eles não garantem que o estado atual seja o mesmo.
 
 Números de linha citam o estado do working tree na data desta escrita.
 `docs/reports/status.md` está sendo editado em paralelo; onde ele é citado,
@@ -1593,7 +1593,7 @@ foi fechado é uma peça de marketing.
 8. **Uma chave de assinatura delegada pode assinar qualquer coisa sobre a
    evidência que lhe é entregue**, incluindo uma transação fabricada. **Por
    desenho** — a leitura de cadeia é o portão que prova que o verificador leu
-   mesmo a cadeia. A frase honesta: a assinatura prova proveniência, não
+   mesmo a cadeia. A assinatura prova proveniência, não
    existência.
 9. **`anchor_block_hash` está ligado, não é o hash do bloco CONFIRMADO.** Ligar
    o confirmado exigiria mover o portão de assinatura para depois da leitura de
@@ -2555,7 +2555,7 @@ Itens que já foram tomados por validação neste projeto:
    > `status.md` continuam a não bater com nada, e **nenhum número de workspace
    > pós-P4 é inventado aqui** para tapar o buraco. A lição desta lista é a
    > mesma das três rodadas anteriores: um placar com um número velho é um
-   > placar mentiroso com atraso.
+   > registro desatualizado pode induzir a uma conclusão errada.
 
    > **Atualização em P4.5 — a contagem de workspace deixou de ser "não
    > medida" e foi medida, e os quatro números de `status.md` continuam errados

@@ -2,7 +2,7 @@
 
 ## Contrato exposto
 
-O P5 reutiliza Giggs, SporeBank e Inertia; não cria uma Forge ou um sistema paralelo.
+O P5 usa Giggs, SporeBank e Inertia para publicar e validar revisões do MicroEasy.
 
 - `repo publish --expected-previous-cid <CID>` publica uma nova revisão somente quando a referência atual ainda aponta para o pai esperado. A divergência é rejeitada, preservando compare-and-swap explícito.
 - `repo validate --cid <CID>` executa build e testes Inertia sobre o snapshot informado e devolve os CIDs das atestações e do artefato.
@@ -21,4 +21,5 @@ O formato de CID aceito permanece compatível com o identificador hexadecimal de
 - A assinatura comprova autoria e integridade da atestação; não comprova que o executor é honesto.
 - O CAS protege a atualização da referência, mas o chamador ainda deve escolher e conferir o pai esperado.
 - A interface não promove releases nem publica conteúdo automaticamente na rede pública.
-- O P4 não é reaberto. Esta alteração apenas disponibiliza para o MicroEasy as primitivas já homologadas.
+- Esta alteração disponibiliza ao MicroEasy as primitivas homologadas no P4;
+  ela não repete a homologação.

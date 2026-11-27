@@ -2,7 +2,8 @@
 
 ## Liquidação por voucher assinado (implementado)
 
-O pagamento ponto-a-ponto já funciona sem câmara de compensação:
+O fluxo de vouchers permite registrar uma transferência de nutrientes entre
+nós sem uma câmara de compensação central:
 
 ```
 Voucher {
@@ -25,8 +26,9 @@ Testemunho multi-nó: `scripts/scaling-demo.sh`
 
 ## Problema
 
-Hoje cada nó tem seu `Ledger` local (ATP, Enzymes, Mycelia, Spores, Resilience)
-sem sincronização com a rede. Não há como um nó A pagar um nó B por trabalho.
+Cada nó mantém seu `Ledger` local (ATP, Enzymes, Mycelia, Spores e Resilience).
+O fluxo de voucher descrito acima trata pagamentos pontuais; a proposta abaixo
+discute uma forma adicional de sincronizar saldos entre nós.
 
 ## Solução proposta: CRDT sobre gossip
 
@@ -70,14 +72,14 @@ enum Envelope {
 }
 ```
 
-### Implementação
+### Implementação proposta
 
 1. **Ledger remoto** — `RemoteLedger` struct que mantém `HashMap<NodeId, (HashMap<Nutrient, u64>, u64)>`
 2. **Tick de publish** — a cada 60s, publica `BalanceSync` no gossip
 3. **Handle** — no `handle_envelope`, processa `BalanceSync` entrante
 4. **MomentumReport** — ao receber report de trabalho remoto, ajusta balance local + publica sync
 
-### CLI
+### CLI proposta
 
 ```bash
 mycelium balance          # mostra balance local + remotos conhecidos

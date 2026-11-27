@@ -1,7 +1,13 @@
 # Plan: Flash Loan Arbitrage Adapter for ARV0 Gate Crossing
 
 ## Objective
-Build a **read-only** flash loan arbitrage scanning adapter that integrates with the existing P6 discovery machine, finds profitable opportunities on Base L2 using Balancer 0% fee flash loans, and feeds them through the existing S1 outcome verification path to generate the first ~$0.01 of external USDC needed to cross ARV0.
+
+Build a **read-only** scanner for potential flash-loan arbitrage on Base L2 and
+connect its observations to the P6 discovery flow. The scanner cannot execute
+trades or generate revenue itself. An external executor would need to complete
+a transaction, and the S1 outcome path would need to verify the resulting USDC
+transfer before it could count toward ARV0. Fees and opportunities must be
+checked at execution time.
 
 ## Architecture Context (Confirmed)
 

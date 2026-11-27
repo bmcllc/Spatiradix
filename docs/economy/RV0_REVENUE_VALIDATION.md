@@ -2,7 +2,8 @@
 
 ## Objective
 
-Prove the first unit of real external paid demand without using MYC price, simulated settlements or internal workload as revenue.
+Verify the first externally paid job. MYC prices, simulated settlements and
+internal work do not count as revenue.
 
 Income_user = PaidDemand * WorkerShare * EconomicCapacityShare
 
@@ -26,9 +27,10 @@ RV0 validates only the first term: PaidDemand > 0 from an external customer.
        |
     RV0 PASS
 
-Work and payment can occur in either business order after JobRequest, but final settlement requires both a verified work receipt and the valid external payment.
+Work and payment may happen in either order after `JobRequest`. Final
+settlement requires both a verified work receipt and a valid external payment.
 
-## What does NOT count
+## What does not count
 
 - internal Mycelium jobs;
 - simulated mUSD;

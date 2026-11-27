@@ -1,11 +1,14 @@
 # Sporocarp CDN
 
+Esta página apresenta uma proposta de rotas HTTP e um roteiro de implementação.
+O exemplo de código e a expansão por Growth Zones são ilustrativos.
+
 ## Problema
 
 Plots e layers são content-addressed (BLAKE3) mas não têm uma rota HTTP
 para acesso público. Um `curl` não consegue baixar um Plot.
 
-## Solução: rotas HTTP no Event Horizon
+## Proposta: rotas HTTP no Event Horizon
 
 ### Rotas
 
@@ -16,7 +19,7 @@ para acesso público. Um `curl` não consegue baixar um Plot.
 | `GET /layers/{id}` | Retorna uma layer do LayerStore |
 | `GET /plots/{id}/raw` | Retorna bytes crus do spore_print |
 
-### Implementação
+### Exemplo de implementação
 
 ```rust
 // Em singularity/src/proxy.rs

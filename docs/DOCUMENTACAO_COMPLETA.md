@@ -1,7 +1,8 @@
-# 🍄 MYCELIUM NETWORK & ECOSSISTEMA COSMIC / VEIL Ω
-## Documentação Técnica Completa e Definitiva de Engenharia
+# Mycelium Network, COSMIC e VEIL Ω
+## Documentação técnica
 
-> 📌 **Estado de validação**: ver [`docs/VALIDACAO.md`](VALIDACAO.md) para o nível de validação real e o número canônico de testes. Este documento descreve escopo e intenção de projeto; onde afirma prontidão, prevalece o registro em `VALIDACAO.md`.
+> Este documento reúne descrições e propostas de projeto. Para distinguir o
+> que foi testado do que ainda falta validar, consulte [Validação](VALIDACAO.md).
 
 > **Versão do Sistema**: 0.1.0-alpha  
 > **Linguagem Base**: Rust (Edição 2021)  
@@ -11,7 +12,7 @@
 
 ---
 
-## 📑 Sumário Executivo
+## Sumário
 
 1. [Visão Geral & Filosofia Biológica](#1-visão-geral--filosofia-biológica)
 2. [Arquitetura Sistêmica em Camadas (L0 a L4)](#2-arquitetura-sistêmica-em-camadas-l0-a-l4)
@@ -26,10 +27,12 @@
 
 ## 1. Visão Geral & Filosofia Biológica
 
-A **Mycelium Network** é uma infraestrutura de comunicação, computação e armazenamento distribuída projetada para operar em ambientes hostis, redes sob censura e cenários de adversidade extrema (como o colapso de infraestruturas centralizadas da Internet comercial).
+O Mycelium Network é um projeto de comunicação, computação e armazenamento
+distribuídos. Seu desenho considera redes com conectividade limitada e outras
+condições adversas; a capacidade de operar nelas depende de testes específicos.
 
 ### A Metáfora Fúngica
-Diferente das redes tradicionais baseadas no modelo cliente-servidor (hierárquico, frágil e centralizado), a Mycelium Network inspira-se no micélio biológico das florestas:
+Os nomes de vários componentes vêm do micélio e de outras estruturas dos fungos:
 
 ```
     [ Árvore / Cliente ]           [ Árvore / Cliente ]
@@ -106,7 +109,10 @@ flowchart TD
 
 ## 3. Protocolo VEIL Ω — Onion Routing Pós-Quântico
 
-O **VEIL Ω** é a evolução soberana dos protocolos de anonimato, concebido para superar as limitações históricas da rede Tor e do I2P contra adversários com computadores quânticos e capacidade de análise global de tráfego.
+O **VEIL Ω** é uma proposta de roteamento com privacidade sobre o Mycelium.
+O modelo considera criptografia pós-quântica e análise de tráfego; ele não
+comprova anonimato contra observadores globais. Consulte o
+[modelo de ameaças](veil/THREAT_MODEL.md) e os testes WAN pendentes.
 
 ### 3.1. Criptografia em Camadas ML-KEM-1024 + AEAD ChaCha20-Poly1305
 O circuito de 3 saltos (*Entry Guard* $\to$ *Relay* $\to$ *Exit*) encapsula cada pacote em 3 camadas concêntricas:
@@ -126,7 +132,7 @@ $$\text{Packet} = \mathcal{E}_{K_{\text{guard}}}(\mathcal{E}_{K_{\text{relay}}}(
 2. **Plano MIX (Alta Ofuscação / Mixnet Estocástica)**:
    - Destinado a mensagens assíncronas, propagação de blocos e transações confidenciais.
    - Aplica atrasos estocásticos modelados por um **Processo de Poisson** ($\lambda = 0.5 \text{ a } 2.0\text{ s}$).
-   - Injeta pacotes de cobertura (*chaff traffic*) com tamanho fixo (1280 bytes), impedindo que a correlação de tamanho e tempo revele a identidade dos comunicadores.
+   - Propõe pacotes de cobertura (*chaff traffic*) com tamanho fixo (1280 bytes) para dificultar a correlação de tamanho e tempo; isso não impede toda análise de tráfego.
 
 ### 3.3. As 7 Camadas Herdadas e Corrigidas do ET-COSMIC-OLD (GhostVPN)
 O VEIL Ω incorpora e corrige as vulnerabilidades do antigo ecossistema ET-COSMIC:
@@ -140,7 +146,7 @@ O VEIL Ω incorpora e corrige as vulnerabilidades do antigo ecossistema ET-COSMI
 
 ### 3.4. Proxy SOCKS5 Local e Prevenção Anti-SSRF
 - O nó sobe um proxy SOCKS5 local na porta `:9050`.
-- **DNS Leak Prevention**: Requisições de nome de domínio nunca são resolvidas pelo DNS do sistema operacional local; os nomes são empacotados dentro do túnel cebola e resolvidos apenas no nó de saída.
+- **Resolução de DNS**: O desenho prevê enviar nomes pelo túnel para resolução no nó de saída. A ausência de vazamentos precisa ser verificada em cada ambiente e aplicação.
 - **Anti-SSRF (Server-Side Request Forgery)**: O nó de saída do VEIL bloqueia qualquer tentativa de conexão direcionada a endereços privados (RFC 1918: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), CGNAT (`100.64.0.0/10`) e metadados de provedores de nuvem (`169.254.169.254`).
 
 ---
@@ -167,13 +173,14 @@ O particionamento de arquivos no COSMIC não utiliza replicação ingênua de ar
     (PeerA) (PeerB) (PeerC) (PeerD) (PeerE) (PeerF) (PeerG)
 ```
 
-Se 4 de 7 nós forem destruídos ou desconectados, os 3 nós restantes reconstroem o arquivo instantaneamente.
+Se quatro das sete partes ficarem indisponíveis, as três restantes podem
+reconstruir o arquivo, desde que sejam válidas e acessíveis.
 
 ### 4.2. Licenças Criptográficas VOID-00 (ML-DSA-87)
 Para contratação e autorização de computação na malha, o COSMIC utiliza certificados **VOID-00**:
 - Assinados com **ML-DSA-87** (Dilithium5 - Nível 5 do NIST).
 - Define o detentor da licença (`holder_pubkey`), a validade (`valid_until`), o escopo de execução (`scope`) e o limite de consumo de `ATP`.
-- Impossível de ser forjada mesmo com computadores quânticos munidos do algoritmo de Shor.
+- ML-DSA foi projetado para resistir aos ataques quânticos conhecidos que afetam algoritmos baseados em fatoração e logaritmo discreto; isso não torna uma implementação infalível.
 
 ---
 
@@ -209,7 +216,7 @@ A solução do Mycelium para o dilema de alta disponibilidade sem consumo de ene
 4. **`DEAD`**: Tempo de vida da `GhostLease` expirado sem renovação.
 
 ### 5.2. O `WakeToken` Criptográfico Anti-DoS
-Para impedir que ruído de rádio ou atacantes enviem pacotes falsos para forçar o despertar de máquinas (esgotando baterias), o pacote mágico de despertar requer um `WakeToken`:
+Para reduzir despertares indevidos por ruído ou pacotes falsos, o desenho usa um `WakeToken` autenticado:
 
 $$\text{WakeToken} = \text{BLAKE3-MAC}(K_{\text{node}}, \text{requester} \parallel \text{epoch} \parallel \text{nonce} \parallel \text{reason})$$
 
@@ -219,39 +226,41 @@ A NIC ou o receptor auxiliar valida a assinatura antes de energizar a placa-mãe
 
 ## 6. Dicionário Exaustivo de Crates do Monorepo
 
-O monorepo do Mycelium organiza-se em 30 crates e plataformas Rust:
+Esta tabela apresenta uma seleção de crates e plataformas. A lista atual de
+membros e dependências está no [Cargo.toml](../Cargo.toml) do workspace e nos
+manifestos de cada crate.
 
 | Crate | Diretório | Papel Principal | Dependências Chave |
 |---|---|---|---|
 | `mycelium-core` | `crates/mycelium-core` | Primitivos do sistema (`NodeId`, `ContentId`, `trait FruitingBody`, `Nutrient`) | `blake3`, `serde`, `thiserror` |
-| `mycelium-hyphae` | `crates/mycelium-hyphae` | Malha P2P viva sobre libp2p, Kademlia DHT, Gossipsub, QUIC, TCP, DTN | `libp2p`, `tokio`, `sled` |
+| `mycelium-hyphae` | `crates/mycelium-hyphae` | Transporte, descoberta, gossip e DHT | `libp2p`, `tokio` |
 | `mycelium-veil` | `crates/mycelium-veil` | Protocolo VEIL Ω, circuitos onion 3 saltos, SOCKS5, Anti-SSRF, planos LIVE/MIX | `mycelium-pqc`, `chacha20poly1305`, `tokio` |
 | `mycelium-sclerotium` | `crates/mycelium-sclerotium` | Fisiologia da dormência, `GhostLease`, `WakeToken`, portadora analógica | `ed25519-dalek`, `blake3`, `tokio` |
-| `mycelium-pqc` | `crates/mycelium-pqc` | Criptografia pós-quântica (ML-KEM-768/1024, ML-DSA-65/87) | `fips203`, `fips204` |
-| `mycelium-qel` | `crates/mycelium-qel` | Fragmentação e codificação de apagamento pós-quântica K-de-N | `reed-solomon-erasure`, `blake3` |
-| `mycelium-ghostid` | `crates/mycelium-ghostid` | Identidade efêmera e administração local de endereços MAC | `rand`, `blake3` |
-| `mycelium-distancebridge` | `crates/mycelium-distancebridge` | Transporte fantasma L2 multi-canal e evasão de censura | `tokio`, `async-trait` |
+| `mycelium-pqc` | `crates/mycelium-pqc` | Encapsulamento de chaves ML-KEM-1024 | `ml-kem` |
+| `mycelium-qel` | `crates/mycelium-qel` | Fragmentação Shamir K-de-N | `shamir_share`, `blake3` |
+| `mycelium-ghostid` | `crates/mycelium-ghostid` | Identidade efêmera e administração local de endereços MAC | `secp256k1`, `sha2` |
+| `mycelium-distancebridge` | `crates/mycelium-distancebridge` | Seleção de transportes por contexto | `mycelium-qel`, `serde` |
 | `mycelium-zkp` | `crates/mycelium-zkp` | Provas de conhecimento zero, compromissos de Pedersen e PoW anti-Sybil | `curve25519-dalek`, `sha3` |
-| `vacuum` | `crates/vacuum` | Limpeza e sanitização zero-trace de memória sensível em RAM | `zeroize` |
-| `mycelium-pheromones` | `crates/mycelium-pheromones` | Identidade química, glândulas ed25519, trilhas de feromônios | `ed25519-dalek`, `blake3` |
+| `vacuum` | `crates/vacuum` | Chambers e execução isolada conforme configuração | `libc`, `mycelium-core` |
+| `mycelium-pheromones` | `crates/mycelium-pheromones` | Identidade Ed25519, trilhas e sinais | `ed25519-dalek`, `mycelium-core` |
 | `mycelium-nutrients` | `crates/mycelium-nutrients` | Ledger bioquímico (`ATP`, Enzimas, Esporos) e liquidação de transferências | `serde`, `ed25519-dalek` |
-| `mycelium-sporebank` | `crates/mycelium-sporebank` | Banco de esporos imutáveis endereçados por conteúdo | `sled`, `blake3` |
-| `singularity` | `crates/singularity` | Event Horizon (`:7474`), balanceamento por gravidade e rizomorfos | `axum`, `hyper`, `tokio` |
+| `mycelium-sporebank` | `crates/mycelium-sporebank` | Armazenamento de Plots endereçados por conteúdo | `giggs`, `serde_json` |
+| `singularity` | `crates/singularity` | Event Horizon e roteamento HTTP | `axum`, `tokio` |
 | `mycelium-store` | `crates/mycelium-store` | Gerenciador de câmaras de execução de processos e apps | `tokio`, `serde_json` |
-| `mycelium-media` | `crates/mycelium-media` | Fatiamento HLS e streaming P2P de áudio e vídeo soberano | `tokio`, `bytes` |
+| `mycelium-media` | `crates/mycelium-media` | Fragmentação e distribuição de mídia | `tokio`, `blake3` |
 | `mycelium-node` | `crates/mycelium-node` | O organismo completo: une hifas, VEIL, esporos, console web e vitrine | Todas as crates acima |
-| `mycelium-cli` | `cli/mycelium-cli` | Linha de comando do operador Mycelium | `clap`, `tokio`, `reqwest` |
+| `mycelium-cli` | `cli/mycelium-cli` | Linha de comando do operador Mycelium | `clap`, `tokio` |
 | `cosmic-cli` | `crates/cosmic-cli` | CLI de computação soberana, sharding QEL e certificados VOID-00 | `clap`, `mycelium-qel` |
-| `plasma` | `crates/plasma` | Runtime de sandbox WASM e micro-containers efêmeros | `wasmtime`, `tokio` |
-| `thefield` | `crates/thefield` | Dinâmica de campo unificado e equilíbrio harmônico da malha | `nalgebra` |
-| `entropy` | `crates/entropy` | CSPRNG e coletor de ruído de alta entropia | `getrandom`, `blake3` |
-| `mycelium-nostr` | `crates/mycelium-nostr` | Integração com eventos Nostr (NIPs) e assinaturas Schnorr | `nostr`, `secp256k1` |
+| `plasma` | `crates/plasma` | Orquestração de Ions | `vacuum`, `mycelium-core` |
+| `thefield` | `crates/thefield` | Signals e quórum por ressonância | `mycelium-core`, `serde` |
+| `entropy` | `crates/entropy` | Partilha de segredos Shamir | `rand`, `mycelium-core` |
+| `mycelium-nostr` | `crates/mycelium-nostr` | Integração com eventos Nostr e assinaturas Schnorr | `tokio-tungstenite`, `secp256k1` |
 | `mycelium-nostr-transport` | `crates/mycelium-nostr-transport` | Transporte P2P invisível envelopado sobre relays Nostr WSS | `tokio-tungstenite` |
-| `mycelium-ipfs` | `crates/mycelium-ipfs` | Ponte de interoperabilidade com nós e blocos IPFS/UnixFS | `cid`, `multihash` |
-| `mycelium-tropical` | `crates/mycelium-tropical` | Álgebra tropical (semianéis min-plus) para cálculo de menores rotas | `num-traits` |
-| `isotope` | `crates/isotope` | Exportação de telemetria e métricas Prometheus | `prometheus` |
-| `giggs` | `crates/giggs` | Orquestrador de tarefas assíncronas periódicas e limpeza | `tokio` |
-| `inertia` | `crates/inertia` | Persistência local e amortecimento de panes de energia | `serde_json` |
+| `mycelium-ipfs` | `crates/mycelium-ipfs` | Armazenamento local de blocos | `mycelium-core`, `hex` |
+| `mycelium-tropical` | `crates/mycelium-tropical` | Álgebra tropical e seleção de rotas | `serde`, `thiserror` |
+| `isotope` | `crates/isotope` | Estado distribuído com CRDT last-writer-wins | `mycelium-core`, `serde` |
+| `giggs` | `crates/giggs` | Versionamento de conteúdo em Plots | `mycelium-core`, `serde_json` |
+| `inertia` | `crates/inertia` | Execução de Vectors de build, teste e deploy | `mycelium-core`, `serde_json` |
 | `cosmoplanck` | `platforms/cosmoplanck` | SDK de integração da plataforma Planck com a malha | `reqwest` |
 
 ---
@@ -298,7 +307,7 @@ cargo doc --workspace --no-deps --open
 ### 8.2. Inicialização do Daemon
 ```bash
 # Iniciar o nó completo com interface de console
-./target/release/mycelium daemon --port 4001 --horizon 7474 --socks5 9050
+./target/release/mycelium daemon --listen /ip4/127.0.0.1/tcp/4001 --horizon-port 7474
 
 # Abrir no navegador:
 # http://localhost:7474/console
@@ -311,7 +320,7 @@ cargo doc --workspace --no-deps --open
 ./target/release/mycelium veil status
 
 # Navegar através do proxy SOCKS5 pós-quântico
-curl -x socks5h://127.0.0.1:9050 https://check.torproject.org
+curl -x socks5h://127.0.0.1:1080 https://example.com/
 ```
 
 ### 8.4. Operações com o COSMIC
@@ -322,8 +331,8 @@ curl -x socks5h://127.0.0.1:9050 https://check.torproject.org
 # Baixar e reconstruir arquivo via ContentId
 ./target/release/cosmic get Qm... --out restaurado.tar.gz
 
-# Emitir certificado de computação VOID-00 (ML-DSA-87)
-./target/release/cosmic license issue --holder <pubkey> --scope "compute:wasm"
+# Consultar opções de verificação de licença na CLI Mycelium
+./target/release/mycelium license-verify --help
 ```
 
 ### 8.5. Operações com o Sclerotium (Dormência)
@@ -332,12 +341,10 @@ curl -x socks5h://127.0.0.1:9050 https://check.torproject.org
 ./target/release/mycelium sclerotium hardware
 
 # Gerar GhostLease para delegar presença a nós vizinhos
-./target/release/mycelium sclerotium lease --ttl 86400
+./target/release/mycelium sclerotium lease --ttl-minutes 1440
 
-# Enviar pulso de despertar com WakeToken
-./target/release/mycelium sclerotium wake --mac 00:11:22:33:44:55 --reason 1
+# Substitua NODE_ID e o MAC pelos valores do nó autorizado
+./target/release/mycelium sclerotium wake --target NODE_ID --mac 00:11:22:33:44:55 --reason operator_manual
 ```
 
 ---
-
-> **Mycelium Network & COSMIC Ecosystem** — Projetado para a soberania digital contínua, privacidade inviolável e resiliência biológica perpétua.
