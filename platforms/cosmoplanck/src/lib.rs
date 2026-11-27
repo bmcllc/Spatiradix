@@ -1,7 +1,7 @@
 //! cosmoplanck bridge – integração B.A.S.E. ↔ Planck.
 //!
 //! Exporta recursos de computação e armazenamento da plataforma Planck como
-//! serviços consumíveis pela Mycelium Network, permitindo off‑load de
+//! serviços consumíveis pela Spatiradix, permitindo off‑load de
 //! workloads via API REST.
 
 use reqwest::{Client, Method};

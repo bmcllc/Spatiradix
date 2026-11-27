@@ -15,7 +15,7 @@ use std::str::FromStr;
 #[derive(Parser)]
 #[command(
     name = "mycelium",
-    about = "Mycelium Network — o substrato vivo do The Lattice",
+    about = "Spatiradix — o substrato vivo do The Lattice",
     version
 )]
 struct Cli {
@@ -1767,7 +1767,7 @@ fn seed_catalog_cmd(home: &PathBuf, action: SeedCatalogCmd) -> Result<(), String
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            let mut body = String::from("# Mycelium Network — seeds públicas verificadas (do catálogo)\n# Só entradas com inbound verificado entram aqui.\n");
+            let mut body = String::from("# Spatiradix — seeds públicas verificadas (do catálogo)\n# Só entradas com inbound verificado entram aqui.\n");
             for l in &lines {
                 body.push_str(l);
                 body.push('\n');
@@ -3345,7 +3345,7 @@ fn print_response(resp: Response) -> Result<(), String> {
             tentativas_failover,
             motivos_falha,
         } => {
-            println!("[🛡️] Mycelium VEIL Ω");
+            println!("[🛡️] Spatiradix VEIL Ω");
             println!("    estado     : {}", if active { "ativo 🟢" } else { "inativo ⚪" });
             if let Some(r) = role {
                 println!("    papel      : {r}");
@@ -3392,7 +3392,7 @@ fn print_response(resp: Response) -> Result<(), String> {
             Ok(())
         }
         Response::StoreCaps { caps } => {
-            println!("\n⚡ === MYCELIUM STORE — Capacidades de Emulação Host === ⚡\n");
+            println!("\n⚡ === Spatiradix Store — Capacidades de Emulação Host === ⚡\n");
             println!(" ⚙️ QEMU Emulators:");
             for (arch, has) in &caps.has_qemu {
                 println!("    • qemu-system-{:<8}: {}", arch, if *has { "✅ Instalado" } else { "❌ Ausente" });
@@ -3407,7 +3407,7 @@ fn print_response(resp: Response) -> Result<(), String> {
             if spores.is_empty() {
                 println!("[🍄] Nenhum spore cadastrado no catálogo.");
             } else {
-                println!("\n🎮 === MYCELIUM APP STORE — Catálogo P2P Retro ({}) === 🎮\n", spores.len());
+                println!("\n🎮 === Spatiradix App Store — Catálogo P2P Retro ({}) === 🎮\n", spores.len());
                 for spore in spores {
                     println!("🔹 ID: {}", spore.id);
                     println!("   Título: {}", spore.title);
@@ -3663,7 +3663,7 @@ async fn store_cmd_async(home: &PathBuf, action: StoreCmd) -> Result<(), String>
             }
             let catalog = StoreCatalog::open(home).map_err(|e| e.to_string())?;
             let spores = catalog.list_public_spores();
-            println!("\n🎮 === MYCELIUM APP STORE — Catálogo P2P Retro === 🎮\n");
+            println!("\n🎮 === Spatiradix App Store — Catálogo P2P Retro === 🎮\n");
             for spore in spores {
                 println!("🔹 ID: {}", spore.id);
                 println!("   Título: {}", spore.title);
@@ -3682,7 +3682,7 @@ async fn store_cmd_async(home: &PathBuf, action: StoreCmd) -> Result<(), String>
                 return print_response(call(&sock, Request::StoreCaps).await?);
             }
             let caps = EmulatorRunner::detect_capabilities();
-            println!("\n⚡ === MYCELIUM STORE — Capacidades de Emulação Host === ⚡\n");
+            println!("\n⚡ === Spatiradix Store — Capacidades de Emulação Host === ⚡\n");
             println!(" ⚙️ QEMU Emulators:");
             for (arch, has) in caps.has_qemu {
                 println!("    • qemu-system-{:<8}: {}", arch, if has { "✅ Instalado" } else { "❌ Ausente" });
@@ -5402,7 +5402,7 @@ async fn rhizome_cmd(home: &PathBuf, action: RhizomeCmd) -> Result<(), String> {
     let sock = home.join("mycelium.sock");
     match action {
         RhizomeCmd::Ui { port } => {
-            println!("[🌿 Mycelium Rhizome] Super-App Social Soberano ativo no Event Horizon:");
+            println!("[🌿 Spatiradix Rhizome] Super-App Social Soberano ativo no Event Horizon:");
             println!("    👉 Web App     : http://127.0.0.1:{port}/rhizome/");
             println!("    👉 RSS 2.0     : http://127.0.0.1:{port}/rhizome/feed.xml");
             println!("    👉 ActivityPub : http://127.0.0.1:{port}/rhizome/ap/actor");

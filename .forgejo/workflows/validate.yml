@@ -1,4 +1,4 @@
-# Mycelium Network -- Forgejo Actions CI
+# Spatiradix -- Forgejo Actions CI
 #
 # ============================ READ THIS FIRST ============================
 # THE FEATURE INVARIANT: workspace crates default to `default = []`, so

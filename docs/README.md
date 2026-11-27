@@ -1,7 +1,7 @@
-# Documentação do Mycelium Network
+# Documentação do Spatiradix
 
 Aqui você encontra guias de uso, arquitetura, protocolos, modelos de ameaça e
-relatórios de testes do Mycelium Network.
+relatórios de testes do Spatiradix.
 
 Para uma visão ampla, comece pela [documentação completa](DOCUMENTACAO_COMPLETA.md).
 Para saber o que já foi testado e quais limites permanecem, consulte

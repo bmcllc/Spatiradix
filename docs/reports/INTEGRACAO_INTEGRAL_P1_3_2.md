@@ -1,4 +1,4 @@
-# Mycelium Network: integração P1.3.2
+# Spatiradix: integração P1.3.2
 
 ## 1. Visão geral
 
@@ -132,7 +132,7 @@ Para distinguir implementação, testes e planos, o relatório apresenta três e
 ### 4.4 Entrega 4: Primeiro Serviço Comunitário Nativo
 - **Publicação e Sobrevivência Sem Ponto Central**:
   - Em redes convencionais, se o servidor do publicador cai, o serviço web deixa de responder (erro 502/504 ou DNS offline).
-  - Na Mycelium Network, serviços comunitários públicos semeados no Spore Bank geram envelopes `SporePrint` que são absorvidos pelas réplicas locais via Lattice Gossipsub.
+  - Na Spatiradix, serviços comunitários públicos semeados no Spore Bank geram envelopes `SporePrint` que são absorvidos pelas réplicas locais via Lattice Gossipsub.
 - **Suíte de Aceitação**:
   - Implementada em `crates/mycelium-node/tests/community_service_survival_acceptance.rs` com o teste `test_community_service_content_survival_after_publisher_shutdown` (**PASSED**).
   - Demonstra que:

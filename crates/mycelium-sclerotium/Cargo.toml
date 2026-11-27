@@ -6,7 +6,7 @@ license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Sclerotium Protocol & Ghost Carrier: nós dormentes, leases criptográficas e despertar seletivo para Mycelium Network"
+description = "Sclerotium Protocol & Ghost Carrier: nós dormentes, leases criptográficas e despertar seletivo para Spatiradix"
 
 [dependencies]
 mycelium-core = { workspace = true }

@@ -1,6 +1,6 @@
 # Build Android ARM64 sem SDK Android
 
-Este guia descreve como o Mycelium Network e o Rhizome são empacotados em um
+Este guia descreve como o Spatiradix e o Rhizome são empacotados em um
 APK assinado para Android `arm64-v8a`, sem Termux, Google Play Services,
 Android SDK, NDK ou Gradle. A configuração descrita também não usa DNS ou
 STUN da Google.

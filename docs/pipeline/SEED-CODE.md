@@ -1,4 +1,4 @@
-# Seed Code — Distribuição de Código via Mycelium Network
+# Seed Code — Distribuição de Código via Spatiradix
 
 Este guia mostra como publicar e baixar código-fonte pela rede P2P usando
 `seed-code` e `recall-code`.
@@ -7,7 +7,7 @@ Este guia mostra como publicar e baixar código-fonte pela rede P2P usando
 
 ## O que é
 
-O Mycelium Network é capaz de distribuir código-fonte entre nós usando
+O Spatiradix é capaz de distribuir código-fonte entre nós usando
 seu próprio protocolo P2P. O conteúdo é identificado por hash BLAKE3,
 armazenado no Spore Bank local e propagado via gossipsub.
 

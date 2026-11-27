@@ -10,7 +10,7 @@
 ## 1. O que é o VEIL Ω?
 
 O **VEIL Ω** é o componente de roteamento cebola (*onion routing*) do
-Mycelium Network. Ele usa criptografia pós-quântica e oferece opções de
+Spatiradix. Ele usa criptografia pós-quântica e oferece opções de
 transporte voltadas à privacidade. Os testes locais não demonstram anonimato
 em todas as condições; veja o [modelo de ameaças](THREAT_MODEL.md).
 

@@ -1,6 +1,6 @@
 //! # mycelium-core
 //!
-//! Tipos fundamentais do substrato Mycelium Network: identificadores,
+//! Tipos fundamentais do substrato Spatiradix: identificadores,
 //! recursos, esporos e o trait [`FruitingBody`] que todo componente do
 //! The Lattice implementa para "brotar" do micélio.
 

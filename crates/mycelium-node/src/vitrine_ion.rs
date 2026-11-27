@@ -1,4 +1,4 @@
-//! # Vitrine Ion — A Vitrine Soberana do Mycelium Network
+//! # Vitrine Ion — A Vitrine Soberana do Spatiradix
 //!
 //! Reúne em uma experiência web única e unificada os 4 grandes pilares da rede:
 //! 1. 🌐 **Substituto para Hospedagem Web (Adeus AWS/Vercel)**: Chambers do Vacuum, Singularity Event Horizon e CIDs imutáveis.

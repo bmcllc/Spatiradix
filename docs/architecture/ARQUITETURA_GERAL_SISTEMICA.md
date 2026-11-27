@@ -1,4 +1,4 @@
-# Arquitetura geral do Mycelium Network
+# Arquitetura geral do Spatiradix
 
 > Este documento reúne a arquitetura proposta e descrições dos componentes.
 > Para resultados de testes e limites conhecidos, consulte [Validação](../VALIDACAO.md).
@@ -13,7 +13,7 @@
 
 ## 1. Visão geral
 
-O Mycelium Network é um projeto em Rust para conectar nós em uma rede P2P,
+O Spatiradix é um projeto em Rust para conectar nós em uma rede P2P,
 compartilhar conteúdo e executar serviços distribuídos. Seus componentes usam
 nomes inspirados em fungos: por exemplo, as hifas conectam nós e o Spore Bank
 armazena conteúdo.

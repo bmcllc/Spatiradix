@@ -1,6 +1,6 @@
 //! # TheField Ion — Forja Soberana de Repositórios Git P2P & Campo de Signals
 //!
-//! **TheField** é a forja unificada de código e colaboração sem plataforma do Mycelium Network
+//! **TheField** é a forja unificada de código e colaboração sem plataforma do Spatiradix
 //! (substituindo integralmente qualquer conceito separado de hub de código):
 //! - Lista e navega todos os repositórios Git P2P versionados na malha (`RefStore` + `SporeBank`).
 //! - Visualiza árvores de diretórios, código-fonte com hashes BLAKE3, histórico DAG de commits

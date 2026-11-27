@@ -1,4 +1,4 @@
-# Validação — Mycelium Network
+# Validação — Spatiradix
 
 Este documento registra o que foi validado no projeto e quais evidências
 ainda faltam. Os resultados pertencem às versões e aos ambientes identificados

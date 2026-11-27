@@ -128,7 +128,7 @@ pub enum Envelope {
         ion: String,
     },
     /// Anúncio de repositório — informação pública de onde baixar código-fonte
-    /// via Mycelium Network (sem dados sensíveis como IPs ou chaves SSH).
+    /// via Spatiradix (sem dados sensíveis como IPs ou chaves SSH).
     RepoAnnounce {
         node_id: NodeId,
         name: String,

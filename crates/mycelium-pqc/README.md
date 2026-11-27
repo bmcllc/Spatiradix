@@ -1,6 +1,6 @@
 # 🛡️ mycelium-pqc — Criptografia Pós-Quântica
 
-Primitivos pós-quânticos nativos usados pelo Mycelium Network.
+Primitivos pós-quânticos nativos usados pelo Spatiradix.
 
 ## Implementado hoje
 

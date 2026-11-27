@@ -1,4 +1,4 @@
-# Mycelium Network, COSMIC e VEIL Ω
+# Spatiradix, COSMIC e VEIL Ω
 ## Documentação técnica
 
 > Este documento reúne descrições e propostas de projeto. Para distinguir o
@@ -27,7 +27,7 @@
 
 ## 1. Visão Geral & Filosofia Biológica
 
-O Mycelium Network é um projeto de comunicação, computação e armazenamento
+O Spatiradix é um projeto de comunicação, computação e armazenamento
 distribuídos. Seu desenho considera redes com conectividade limitada e outras
 condições adversas; a capacidade de operar nelas depende de testes específicos.
 

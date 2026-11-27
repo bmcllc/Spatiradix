@@ -1,4 +1,4 @@
-# Mycelium Network — transição do laboratório para P2P Mainnet
+# Spatiradix — transição do laboratório para P2P Mainnet
 
 **Data:** 10 de novembro de 2026  
 **Escopo desta transição:** Mycelium P2P Mainnet, não uma blockchain própria.  

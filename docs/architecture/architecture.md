@@ -34,7 +34,7 @@ Vacuum Chamber → Plasma Ion → Singularity Event Horizon
 
 ```
                     ┌─────────────────────────────────────┐
-                    │         Mycelium Network            │
+                    │         Spatiradix                  │
                     │        (O Substrato Vivo)           │
                     └─────────────────────────────────────┘
                                       │

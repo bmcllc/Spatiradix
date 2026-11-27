@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stress test virtual — Mycelium Network
+# Stress test virtual — Spatiradix
 # Uso: ./scripts/stress-test.sh [duração_min] [num_nos]
 # Default: 10 minutos, 3 nós
 

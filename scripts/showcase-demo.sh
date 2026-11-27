@@ -26,7 +26,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "=================================================================="
-echo "🍄 INICIANDO DEMO DA VITRINE SOBERANA MYCELIUM NETWORK"
+echo "🍄 INICIANDO DEMO DA VITRINE SOBERANA Spatiradix"
 echo "=================================================================="
 
 # 1. Compilação
@@ -76,7 +76,7 @@ TMP_REPO="$WORK/sample-repo"
 mkdir -p "$TMP_REPO/src"
 cat << 'EOF' > "$TMP_REPO/README.md"
 # Meu App Soberano
-Publicado em um nó local da Mycelium Network.
+Publicado em um nó local da Spatiradix.
 EOF
 cat << 'EOF' > "$TMP_REPO/src/main.rs"
 fn main() {

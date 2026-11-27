@@ -1,7 +1,7 @@
 //! # Mycelium Store — Decentralized Retro Software & Hardware Launcher Store
 //!
 //! A Mycelium Store é uma App Store / Steam descentralizada para software antigo, jogos retro e
-//! plataformas de hardware legado, construída sobre o ecossistema P2P Mycelium Network.
+//! plataformas de hardware legado, construída sobre o ecossistema P2P Spatiradix.
 //!
 //! Recursos:
 //! - Catálogo descentralizado com SporeBank (IPFS / DHT / Nostr)
@@ -626,7 +626,7 @@ fn cover_svg(title: &str, platform: &spore::TargetPlatform) -> String {
 <rect x="24" y="24" width="552" height="752" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="6" rx="20"/>
 <text x="300" y="400" font-size="230" text-anchor="middle">🎮</text>
 {lines}
-<text x="300" y="640" font-family="monospace" font-size="26" text-anchor="middle" fill="rgba(255,255,255,0.55)" letter-spacing="3">MYCELIUM RETRO STORE</text>
+<text x="300" y="640" font-family="monospace" font-size="26" text-anchor="middle" fill="rgba(255,255,255,0.55)" letter-spacing="3">Spatiradix Retro Store</text>
 </svg>"#
     )
 }

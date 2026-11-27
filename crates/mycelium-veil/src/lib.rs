@@ -1,7 +1,7 @@
 //! # mycelium-veil — Protocolo VEIL Ω
 //!
 //! Infraestrutura P2P pós-quântica de privacidade, comunicação e anonimato
-//! sobre o Mycelium Network, fundindo:
+//! sobre o Spatiradix, fundindo:
 //! - Criptografia em Camadas ML-KEM-1024 + AEAD ChaCha20-Poly1305.
 //! - Plano LIVE (circuitos onion interativos em 1 ou 3 saltos).
 //! - Plano MIX (mixnet estocástica com atrasos de Poisson e tráfego de cobertura).

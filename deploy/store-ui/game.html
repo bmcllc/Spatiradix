@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mycelium Store — Página do Jogo</title>
-    <meta name="description" content="Detalhes, emulação e download P2P de um jogo retrô preservado na rede Mycelium.">
+    <title>Spatiradix Store — Página do Jogo</title>
+    <meta name="description" content="Detalhes, emulação e download P2P de um jogo retrô preservado na rede Spatiradix.">
     <meta name="robots" content="index, follow">
     <meta property="og:type" content="website">
 
@@ -204,7 +204,7 @@
         <div class="brand">
             <div class="brand-logo">🍄</div>
             <div class="brand-title">
-                <h1>MYCELIUM RETRO STORE</h1>
+                <h1>Spatiradix Retro Store</h1>
                 <p>Substrato P2P — Steam & App Store de Hardware Legado</p>
             </div>
         </div>
@@ -290,7 +290,7 @@
                     ? `<img src="${spore.cover_image_url}" alt="${spore.title}" loading="lazy">`
                     : '<div class="cover-fallback">🎮</div>';
 
-                document.title = `${spore.title} — Mycelium Store`;
+                document.title = `${spore.title} — Spatiradix Store`;
                 content.innerHTML = `
                     <div class="game-card">
                         <div class="game-header">
@@ -326,7 +326,7 @@
                 content.innerHTML = `
                     <div class="error-box">
                         <h2>Spore "${SPORE_ID}" não encontrado</h2>
-                        <p>Verifique se o daemon Mycelium está rodando e se o spore está publicado no catálogo.</p>
+                        <p>Verifique se o daemon Spatiradix está rodando e se o spore está publicado no catálogo.</p>
                         <p style="margin-top:16px;"><a class="btn btn-secondary" href="/store/">← Voltar à Loja</a></p>
                     </div>
                 `;
@@ -349,7 +349,7 @@
         }
 
         function showContent(id) {
-            alert(`📦 Conteúdo P2P de ${id}\n\nO binário é replicado via SporeBank (Kademlia DHT + Nostr NIP-94). Conecte-se a um seed node para baixar.\n\nSeedbook: mycelium network seedbook`);
+            alert(`📦 Conteúdo P2P de ${id}\n\nO binário é replicado via SporeBank (Kademlia DHT + Nostr NIP-94). Conecte-se a um seed node para baixar.\n\nSeedbook: Spatiradix seedbook`);
         }
 
         loadSpore();

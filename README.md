@@ -1,9 +1,12 @@
-# Mycelium Network
+# Spatiradix
 
-O Mycelium Network é uma rede ponto a ponto escrita em Rust. Ela conecta nós
+O Spatiradix é uma rede ponto a ponto escrita em Rust. Ele conecta nós
 com libp2p, armazena e compartilha conteúdo e oferece ferramentas para executar
 serviços e distribuir código. Os componentes usam nomes inspirados em fungos:
 as conexões são hifas, e o armazenamento de conteúdo é o Spore Bank.
+
+O executável e os identificadores técnicos existentes continuam usando
+`mycelium`, inclusive nos comandos e nas configurações mostrados abaixo.
 
 Para localizar código e entender os limites entre componentes, consulte o
 [guia de navegação do código](docs/architecture/NAVEGACAO_CODIGO.md).
@@ -67,7 +70,7 @@ Outras demonstrações: `./scripts/e2e-demo.sh`, `./scripts/horizon-demo.sh`,
 
 [Demonstração local da Vitrine, da replicação P2P e do Root](docs/reports/demonstracao-2026-11-21.md)
 
-## Mycelium Habitat (Fase H0)
+## Spatiradix Habitat (Fase H0)
 
 O daemon mantém um registro **local de manifestos de serviços assinados**, com
 políticas `local`, `private` e `public`. Use `mycelium habitat register`, `list`
@@ -154,7 +157,7 @@ Giggs sow Plot → Spore Bank (disco + DHT) → gossip hifas
 | `deploy` | One-shot: sow → signal → URL do Event Horizon |
 | `store list/caps/launch/publish` | App Store / Steam P2P de software antigo e emulação (QEMU, MAME, RetroArch, WASM) |
 | `repo publish/clone/list` | Distribuição de código soberana: publica a árvore como Plot multi-leaf (DHT + gossip) e reconstrói em qualquer nó — sem GitHub |
-| `media publish/pin/pins` | Streaming e fixação de vídeos em chunks BLAKE3 de 2MB via enxame P2P (Mycelium Video) |
+| `media publish/pin/pins` | Streaming e fixação de vídeos em chunks BLAKE3 de 2MB via enxame P2P (Spatiradix Video) |
 | `rhizome ui/identity/post/story/video/chat-send/import-x/import-whatsapp` | Super-app social soberano (`/rhizome/`): YouTube/Reels, Instagram/Stories (Isotope), Facebook/Comunidades, X/Microblog e WhatsApp PQ E2EE (ML-KEM-1024 + DTN + Nostr) |
 | `channel create/publish/show` | Gestão de canais descentralizados assinados por chave criptográfica |
 | `playlist create/add` | Criação e versão de playlists portáteis e soberanas |
@@ -239,7 +242,7 @@ verificável e identidade portátil. O projeto está descrito em
 
 ```bash
 # Storage QEL: fragmenta em shards pós-quânticos (3/7), multicanal.
-# --home <nó> distribui os shards na malha Mycelium via Isotope (qualquer peer recupera).
+# --home <nó> distribui os shards na malha Spatiradix via Isotope (qualquer peer recupera).
 cosmic put arquivo.bin --k 3 --n 7 --home ~/node-a
 cosmic get Qm0d70b7c78873aafe911f4b5f9313502f5d9a3eb47aac0cdf0817fd2a6fb72140 --out recuperado.bin --home ~/node-b
 
@@ -300,7 +303,7 @@ cargo test --workspace
 
 ## Licença
 
-O Mycelium está disponível sob a [GNU Affero General Public License versão 3
+O Spatiradix está disponível sob a [GNU Affero General Public License versão 3
 ou posterior (AGPL-3.0-or-later)](LICENSE). Componentes de terceiros e projetos
 incorporados separadamente podem ter suas próprias licenças; consulte seus
 respectivos avisos.

@@ -1,7 +1,7 @@
 //! # mycelium-sclerotium
 //!
 //! Protocolo de Escleródio (Sclerotium Protocol) e Portadora Fantasma (Ghost Carrier)
-//! para o substrato Mycelium Network.
+//! para o substrato Spatiradix.
 //!
 //! Permite que nós entrem em dormência profunda (economia extrema de energia e hardware)
 //! mantendo sua presença lógica por meio de:

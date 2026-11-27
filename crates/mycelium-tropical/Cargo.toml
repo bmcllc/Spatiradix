@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-tropical"
-description = "Álgebra Max-Plus, Bellman, Physarum e CFL para Mycelium Network"
+description = "Álgebra Max-Plus, Bellman, Physarum e CFL para Spatiradix"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

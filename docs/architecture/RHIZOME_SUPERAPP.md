@@ -8,7 +8,7 @@ registrados para a integração. Para o estado de validação do projeto, consul
 
 ---
 
-## Arquitetura sobre a Infraestrutura do Mycelium Network
+## Arquitetura sobre a Infraestrutura do Spatiradix
 
 O Rhizome reúne vídeo, publicações, stories, comunidades e mensagens cifradas.
 Ele usa os seguintes componentes do Mycelium:

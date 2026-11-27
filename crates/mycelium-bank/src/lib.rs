@@ -1,7 +1,7 @@
 //! # mycelium-bank
 //!
 //! Banco/corretora descentralizada e soberana construída sobre a infraestrutura
-//! Mycelium Network. Opera em modo local-first: cada nó é dono dos seus dados;
+//! Spatiradix. Opera em modo local-first: cada nó é dono dos seus dados;
 //! a rede P2P (hifas libp2p, gossip, DHT, VEIL) transporta intenções,
 //! recibos e liquidacões, nunca autoridade central. Chaves pós-quânticas
 //! (ML-KEM-1024) garantem confidencialidade futura; Ed25519 garante

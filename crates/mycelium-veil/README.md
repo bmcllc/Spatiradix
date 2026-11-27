@@ -1,6 +1,6 @@
 # 🧅 `mycelium-veil` — Protocolo VEIL Ω
 
-Infraestrutura P2P pós-quântica de privacidade soberana, anonimato e roteamento cebola (*onion routing*) sobre a malha Mycelium Network.
+Infraestrutura P2P pós-quântica de privacidade soberana, anonimato e roteamento cebola (*onion routing*) sobre a malha Spatiradix.
 
 ---
 

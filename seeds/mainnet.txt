@@ -15,7 +15,7 @@
 #     host com inbound verificado, e isso nenhuma execução local substitui.
 #     Referência: docs/VALIDACAO.md
 #
-# Mycelium Network — catálogo público de seeds (mainnet)
+# Spatiradix — catálogo público de seeds (mainnet)
 #
 # Só entradas com inbound VERIFICADO (./scripts/verify-sporocarp.sh).
 # Formato: …/p2p/<PeerId>/esporocarp

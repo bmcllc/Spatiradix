@@ -1,4 +1,4 @@
-# docker-compose — stack Mycelium Network + observabilidade (Prometheus + AlertManager).
+# docker-compose — stack Spatiradix + observabilidade (Prometheus + AlertManager).
 #
 # Levanta 5 nós formando uma malha (1 seed sporocarp + 4 folhas), Prometheus
 # coletando /metrics de cada nó a cada 30s, e AlertManager encaminhando

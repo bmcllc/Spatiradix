@@ -1,4 +1,4 @@
-# Mycelium Network — demonstração local
+# Spatiradix — demonstração local
 
 Em 21 de novembro de 2026, o Mycelium foi recompilado a partir da árvore
 de trabalho da branch `feat/mycelium-pkarr`, com base em `5f6b2df` e

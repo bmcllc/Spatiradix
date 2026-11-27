@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-cli"
-description = "CLI do Mycelium Network: daemon, sow, signal, resonate, deploy"
+description = "CLI do Spatiradix: daemon, sow, signal, resonate, deploy"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

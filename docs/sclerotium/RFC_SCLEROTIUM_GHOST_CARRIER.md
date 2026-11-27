@@ -24,7 +24,7 @@ estrutura de resistência encontrada em alguns fungos.
 
 O projeto usa termos da micologia como nomes para funções de rede:
 
-| Termo Fisiológico | Papel no Mycelium Network | Implementação Técnica |
+| Termo Fisiológico | Papel no Spatiradix | Implementação Técnica |
 |---|---|---|
 | **Hypha** (Hifa) | Conexão ponto-a-ponto ativa | Sessão libp2p (QUIC / TCP + Noise + Yamux) |
 | **Rhizomorph** (Rizomorfo) | Enlace de alta capacidade/agrupamento | Circuit Relay v2 + túneis multi-stream de alta vazão |

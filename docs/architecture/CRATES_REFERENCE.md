@@ -1,4 +1,4 @@
-# Referência de crates do Mycelium Network
+# Referência de crates do Spatiradix
 
 > Esta referência descreve os componentes documentados aqui. Para a lista
 > atual de pacotes, consulte o [`Cargo.toml`](../../Cargo.toml) do workspace.

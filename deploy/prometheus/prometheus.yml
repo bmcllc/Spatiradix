@@ -1,4 +1,4 @@
-# Prometheus — coleta de /metrics dos nós Mycelium Network.
+# Prometheus — coleta de /metrics dos nós Spatiradix.
 #
 # Cada nó expõe /metrics no seu Event Horizon (porta --horizon-port,
 # default 7474). Os alvos podem ser fixos (static_configs) ou descobertos

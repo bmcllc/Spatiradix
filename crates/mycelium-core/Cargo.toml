@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-core"
-description = "Tipos fundamentais do substrato Mycelium Network"
+description = "Tipos fundamentais do substrato Spatiradix"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

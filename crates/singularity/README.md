@@ -1,6 +1,6 @@
 # 🕳️ `singularity` — Event Horizon e Roteamento por Gravidade
 
-Ponto de entrada HTTP/HTTPS e WebSocket público do Mycelium Network (*The Event Horizon*), roteando tráfego do mundo externo para câmaras de nós internos com balanceamento bio-gravitacional.
+Ponto de entrada HTTP/HTTPS e WebSocket público do Spatiradix (*The Event Horizon*), roteando tráfego do mundo externo para câmaras de nós internos com balanceamento bio-gravitacional.
 
 ---
 

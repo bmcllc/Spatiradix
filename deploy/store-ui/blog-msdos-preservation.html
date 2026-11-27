@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Preservação e Emulação de Jogos MS-DOS via P2P e QEMU — Guia Técnico Mycelium</title>
+    <title>Preservação e Emulação de Jogos MS-DOS via P2P e QEMU — Guia Técnico Spatiradix</title>
     <meta name="description" content="Guia completo de preservação digital de softwares e jogos MS-DOS de 1980-1995. Como executar DOOM (1993), Prince of Persia e Wolfenstein 3D via QEMU, WebAssembly e redes P2P descentralizadas.">
     <meta name="keywords" content="emulador ms-dos online, preservacao de jogos antigos, doom 1993 qemu, prince of persia ms-dos, steam p2p retro, emulacao webassembly, qemu soundblaster16">
     <meta name="author" content="SEO Content Strategist & Mycelium RetroLab">
 
     <!-- Open Graph Metadata -->
     <meta property="og:title" content="Preservação e Emulação de Jogos MS-DOS via P2P e QEMU">
-    <meta property="og:description" content="Como a Mycelium Store utiliza QEMU, WebAssembly e redes P2P para preservar e rodar softwares MS-DOS com som SoundBlaster16 original.">
+    <meta property="og:description" content="Como a Spatiradix Store utiliza QEMU, WebAssembly e redes P2P para preservar e rodar softwares MS-DOS com som SoundBlaster16 original.">
     <meta property="og:type" content="article">
     <meta property="og:image" content="/store/api/store/covers/doom-1993.svg">
 
@@ -20,14 +20,14 @@
       "@context": "https://schema.org",
       "@type": "TechArticle",
       "headline": "Preservação e Emulação de Jogos MS-DOS via P2P e QEMU",
-      "description": "Guia técnico detalhando a arquitetura de preservação digital e emulação de jogos MS-DOS históricos utilizando QEMU i386, WebAssembly e rede P2P Mycelium.",
+      "description": "Guia técnico detalhando a arquitetura de preservação digital e emulação de jogos MS-DOS históricos utilizando QEMU i386, WebAssembly e rede P2P Spatiradix.",
       "author": {
         "@type": "Organization",
         "name": "Mycelium RetroLab Inc."
       },
       "publisher": {
         "@type": "Organization",
-        "name": "Mycelium Store"
+        "name": "Spatiradix Store"
       },
       "datePublished": "2026-08-02",
       "mainEntity": {
@@ -157,7 +157,7 @@
 
         <h2>1. O Desafio Técnico da Preservação de Hardware x86</h2>
         <p>
-            Executar binários de 16-bit ou 32-bit em processadores modernos de 64-bit exige emulação de arquitetura física ou virtualização especializada. A arquitetura da <strong>Mycelium Network</strong> resolve essa barreira combinando três tecnologias principais:
+            Executar binários de 16-bit ou 32-bit em processadores modernos de 64-bit exige emulação de arquitetura física ou virtualização especializada. A arquitetura da <strong>Spatiradix</strong> resolve essa barreira combinando três tecnologias principais:
         </p>
 
         <ul>
@@ -168,7 +168,7 @@
 
         <h2>2. Exemplo de Configuração de Emulação QEMU para MS-DOS</h2>
         <p>
-            Abaixo está a estrutura de comando sintética gerada pelo motor <code>qemu_builder.rs</code> da Mycelium Store para subir uma máquina virtual MS-DOS otimizada:
+            Abaixo está a estrutura de comando sintética gerada pelo motor <code>qemu_builder.rs</code> da Spatiradix Store para subir uma máquina virtual MS-DOS otimizada:
         </p>
 
 <pre><code>qemu-system-i386 \
@@ -180,7 +180,7 @@
   -hda ./sporebank/plots/DOOM1.WAD \
   -boot c</code></pre>
 
-        <h2>3. Catálogo MS-DOS Disponível na Mycelium Store</h2>
+        <h2>3. Catálogo MS-DOS Disponível na Spatiradix Store</h2>
         <p>
             O catálogo descentralizado da loja inclui suporte nativo a:
         </p>
@@ -191,7 +191,7 @@
             <li><strong>Commander Keen (1990 - id Software)</strong>: Rolagem suave EGA de tela.</li>
         </ul>
 
-        <a href="index.html" class="btn-back">← Voltar para a Mycelium Store</a>
+        <a href="index.html" class="btn-back">← Voltar para a Spatiradix Store</a>
     </article>
 
 </body>

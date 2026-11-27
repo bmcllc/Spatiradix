@@ -3,7 +3,7 @@
 # Não promove esporocarp só porque há IPv6 na interface: inbound pode estar dropado.
 set -euo pipefail
 
-echo "Mycelium Network — Diagnóstico Descentralizado"
+echo "Spatiradix — Diagnóstico Descentralizado"
 echo "=============================================="
 
 suggest_membrane="folha"

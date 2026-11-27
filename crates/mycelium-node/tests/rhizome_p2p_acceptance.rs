@@ -129,7 +129,7 @@ async fn rhizome_two_node_p2p_tube_feed_stories_pq_chat_and_retrocompat() {
         .text()
         .await
         .unwrap();
-    assert!(ui_html.contains("Mycelium Rhizome"));
+    assert!(ui_html.contains("Spatiradix Rhizome"));
 
     // 4. Atualiza perfis nos dois nós (com chaves ML-KEM-1024 + PKARR myc1... + GhostID Nostr)
     let prof_a: Value = client

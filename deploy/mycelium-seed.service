@@ -1,5 +1,5 @@
 [Unit]
-Description=Mycelium Network sporocarp (relay + DNS Spore Bank)
+Description=Spatiradix sporocarp (relay + DNS Spore Bank)
 After=network-online.target
 Wants=network-online.target
 

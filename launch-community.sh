@@ -2,7 +2,7 @@
 set -e
 
 # ==============================================================================
-# 🍄 MYCELIUM NETWORK — COMMUNITY LAUNCHER
+# 🍄 Spatiradix — COMMUNITY LAUNCHER
 # Lançador integrado da Nuvem Soberana para a Comunidade
 # ==============================================================================
 
@@ -11,7 +11,7 @@ MYCELIUM_HOME="${MYCELIUM_HOME:-$ROOT/.mycelium}"
 BIN="$ROOT/target/release/mycelium"
 
 echo "========================================================================"
-echo "🍄 MYCELIUM NETWORK — ECOSSISTEMA SOBERANO (COMUNIDADE)"
+echo "🍄 Spatiradix — ECOSSISTEMA SOBERANO (COMUNIDADE)"
 echo "========================================================================"
 
 # Verifica ou compila o binário de release

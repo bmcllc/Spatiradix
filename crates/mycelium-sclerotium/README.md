@@ -8,7 +8,7 @@ Camada fisiológica de hibernação biológica, delegação criptográfica de pr
 
 Na natureza, um **escleródio** (*sclerotium*) é uma estrutura fúngica compacta e dormente, capaz de sobreviver em condições hostis com gasto metabólico nulo, pronta para germinar quando as condições ambientais voltarem a ser favoráveis.
 
-No Mycelium Network, `mycelium-sclerotium` permite que nós físicos economizem 100% de energia da CPU principal sem desaparecerem da topologia lógica da rede P2P:
+No Spatiradix, `mycelium-sclerotium` permite que nós físicos economizem 100% de energia da CPU principal sem desaparecerem da topologia lógica da rede P2P:
 - **`LIVE`**: Máquina ligada, CPU/RAM ativas, processando tráfego e armazenamento.
 - **`DORMANT`**: CPU suspensa/desligada; receptor de rádio/NIC aguarda `WakeToken` autenticado via Wake-on-LAN ou rádio de despertar (Ghost Carrier / 802.11ba).
 - **`GHOST`**: Nós parceiros vizinhos mantêm uma `GhostLease` assinada, respondendo consultas de presença, guardando mensagens em caixas postais DTN e encaminhando pulsos de despertar sob demanda.

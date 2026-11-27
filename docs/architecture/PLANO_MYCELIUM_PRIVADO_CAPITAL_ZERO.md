@@ -1,4 +1,4 @@
-# Mycelium Network — plano privado, local e capital-zero
+# Spatiradix — plano privado, local e capital-zero
 
 **Data:** 10 de novembro de 2026  
 **Estado:** proposta de implementação; este documento não declara funcionalidades novas como concluídas.  

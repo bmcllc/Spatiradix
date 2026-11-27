@@ -1,7 +1,7 @@
 //! # mycelium-rhizome
 //!
 //! **Mycelium Rhizome** — Super-app social soberano sobre a infraestrutura completa
-//! do Mycelium Network:
+//! do Spatiradix:
 //!
 //! - **Vídeo & Canais (YouTube + Reels/Shorts)**: chunks BLAKE3 via `mycelium-media` +
 //!   `SporeBank` + streaming byte-range + playlists + lentes de descoberta intercambiáveis.

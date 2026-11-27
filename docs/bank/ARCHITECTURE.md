@@ -3,7 +3,7 @@
 ## Visão
 
 O Mycelium Bank reúne identidade, contas, razão, livro de ordens e estruturas
-de pagamento sobre o Mycelium Network. O estado do banco é mantido localmente;
+de pagamento sobre o Spatiradix. O estado do banco é mantido localmente;
 o transporte pode trocar mensagens com outros nós. O fluxo NFC descrito abaixo
 usa uma interface abstrata: a integração com hardware ainda estava pendente
 na etapa registrada ao final deste documento.
@@ -42,7 +42,7 @@ na etapa registrada ao final deste documento.
 5. Tap NFC transmite ao recebedor, que decodifica e `validate_nfc_payment`.
 6. Recebedor grava `PaymentNfc` no ledger hash-encadeado.
 
-## Integração com Mycelium Network
+## Integração com Spatiradix
 
 `MyceliumTransport` é o único ponto de contato com a malha. Implementações
 concretas devem publicar `BankMessage` via gossipsub e persistir Plot/layer quando

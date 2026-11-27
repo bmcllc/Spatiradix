@@ -672,7 +672,7 @@ impl RhizomeStore {
                 mlkem1024_pubkey_hex: String::new(),
                 handle,
                 display_name: format!("Criador {short}"),
-                bio: "Soberano na rede Mycelium Network — Vídeo, Feed, Comunidades e Chat Pós-Quântico.".into(),
+                bio: "Soberano na rede Spatiradix — Vídeo, Feed, Comunidades e Chat Pós-Quântico.".into(),
                 avatar_cid: None,
                 banner_cid: None,
                 channel_id,

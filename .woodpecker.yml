@@ -1,4 +1,4 @@
-# Mycelium Network -- Woodpecker CI
+# Spatiradix -- Woodpecker CI
 #
 # ============================ READ THIS FIRST ============================
 # THE FEATURE INVARIANT: workspace crates default to `default = []`, so

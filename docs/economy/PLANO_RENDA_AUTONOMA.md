@@ -1,4 +1,4 @@
-# Fonte de renda cripto autônoma, soberana e capital-zero — usando o Mycelium Network
+# Fonte de renda cripto autônoma, soberana e capital-zero — usando o Spatiradix
 
 Data: 2026-10-03. **Revisão 2** — inclui 3 testes ao vivo executados em 2026-10-03 que corrigem
 a Revisão 1 em um erro de **1000×** na economia de gas.

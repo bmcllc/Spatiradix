@@ -1,4 +1,4 @@
-# Mycelium Network 0.1.0 — primeira release pública
+# Spatiradix 0.1.0 — primeira release pública
 
 O Mycelium 0.1.0 é uma rede P2P experimental para publicar, descobrir e
 executar conteúdo entre nós voluntários. Esta versão inaugura a interface de

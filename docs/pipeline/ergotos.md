@@ -21,7 +21,7 @@ controle sobre qualquer dispositivo.
 | Criptografia pós-quântica e fase tropical | ET-COSMIC: `mycelium-pqc`, `mycelium-tropical` |
 | Estado que te segue | GhostID + Nucleus + Spore Bank (sessão itinerante) |
 
-## Constelação Mycelium Network
+## Constelação Spatiradix
 
 - **ERGOT** — proposta de ambiente sobre o Mycelium.
 - **RIZOMORFO** — camada de transporte que reúne Nostr transport, QEL,

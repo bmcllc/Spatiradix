@@ -1,4 +1,4 @@
-# Alertas Prometheus para o Mycelium Network.
+# Alertas Prometheus para o Spatiradix.
 #
 # Regras fisiológicas: o substrato deve permanecer vivo e alimentado.
 # Instalar no alertmanager/prometheus (rule_files) — ver docs/prometheus.md.

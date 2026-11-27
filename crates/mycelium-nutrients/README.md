@@ -1,6 +1,6 @@
 # 🧪 `mycelium-nutrients` — Economia Bioquímica e Ledger de Nutrientes
 
-O livro-razão contábil (*Nutrient Ledger*) que governa a circulação dos 5 nutrientes fundamentais na economia de subsistência e recompensa do Mycelium Network.
+O livro-razão contábil (*Nutrient Ledger*) que governa a circulação dos 5 nutrientes fundamentais na economia de subsistência e recompensa do Spatiradix.
 
 ---
 

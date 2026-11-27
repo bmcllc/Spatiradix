@@ -98,7 +98,7 @@ fn encode_type_single_string_entry(type_id: u8, key_idx: u32, global_str_idx: u3
 /// Gera `resources.arsc` definindo pacote `0x7f` (`network.mycelium.rhizome`),
 /// `0x7f010000` (`drawable/ic_launcher`) e `0x7f020000` (`string/app_name`).
 pub fn encode_resources_arsc() -> Vec<u8> {
-    let global_pool = encode_utf16_string_pool(&["res/drawable/ic_launcher.png", "Mycelium Rhizome"]);
+    let global_pool = encode_utf16_string_pool(&["res/drawable/ic_launcher.png", "Spatiradix Rhizome"]);
     let type_pool = encode_utf16_string_pool(&["drawable", "string"]);
     let key_pool = encode_utf16_string_pool(&["ic_launcher", "app_name"]);
 
@@ -112,7 +112,7 @@ pub fn encode_resources_arsc() -> Vec<u8> {
     pkg_body.extend_from_slice(&encode_type_spec(1, 1));
     pkg_body.extend_from_slice(&encode_type_single_string_entry(1, 0, 0)); // 0x7f010000 -> res/drawable/ic_launcher.png
     pkg_body.extend_from_slice(&encode_type_spec(2, 1));
-    pkg_body.extend_from_slice(&encode_type_single_string_entry(2, 1, 1)); // 0x7f020000 -> Mycelium Rhizome
+    pkg_body.extend_from_slice(&encode_type_single_string_entry(2, 1, 1)); // 0x7f020000 -> Spatiradix Rhizome
 
     let pkg_total_size = pkg_header_size as u32 + pkg_body.len() as u32;
     let mut pkg = Vec::with_capacity(pkg_total_size as usize);
@@ -152,6 +152,11 @@ mod tests {
     #[test]
     fn arsc_package_and_resource_entries_valid() {
         let arsc = encode_resources_arsc();
+        let app_name: Vec<u8> = "Spatiradix Rhizome"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert!(arsc.windows(app_name.len()).any(|bytes| bytes == app_name));
         assert_eq!(u16::from_le_bytes([arsc[0], arsc[1]]), RES_TABLE_TYPE);
         let total = u32::from_le_bytes(arsc[4..8].try_into().unwrap()) as usize;
         assert_eq!(total, arsc.len());

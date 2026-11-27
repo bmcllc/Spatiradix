@@ -1,6 +1,6 @@
 [package]
 name = "mycelium-rhizome"
-description = "Mycelium Rhizome — Super-app social soberano P2P (Vídeo/YouTube, Feed/Stories/Instagram, Comunidades/Facebook, Microblog/X, Chat E2EE PQ/WhatsApp) sobre a infraestrutura do Mycelium Network"
+description = "Mycelium Rhizome — Super-app social soberano P2P (Vídeo/YouTube, Feed/Stories/Instagram, Comunidades/Facebook, Microblog/X, Chat E2EE PQ/WhatsApp) sobre a infraestrutura do Spatiradix"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

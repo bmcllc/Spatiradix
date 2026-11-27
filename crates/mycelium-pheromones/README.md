@@ -1,6 +1,6 @@
 # 🧪 `mycelium-pheromones` — Identidade Química e Feromônios
 
-Sistema de identidade criptográfica descentralizada, reputação orgânica e comunicação química estocástica no Mycelium Network.
+Sistema de identidade criptográfica descentralizada, reputação orgânica e comunicação química estocástica no Spatiradix.
 
 ---
 
