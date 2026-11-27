@@ -3445,7 +3445,9 @@ dependencies = [
  "mycelium-pay",
  "mycelium-pkarr",
  "mycelium-pqc",
+ "mycelium-qel",
  "mycelium-sporebank",
+ "mycelium-veil",
  "mycelium-zkp",
  "rand 0.8.7",
  "reqwest 0.12.28",
@@ -3456,6 +3458,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tower",
+ "xml-rs",
  "zeroize",
 ]
 

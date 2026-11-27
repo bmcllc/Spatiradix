@@ -1,28 +1,36 @@
-# Mycelium Network — O Substrato Vivo do The Lattice
+# Mycelium Network
 
-> *"A floresta não é uma coleção de árvores. É uma rede subterrânea de fungos que alimenta, comunica e cura."*
+O Mycelium Network é uma rede ponto a ponto escrita em Rust. Ela conecta nós
+com libp2p, armazena e compartilha conteúdo e oferece ferramentas para executar
+serviços e distribuir código. Os componentes usam nomes inspirados em fungos:
+as conexões são hifas, e o armazenamento de conteúdo é o Spore Bank.
 
-Nuvem P2P viva em Rust: hifas (libp2p), feromônios, Spore Bank, e o fluxo Lattice ponta a ponta.
+Para localizar código e entender os limites entre componentes, consulte o
+[guia de navegação do código](docs/architecture/NAVEGACAO_CODIGO.md).
 
-## Quick start
+## Comece por aqui
+
+Estes comandos criam um nó local, iniciam o daemon e publicam uma mensagem.
+Execute o daemon em um terminal separado e mantenha-o aberto para os passos
+seguintes. Substitua `Qm…` pelo identificador completo retornado por `sow`.
 
 ```bash
-# 1. Planta a semente (identidade + recursos em disco)
+# 1. Crie a identidade e registre os recursos em disco
 cargo run -p mycelium-cli --release -- --home /tmp/node-a sprout --contribute 2cpu,4gb,100gb
 
-# 2. Desperta o daemon (Event Horizon HTTP em :7474)
+# 2. Inicie o daemon (Event Horizon HTTP na porta 7474)
 cargo run -p mycelium-cli --release -- --home /tmp/node-a daemon --contribute 2cpu,4gb,100gb --horizon-port 7474
 
-# 3. Noutro terminal — fluxo Lattice → Chamber viva
+# 3. Em outro terminal, publique a mensagem e inicie o fluxo
 cargo run -p mycelium-cli --release -- --home /tmp/node-a sow --message "hello"
 # anote o ContentId (Qm…)
 cargo run -p mycelium-cli --release -- --home /tmp/node-a signal --plot Qm… --quorum 1 --ion webapp
 
-# 4. Acesse o Ion pelo Singularity (proxy HTTP real)
+# 4. Acesse o Ion pelo proxy HTTP Singularity
 curl -s http://127.0.0.1:7474/webapp/ | jq .
 ```
 
-Demo automatizada do horizon: `./scripts/horizon-demo.sh`
+Para executar a demonstração automatizada do Horizon, use `./scripts/horizon-demo.sh`.
 
 Dois nós com bootstrap remoto:
 
@@ -34,7 +42,7 @@ mycelium --home /tmp/a daemon --listen /ip4/0.0.0.0/tcp/4001
 mycelium --home /tmp/b daemon --bootstrap /ip4/IP_DE_A/tcp/4001/p2p/PEERID_DE_A
 ```
 
-Bootstrap além da LAN (catálogo HTTP + `/dnsaddr/`):
+Para conectar nós fora da rede local, use um catálogo HTTP, DNS ou um arquivo local:
 
 ```bash
 mycelium seeds fetch --url ./seeds/mainnet.example.txt
@@ -43,15 +51,19 @@ mycelium daemon --public-bootstrap --bootstrap-url https://seu.host/seeds.txt
 mycelium daemon --seed-file ./seeds/mainnet.example.txt --listen /ip4/0.0.0.0/tcp/4001
 ```
 
-Vacuum usa **bubblewrap** por padrão quando `bwrap` está no PATH; layers content-addressed em `{home}/layers/` e limites soft de RAM (`RLIMIT_AS`).
+O Vacuum usa **bubblewrap** por padrão quando `bwrap` está no PATH. Suas camadas
+ficam em `{home}/layers/`, endereçadas pelo conteúdo, e a RAM tem limites
+soft via `RLIMIT_AS`.
 
-Rede só com seed book (sem mDNS / sem `--bootstrap` manual):
+Para experimentar uma rede que usa apenas o catálogo de seeds, sem mDNS ou
+`--bootstrap` manual:
 
 ```bash
 ./scripts/seedbook-demo.sh
 ```
 
-Demos: `./scripts/e2e-demo.sh` · `./scripts/horizon-demo.sh` · `./scripts/seedbook-demo.sh` · `./scripts/isotope-decay-demo.sh`
+Outras demonstrações: `./scripts/e2e-demo.sh`, `./scripts/horizon-demo.sh`,
+`./scripts/seedbook-demo.sh` e `./scripts/isotope-decay-demo.sh`.
 
 [Demonstração local da Vitrine, da replicação P2P e do Root](docs/reports/demonstracao-2026-11-21.md)
 
@@ -86,17 +98,20 @@ Veja o [projeto Cameon e os critérios de implantação](docs/architecture/CAMEO
 ## CLI unificada `lattice` (Forja + Rede)
 
 ```bash
-# Fase 1 — planta um nó (folha CGNAT por default; --sporocarp exige gate de prova)
+# Crie um nó (folha atrás de CGNAT por padrão; --sporocarp exige prova)
 ./lattice plant
 
-# Comando mágico: B.A.S.E. analisa o binário → Plot → Ion no Event Horizon
+# Analise um binário com B.A.S.E. e publique o resultado no Event Horizon
 ./lattice resurrect caminho/para/firmware.bin
 # → http://127.0.0.1:7474/webapp/
 
-# Passthrough: lattice base … (base-cli) e lattice daemon|sow|status… (mycelium-cli)
+# lattice base … repassa comandos ao base-cli; daemon, sow e status ao mycelium-cli
 ```
 
-Requer binários compilados (`target/release/mycelium` e `Behavioral ASIC Synthesis Engine/target/release/base`) ou `LATTICE_MYCELIUM_BIN` / `LATTICE_BASE_BIN`. Home default: `LATTICE_HOME` ou `~/.local/share/mycelium`.
+É preciso compilar `target/release/mycelium` e
+`Behavioral ASIC Synthesis Engine/target/release/base`, ou apontar para os
+binários com `LATTICE_MYCELIUM_BIN` e `LATTICE_BASE_BIN`. O diretório de dados
+usa `LATTICE_HOME` ou, por padrão, `~/.local/share/mycelium`.
 
 ## Código-fonte pela rede (sem git, sem GitHub)
 
@@ -105,7 +120,7 @@ Requer binários compilados (`target/release/mycelium` e `Behavioral ASIC Synthe
 mycelium --home ~/n1 seed-code --path ./meu-app --name meu-app \
   --description "app beta" --ion webapp --visibility public   # public|private|reserved|archived|community
 
-# Em outro nó, baixa o código (replica via gossip/SporePrint em segundos)
+# Em outro nó, baixe o código replicado via gossip/SporePrint
 mycelium --home ~/n2 recall-code --plot Qm…            # extrai em ./meu-app (CWD do CLI)
 mycelium --home ~/n2 recall-code --plot Qm… --output /tmp/x   # destino explícito
 
@@ -147,20 +162,24 @@ Giggs sow Plot → Spore Bank (disco + DHT) → gossip hifas
 | `veil start/stop/status/descriptor` | Roteamento cebola pós-quântico VEIL Ω de 3 saltos (Guard/Relay/Exit), Anti-SSRF e SOCKS5 (:1080) |
 | `shutdown` | Hiberna o daemon (estado fica em disco) |
 
-## Documentação Técnica Completa
+## Documentação
 
-Para aprofundamento na engenharia do ecossistema, consulte os documentos dedicados:
+Para entender o projeto ou encontrar detalhes de implementação, comece por estes documentos:
 
-- **[Arquitetura Geral Sistêmica](docs/architecture/ARQUITETURA_GERAL_SISTEMICA.md)**: Visão holística de todas as camadas de L0 a L4 e fluxos do organismo.
-- **[Dicionário e Referência de Crates](docs/architecture/CRATES_REFERENCE.md)**: Guia exaustivo cobrindo todos os 30 crates e plataformas do monorepo.
+- **[Arquitetura geral](docs/architecture/ARQUITETURA_GERAL_SISTEMICA.md)**: camadas e fluxos do projeto.
+- **[Referência de crates](docs/architecture/CRATES_REFERENCE.md)**: descrição dos componentes do repositório.
 - **[VEIL Ω — Roteamento Cebola Pós-Quântico](docs/veil/VEIL_ONION_ROUTING.md)**: Especificação da rede cebola de 3 saltos com ML-KEM-768 e isolamento Anti-SSRF.
 - **[COSMIC — Compute & Storage Pós-Quânticos](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Fragmentação QEL K/N, atestações e licenças VOID-00 (ML-DSA-87).
 - **[RFC Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Especificação de dormência biológica, GhostLease e despertar seletivo.
-- **[Índice Completo de Documentação](docs/README.md)**: Catálogo organizado de todos os 45+ documentos técnicos.
+- **[Índice de documentação](docs/README.md)**: documentos organizados por tema.
+- **[Documentação completa](docs/DOCUMENTACAO_COMPLETA.md)**: visão abrangente da arquitetura e dos componentes.
+- **[Rhizome](docs/architecture/RHIZOME_SUPERAPP.md)**: aplicação social e seus protocolos.
+- **[Build Android](docs/architecture/ANDROID_SOVEREIGN_BUILD.md)**: geração de APK ARM64.
 
-## Crates do Monorepo
+## Principais crates
 
-O projeto é modularizado em 30 crates e plataformas especializados:
+O workspace reúne vários componentes. A tabela apresenta alguns deles; a lista
+atual de membros está em [Cargo.toml](Cargo.toml).
 
 | Crate | Camada | Papel |
 |---|---|---|
@@ -197,9 +216,10 @@ seeds.txt           seed book mesclado
 mycelium.sock       plano de controle do daemon
 ```
 
-## CGNAT / Vivo sem esporocarpo: Hybrid Theory (Nostr + QEL + ipfs local)
+## Conexão atrás de CGNAT (Nostr, QEL e IPFS local)
 
-Outbound `wss://` (porta 443) + blockstore local — funciona atrás de firewall residencial:
+O modo híbrido usa conexões de saída `wss://` na porta 443 e armazenamento local
+de blocos. Para experimentá-lo:
 
 ```bash
 mycelium sow --message "floresta" --hybrid
@@ -210,11 +230,11 @@ mycelium --home /tmp/folha-b recall --plot Qm… --hybrid
 
 Docs: [docs/network/nostr-qel.md](docs/network/nostr-qel.md) · voluntário mesh: [docs/network/candidatos.md](docs/network/candidatos.md) · ET-COSMIC bridge: [docs/cosmic/et-cosmic-bridge.md](docs/cosmic/et-cosmic-bridge.md) · feature CLI `nostr` (default).
 
-## COSMIC — storage + compute + identidade pós-quânticos
+## COSMIC: armazenamento, computação e identidade
 
-Remodela o tríplice *VPS = compute + storage + uptime* em **contratos
-criptográficos**: a confiança sai do hardware e vai pra criptografia.
-Design completo em [docs/cosmic/cosmic-design.md](docs/cosmic/cosmic-design.md). Binário
+O COSMIC reúne ferramentas para armazenamento fragmentado, computação
+verificável e identidade portátil. O projeto está descrito em
+[cosmic-design.md](docs/cosmic/cosmic-design.md). Exemplos com o binário
 `cosmic` (crate `cosmic-cli`):
 
 ```bash
@@ -270,17 +290,6 @@ O nó desta máquina é a hospedagem, o NodeId é o endereço (nenhum DNS) e a l
 ed25519 com `valid_until` é a assinatura do cliente — plano em
 [docs/PROVA_ZERO_INFRA.md](docs/PROVA_ZERO_INFRA.md).
 
-## Documentação Completa
-
--  **[Livro Mestre & Documentação Técnica Completa](docs/DOCUMENTACAO_COMPLETA.md)**: Manual definitivo cobrindo a arquitetura, VEIL Ω, COSMIC, Sclerotium e todos os 30 crates.
--  **[Super-App Social Rhizome (MMP / MCP / MEP)](docs/architecture/RHIZOME_SUPERAPP.md)**: Tube/Reels BLAKE3, Commons MCP 100%, Lentes MEP, Enxame & Zap Pós-Quântico (`/rhizome/`).
--  **[Build Android Soberano (APK ARM64 sem Google/Termux)](docs/architecture/ANDROID_SOVEREIGN_BUILD.md)**: Binário `aarch64-unknown-linux-musl` + forjador APK puro em Rust (`scripts/build-android-sovereign.sh`).
--  **[Índice Geral de Documentos](docs/README.md)**: Mapa temático organizado por diretórios.
--  **[Dicionário Exaustivo de Crates](docs/architecture/CRATES_REFERENCE.md)**: Referência técnica de cada crate do monorepo.
--  **[Protocolo VEIL Ω Onion Routing](docs/veil/VEIL_ONION_ROUTING.md)**: Roteamento pós-quântico de 3 saltos e proxy SOCKS5.
--  **[COSMIC Compute & QEL Storage](docs/cosmic/COSMIC_COMPUTE_STORAGE.md)**: Computação e armazenamento particionado K-de-N.
--  **[Sclerotium & Ghost Carrier](docs/sclerotium/RFC_SCLEROTIUM_GHOST_CARRIER.md)**: Hibernação biológica, WoL e despertar físico.
-
 ## Desenvolvimento
 
 ```bash
@@ -291,14 +300,7 @@ cargo test --workspace
 
 ## Licença
 
-A [Licença Mycelium para Pessoas Físicas 1.0](LICENSE) oferece código-fonte
-disponível e uso gratuito para pessoas físicas que atuam por conta própria,
-inclusive em atividade remunerada. Governos, empresas públicas e privadas
-(incluindo Big Techs), ONGs e fundações ficam excluídos, inclusive quando
-atuam por intermédio de pessoas físicas.
-
-As versões distribuídas sob a [AGPL-3.0](docs/licenses/AGPL-3.0.txt) continuam
-sujeitas aos termos que receberam. Consulte os avisos de licença nos
-componentes de terceiros e nos projetos incorporados separadamente.
-
-> *"O futuro da computação não é construir castelos de silício. É plantar florestas de código."*
+O Mycelium está disponível sob a [GNU Affero General Public License versão 3
+ou posterior (AGPL-3.0-or-later)](LICENSE). Componentes de terceiros e projetos
+incorporados separadamente podem ter suas próprias licenças; consulte seus
+respectivos avisos.

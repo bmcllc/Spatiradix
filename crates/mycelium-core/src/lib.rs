@@ -102,6 +102,7 @@ impl PeerBinding {
     }
 
     /// Valida identidade, expiração e assinatura Ed25519 do binding.
+    /// O chamador ainda deve comparar `peer_id` com o peer do transporte.
     pub fn is_valid(&self, now_secs: u64) -> bool {
         if self.is_expired(now_secs) || !self.is_identity_consistent() {
             return false;
@@ -120,7 +121,8 @@ impl PeerBinding {
     }
 }
 
-/// Endereço content-addressed usado por Giggs, Vacuum e Isotope.
+/// Hash BLAKE3 usado por Giggs, Vacuum e Isotope para endereçar conteúdo.
+/// Sua forma textual é `Qm` seguido de 64 dígitos hexadecimais.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContentId(pub [u8; 32]);
 

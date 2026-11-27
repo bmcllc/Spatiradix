@@ -6,6 +6,8 @@ Bem-vindo à documentação técnica do **Mycelium Network**, o substrato vivo d
 
 Este diretório está organizado em **subpastas temáticas** reunindo as especificações de protocolo, referências de engenharia, modelos de ameaça, guias de rede e relatórios de homologação do monorepo.
 
+Para começar pelo código, consulte o [guia de navegação](architecture/NAVEGACAO_CODIGO.md).
+
 ---
 
 ## 🧭 Mapa de Navegação Rápida

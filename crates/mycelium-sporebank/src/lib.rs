@@ -4,7 +4,7 @@
 //! spore prints vivem em disco e podem ser anunciados/recuperados via DHT
 //! (Kademlia) através das hifas.
 //!
-//! Prefixo de chave DHT: `spore/<ContentId hex>`.
+//! As chaves DHT usam `spore/` seguido dos 32 bytes do `ContentId`.
 
 use giggs::{GiggsError, Mesh, Plot};
 use mycelium_core::ContentId;
@@ -34,7 +34,7 @@ pub const DHT_KEY_PREFIX: &[u8] = b"spore/";
 /// Prefixo das chaves DHT de layers do Vacuum.
 pub const LAYER_DHT_KEY_PREFIX: &[u8] = b"layer/";
 
-/// Chave DHT para um ContentId de Plot/esporo.
+/// Chave DHT para um Plot: prefixo `spore/` seguido do hash binário.
 pub fn dht_key(id: &ContentId) -> Vec<u8> {
     let mut key = DHT_KEY_PREFIX.to_vec();
     key.extend_from_slice(id.0.as_slice());

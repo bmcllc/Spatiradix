@@ -16,6 +16,48 @@ pub mod merchant_checkout;
 pub mod sovereign_cipher;
 #[cfg(feature = "pix")]
 pub mod pix_brcode;
+#[cfg(feature = "pix")]
+pub mod bse_web_pix;
+#[cfg(feature = "pix")]
+pub use bse_web_pix::inspect_pix as inspect_pix_brcode;
+#[cfg(feature = "pix")]
+pub mod bse_web_pix_json;
+#[cfg(feature = "pix")]
+pub use bse_web_pix_json::inspect_json as inspect_pix_json;
+#[cfg(feature = "pix")]
+pub(crate) use bse_web_pix_json as pix_json;
+#[cfg(feature = "pix")]
+pub mod bse_web_http;
+#[cfg(feature = "pix")]
+pub use bse_web_http::observe_http_trace;
+#[cfg(feature = "pix")]
+pub mod bse_web_pix_state;
+#[cfg(feature = "pix")]
+pub use bse_web_pix_state::replay_json as replay_pix_state;
+#[cfg(feature = "pix")]
+pub(crate) use bse_web_pix_state as pix_state;
+#[cfg(feature = "pix")]
+pub mod bse_web_iso;
+#[cfg(feature = "pix")]
+pub use bse_web_iso::inspect_iso as inspect_iso_message;
+#[cfg(feature = "pix")]
+pub(crate) use bse_web_http as http_observer;
+#[cfg(feature = "pix")]
+pub(crate) use bse_web_iso as iso20022;
+#[cfg(feature = "pix")]
+pub(crate) use bse_web_pix::inspect_pix;
+#[cfg(feature = "pix")]
+pub mod bse_web_psp_lab;
+#[cfg(feature = "pix")]
+pub use bse_web_psp_lab::run_lab as run_pix_psp_lab;
+#[cfg(feature = "pix-privacy-lab")]
+pub mod bse_web_privacy_lab;
+#[cfg(feature = "pix-privacy-lab")]
+pub use bse_web_privacy_lab::run_privacy_lab as run_pix_privacy_lab;
+#[cfg(feature = "pix-pay-lab")]
+pub mod bse_web_pay_lab;
+#[cfg(feature = "pix-pay-lab")]
+pub use bse_web_pay_lab::run_pay_lab as run_pix_pay_lab;
 pub mod pkarr_resolver;
 #[cfg(any(feature = "swift", feature = "brics"))]
 pub mod swift_formats;

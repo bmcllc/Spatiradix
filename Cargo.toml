@@ -50,7 +50,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "LicenseRef-Mycelium-Individual-1.0"
+license = "AGPL-3.0-or-later"
 license-file = "LICENSE"
 repository = "https://github.com/bmcc-DEV/mycelium-network"
 authors = ["The Lattice"]

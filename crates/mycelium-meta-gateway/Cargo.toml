@@ -9,7 +9,9 @@ publish = false
 
 [features]
 default = ["pix", "swift", "brics"]
-pix = []
+pix = ["dep:xml-rs"]
+pix-privacy-lab = ["pix", "dep:mycelium-veil", "dep:mycelium-qel"]
+pix-pay-lab = ["pix-privacy-lab"]
 swift = []
 brics = []
 
@@ -39,7 +41,28 @@ tempfile = "3"
 chacha20poly1305 = "0.10"
 zeroize = "1"
 
+xml-rs = { version = "=0.8.28", optional = true }
+
+mycelium-veil = { workspace = true, optional = true }
+mycelium-qel = { workspace = true, optional = true }
+
 [dev-dependencies]
 tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+
+[[example]]
+name = "pix_privacy_lab"
+required-features = ["pix-privacy-lab"]
+
+[[example]]
+name = "pix_pay_lab"
+required-features = ["pix-pay-lab"]
+
+[[example]]
+name = "pix_interop_lab"
+required-features = ["pix"]
+
+[[example]]
+name = "pix_mtls_lab"
+required-features = ["pix"]
